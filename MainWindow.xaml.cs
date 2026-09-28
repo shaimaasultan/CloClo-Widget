@@ -60,6 +60,9 @@ public partial class MainWindow : Window
     private const double AvatarOffsetY = 21 * Scale;
     private const double AvatarWidth = 140 * Scale;
     private const double AvatarHeight = 245 * Scale;
+    // How much of the widget (in physical pixels, each axis) has to land on a
+    // monitor's working area before its position counts as usable.
+    private const int MinVisiblePixels = 80;
 
     // The full set of possible media-bar icons, in display order — which
     // ones are actually shown (see WidgetSettings.EnabledIcons) is user
@@ -160,6 +163,9 @@ public partial class MainWindow : Window
         Loaded += MainWindow_Loaded;
         Closing += (_, _) =>
         {
+            // SystemEvents holds its handlers in a static list, so leaving this
+            // one attached would keep the whole window alive past close.
+            Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
             SaveWindowPosition();
             _avatarWindow?.Close();
         };
@@ -185,6 +191,7 @@ public partial class MainWindow : Window
         PlaceWindow();
         SetupTrayIcon();
         CreateAvatarHitWindow();
+        Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
 
         Topmost = _settings.AlwaysOnTop;
         SetupTopmostTimer();
@@ -981,21 +988,76 @@ public partial class MainWindow : Window
         // no way to get it back short of editing settings.json by hand.
         if (_settings.WindowLeft is double left && _settings.WindowTop is double top && IsOnAnyScreen(left, top))
         {
-            Left = left;
-            Top = top;
+            MoveTo(left, top);
             return;
         }
+        MoveToDefaultCorner();
+    }
+
+    private void OnDisplaySettingsChanged(object? sender, EventArgs e)
+    {
+        // Raised on a system thread, and the new monitor metrics can trail the
+        // event by a moment, so hop onto the UI thread and let the pending
+        // layout work settle before measuring anything.
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(EnsureOnScreen));
+    }
+
+    // Unplugging a monitor (or undocking) leaves this window where it was:
+    // Windows rescues ordinary app windows off a vanished display, but not a
+    // layered, click-through tool window like this one. PlaceWindow only ran
+    // at startup, so nothing noticed — and Closing then saved the stranded
+    // spot, carrying it into the next launch too. Re-check on every desktop
+    // layout change instead.
+    private void EnsureOnScreen()
+    {
+        if (IsOnAnyScreen(Left, Top)) return;
+        MoveToDefaultCorner();
+        SaveWindowPosition();
+    }
+
+    private void MoveToDefaultCorner()
+    {
         // Default spot: bottom-right corner, just above the taskbar — as close
         // to "on top of the clock" as Windows actually allows an app to sit.
         var area = SystemParameters.WorkArea;
-        Left = area.Right - Width - 16;
-        Top = area.Bottom - Height - 16;
+        MoveTo(area.Right - Width - 16, area.Bottom - Height - 16);
     }
 
-    private static bool IsOnAnyScreen(double left, double top)
+    // The avatar window is the interactive twin, and normally it drags this
+    // one around (see its LocationChanged). Moving this window on its own
+    // would leave the pair separated, so carry the avatar along.
+    private void MoveTo(double left, double top)
     {
-        var point = new System.Drawing.Point((int)left, (int)top);
-        return DrawingForms.Screen.AllScreens.Any(s => s.Bounds.Contains(point));
+        Left = left;
+        Top = top;
+        if (_avatarWindow != null)
+        {
+            _avatarWindow.Left = left + AvatarOffsetX;
+            _avatarWindow.Top = top + AvatarOffsetY;
+        }
+    }
+
+    private bool IsOnAnyScreen(double left, double top)
+    {
+        // Left/Top are WPF device-independent units; Screen bounds are physical
+        // pixels. At anything other than 100% scaling the two disagree, and the
+        // gap is exactly where a stranded widget hides: at 125% on a 1920-wide
+        // screen, logical x runs out at 1536, yet comparing it raw against the
+        // physical bounds accepted anything below 1920.
+        var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this);
+        var rect = new System.Drawing.Rectangle(
+            (int)Math.Round(left * dpi.DpiScaleX),
+            (int)Math.Round(top * dpi.DpiScaleY),
+            (int)Math.Round(Width * dpi.DpiScaleX),
+            (int)Math.Round(Height * dpi.DpiScaleY));
+        // One corner grazing a screen doesn't make the widget usable, so ask
+        // for a real patch of it to be visible, and against the working area
+        // so a spot buried under the taskbar doesn't count either.
+        return DrawingForms.Screen.AllScreens.Any(s =>
+        {
+            var overlap = System.Drawing.Rectangle.Intersect(s.WorkingArea, rect);
+            return overlap.Width >= MinVisiblePixels && overlap.Height >= MinVisiblePixels;
+        });
     }
 
     private void SaveWindowPosition()
