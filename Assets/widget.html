@@ -87,6 +87,17 @@
   #zzz text:last-child{ animation-delay:.4s; }
   @keyframes zzzFloat{ 0%,100%{ transform:translateY(0); opacity:.55; } 50%{ transform:translateY(-3px); opacity:.9; } }
 
+  /* The current sky in words ("Partly Cloudy", "Rain"…), centered in the free
+     strip above Keeper's head. Absolutely positioned so it never shifts the
+     layout the host's click hit-rects are tied to. Stays hidden until the
+     sky is actually known (a manual pick, or the first forecast arriving) —
+     it must never claim "Clear" just because the page hasn't loaded yet. */
+  #skyLabel{
+    position:absolute; top:0; left:50%; transform:translateX(-50%); display:none;
+    font-size:9px; font-weight:700; line-height:11px; letter-spacing:.04em; white-space:nowrap;
+    color:var(--face); pointer-events:none;
+    text-shadow:0 1px 3px rgba(0,0,0,.85), 0 0 10px rgba(0,0,0,.55);
+  }
   #info{ text-align:center; color:var(--face); margin-top:2px; text-shadow:0 1px 3px rgba(0,0,0,.85), 0 0 10px rgba(0,0,0,.55); }
   #temp{ font-size:19px; font-weight:800; line-height:1; }
   #place{ font-size:10px; opacity:.9; letter-spacing:.02em; max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -500,6 +511,8 @@
       </svg>
     </div>
 
+    <div id="skyLabel"></div>
+
     <div id="info">
       <div id="temp">--°</div>
       <div id="place">…</div>
@@ -839,7 +852,20 @@
   // from the right-click menu, which wins over whatever the forecast says —
   // the temperature and location still update live either way.
   const skyOverride = params.get('sky') || 'auto';
-  if (skyOverride !== 'auto') applyWeather(skyOverride);
+
+  // Same wording as the right-click Weather menu (SkyOptions in
+  // MainWindow.xaml.cs), so the label and the menu never disagree.
+  const SKY_LABELS = {
+    clear: 'Clear', cloudy: 'Partly Cloudy', mostlycloudy: 'Mostly Cloudy', overcast: 'Cloudy',
+    windy: 'Windy', fog: 'Fog', drizzle: 'Drizzle', rain: 'Rain', snow: 'Snow', storm: 'Storm',
+  };
+  function showSkyLabel(kind) {
+    const el = document.getElementById('skyLabel');
+    el.textContent = SKY_LABELS[kind] || '';
+    el.style.display = SKY_LABELS[kind] ? 'block' : 'none';
+  }
+
+  if (skyOverride !== 'auto') { applyWeather(skyOverride); showSkyLabel(skyOverride); }
   else applyWeather('clear');
 
   // Cloud cover is a continuous 0-100% reading from the API, banded here
@@ -890,6 +916,7 @@
         let sky = codeToSky(code, cloudCover);
         if ((sky === 'clear' || sky === 'cloudy' || sky === 'mostlycloudy' || sky === 'overcast') && windSpeed >= WINDY_THRESHOLD_KMH) sky = 'windy';
         applyWeather(sky);
+        showSkyLabel(sky);
       }
     } catch (err) {
       document.getElementById('temp').textContent = '—°';
