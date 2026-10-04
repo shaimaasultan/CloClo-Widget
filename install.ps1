@@ -192,6 +192,11 @@ if ($installed) {
         # The question goes out through Write-Host: Read-Host's own prompt
         # text didn't show up when this script runs via "powershell -File",
         # leaving what looked like a hung window.
+        # Started from PowerShell ISE (or with input piped in), this process
+        # has no keyboard to read from and Read-Host would wait forever.
+        if ([Console]::IsInputRedirected) {
+            throw "Can't ask for YES here - this window can't pass keyboard input to the installer (PowerShell ISE does this). Nothing was installed. Run it from a regular PowerShell window (Start > Windows PowerShell), not ISE."
+        }
         Write-Host "Type YES and press Enter to replace it (anything else cancels): " -NoNewline -ForegroundColor Yellow
         $answer = try { Read-Host } catch { '' }
         if ($answer -cne 'YES') { throw "Not installed - the installed copy was left as it was." }

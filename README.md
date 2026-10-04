@@ -89,6 +89,12 @@ If Windows says running scripts is disabled, start it as
 `powershell -ExecutionPolicy Bypass -File .\install.ps1` (plus any options) —
 that allows this one run without changing any system setting.
 
+Use a regular PowerShell window (Start → Windows PowerShell, or Windows
+Terminal), not PowerShell ISE and not one opened as administrator. ISE can't
+pass your typing to the installer, so a question such as the certificate
+`YES` check would never get an answer; the installer now stops with a
+message instead of waiting.
+
 It installs to `%LocalAppData%\Programs\CloCloWidget`, closes a running
 widget first so the exe can be replaced, and moves "Start with Windows" to the
 installed copy if it was on.
