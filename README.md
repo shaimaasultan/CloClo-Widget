@@ -38,13 +38,13 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 
 ## How it's built
 
-A WPF host window (transparent, borderless, topmost, no taskbar entry) hosts
-a `WebView2` control pointed at `Assets/widget.html` — a plain HTML/SVG port
-of the app's Keeper avatar (same paths, same weather-conditional clothing:
-raincoat, wool hat, sunglasses, storm blanket, held umbrella), with a little
-JS that fetches the current temperature and WMO weather code for your saved
-location and maps it to the same four sky states (clear/rain/snow/storm) the
-app uses. Dragging and the right-click menu are relayed from the page to the
-WPF window via `window.chrome.webview.postMessage`, since WebView2 owns all
-mouse input within its bounds. Settings (location, window position,
+A WPF host window (transparent, borderless, topmost, no taskbar entry,
+click-through) hosts `KeeperView` — a native WPF drawing of the app's Keeper
+avatar (same paths, same weather-conditional clothing: raincoat, wool hat,
+sunglasses, storm blanket, held umbrella) with its breathing, blinking,
+fidgets and sky effects as WPF animations. There's no embedded browser:
+`WeatherService` fetches the current temperature and WMO weather code from
+Open-Meteo on the host and maps it to a sky (clear/cloudy/rain/snow/storm…).
+A second, invisible window sized to the avatar takes the clicks — dragging,
+the icon bar and the right-click menu. Settings (location, window position,
 always-on-top) persist to `%AppData%\CloCloWidget\settings.json`.

@@ -1,7 +1,7 @@
 <Window x:Class="CloCloWidget.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        xmlns:local="clr-namespace:CloCloWidget"
         Title="CloClo"
         Width="195" Height="351"
         WindowStyle="None"
@@ -14,15 +14,15 @@
     <!--
       True per-pixel-alpha transparency — this is what actually renders
       correctly (colour-key transparency via SetLayeredWindowAttributes
-      turned out not to work here: WPF plus a WebView2 child both render
-      through DirectComposition, which that legacy GDI mechanism doesn't
-      reliably affect, so the "transparent" magenta just stayed solid).
+      turned out not to work here: WPF renders through DirectComposition,
+      which that legacy GDI mechanism doesn't reliably affect, so the
+      "transparent" magenta just stayed solid).
       This window never receives mouse input at all (see
       MainWindow_SourceInitialized) — a separate, genuinely-interactive
       window sized to the avatar handles clicks instead (CreateAvatarHitWindow
       in the code-behind), so there's no click-through trickery needed here.
     -->
     <Grid>
-        <wv2:WebView2 x:Name="Web" />
+        <local:KeeperView x:Name="Keeper" />
     </Grid>
 </Window>

@@ -1,0 +1,387 @@
+<UserControl x:Class="CloCloWidget.KeeperView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Width="195" Height="351"
+             IsHitTestVisible="False"
+             UseLayoutRounding="False"
+             TextOptions.TextFormattingMode="Ideal">
+    <!--
+      A native port of what used to be Assets/widget.html, so drawing Keeper
+      needs no browser engine at all. Everything below is laid out on the
+      page's original 150x270 canvas and scaled 1.3x as a whole (the old
+      #stage zoom) — the click hit-rects in MainWindow.xaml.cs are still in
+      those same units. Positions come from the old page's own measured
+      layout; the keeper art keeps the SVG's 100x140 coordinates as-is.
+      Never takes mouse input: the separate _avatarWindow owns every click.
+    -->
+    <UserControl.Resources>
+        <SolidColorBrush x:Key="Body1" Color="#6b2b26" />
+        <SolidColorBrush x:Key="Metal1" Color="#e6c476" />
+        <SolidColorBrush x:Key="Metal3" Color="#8a6a2f" />
+        <SolidColorBrush x:Key="Face" Color="#ede3ce" />
+        <SolidColorBrush x:Key="Ink" Color="#241e1a" />
+        <SolidColorBrush x:Key="Highlight" Color="#f3d78b" />
+        <SolidColorBrush x:Key="Sweater" Color="#b0483d" />
+        <SolidColorBrush x:Key="Skin" Color="#e8b98c" />
+        <SolidColorBrush x:Key="Hair" Color="#3a2a20" />
+        <SolidColorBrush x:Key="Raincoat" Color="#e2b640" />
+        <SolidColorBrush x:Key="RaincoatDark" Color="#b98f25" />
+        <SolidColorBrush x:Key="Wool" Color="#b8463e" />
+        <SolidColorBrush x:Key="Cream" Color="#ede5d4" />
+        <SolidColorBrush x:Key="Paper" Color="#f3ecdd" />
+        <SolidColorBrush x:Key="Shades" Color="#1f1b1a" />
+
+        <!-- The page's text-shadow: 0 1px 3px rgba(0,0,0,.85), 0 0 10px rgba(0,0,0,.55). -->
+        <DropShadowEffect x:Key="TextShadow" Color="Black" Direction="270" ShadowDepth="1" BlurRadius="6" Opacity="0.9" />
+        <DropShadowEffect x:Key="IconShadow" Color="Black" Direction="270" ShadowDepth="1" BlurRadius="3" Opacity="0.4" />
+
+        <Style x:Key="Label" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="Foreground" Value="{StaticResource Face}" />
+            <Setter Property="Effect" Value="{StaticResource TextShadow}" />
+        </Style>
+        <!-- WPF draws emoji in monochrome only (no color-font support), so
+             they take the same cream + shadow as the labels, which keeps
+             them legible on any wallpaper. -->
+        <Style x:Key="IconGlyph" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI Emoji" />
+            <Setter Property="Foreground" Value="{StaticResource Face}" />
+            <Setter Property="Effect" Value="{StaticResource TextShadow}" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="MediaIcon" TargetType="Grid">
+            <Setter Property="Width" Value="18" />
+            <Setter Property="Height" Value="18" />
+            <Setter Property="Margin" Value="1,0" />
+        </Style>
+    </UserControl.Resources>
+
+    <Canvas x:Name="Stage" Width="150" Height="270" ClipToBounds="True">
+        <Canvas.LayoutTransform>
+            <ScaleTransform ScaleX="1.3" ScaleY="1.3" />
+        </Canvas.LayoutTransform>
+
+        <!-- ===== sky decorations, behind everything ===== -->
+        <Canvas x:Name="Sparkle" Width="150" Height="270" ClipToBounds="True">
+            <Rectangle x:Name="Flash" Width="150" Height="270" Fill="White" Opacity="0" />
+
+            <Canvas x:Name="Sun" Canvas.Left="114" Canvas.Top="14" Width="26" Height="26" Visibility="Collapsed">
+                <Ellipse Canvas.Left="6" Canvas.Top="6" Width="14" Height="14" Fill="{StaticResource Highlight}">
+                    <Ellipse.Effect><BlurEffect Radius="10" /></Ellipse.Effect>
+                </Ellipse>
+                <Ellipse Canvas.Left="8" Canvas.Top="8" Width="10" Height="10" Fill="{StaticResource Highlight}" />
+                <Canvas x:Name="SunRays" />
+            </Canvas>
+
+            <Canvas x:Name="Moon" Canvas.Left="114" Canvas.Top="14" Width="26" Height="26" Visibility="Collapsed">
+                <Ellipse x:Name="Star1" Canvas.Left="-6" Canvas.Top="2" Width="2" Height="2" Fill="White" Opacity="0.85" />
+                <Ellipse Canvas.Left="1" Canvas.Top="1" Width="24" Height="24" Fill="#eef1f8" Opacity="0.55">
+                    <Ellipse.Effect><BlurEffect Radius="8" /></Ellipse.Effect>
+                </Ellipse>
+                <Ellipse Canvas.Left="3" Canvas.Top="3" Width="20" Height="20" Fill="#eef1f8" />
+                <Ellipse Canvas.Left="6" Canvas.Top="8" Width="4" Height="4" Fill="#cfd6e4" Opacity="0.7" />
+                <Ellipse Canvas.Left="12" Canvas.Top="14" Width="3" Height="3" Fill="#cfd6e4" Opacity="0.7" />
+                <Ellipse Canvas.Left="14" Canvas.Top="6" Width="2" Height="2" Fill="#cfd6e4" Opacity="0.7" />
+                <Ellipse x:Name="Star2" Canvas.Left="24" Canvas.Top="16" Width="2" Height="2" Fill="White" Opacity="0.85" />
+            </Canvas>
+
+            <Canvas x:Name="Cloud" Canvas.Left="98" Canvas.Top="16" Width="46" Height="22" Visibility="Collapsed">
+                <Canvas.RenderTransform><TranslateTransform /></Canvas.RenderTransform>
+                <Ellipse Canvas.Left="0" Canvas.Top="1" Width="16" Height="16" Fill="#dfe6ee" Opacity="0.92" />
+                <Ellipse Canvas.Left="12" Canvas.Top="-6" Width="20" Height="20" Fill="#dfe6ee" Opacity="0.92" />
+                <Ellipse Canvas.Left="28" Canvas.Top="3" Width="14" Height="14" Fill="#dfe6ee" Opacity="0.92" />
+                <Rectangle Canvas.Left="4" Canvas.Top="8" Width="38" Height="14" RadiusX="8" RadiusY="7" Fill="#dfe6ee" Opacity="0.92" />
+            </Canvas>
+
+            <Canvas x:Name="CloudMostly" Canvas.Left="90" Canvas.Top="10" Width="58" Height="32" Visibility="Collapsed">
+                <Canvas.RenderTransform><TranslateTransform /></Canvas.RenderTransform>
+                <Ellipse x:Name="PeekSunGlow" Canvas.Left="-2" Canvas.Top="-2" Width="24" Height="24" Fill="{StaticResource Highlight}">
+                    <Ellipse.Effect><BlurEffect Radius="9" /></Ellipse.Effect>
+                </Ellipse>
+                <Ellipse x:Name="PeekSun" Canvas.Left="0" Canvas.Top="0" Width="20" Height="20" Fill="{StaticResource Highlight}" />
+                <Ellipse Canvas.Left="10" Canvas.Top="8" Width="20" Height="20" Fill="#e9edf1" Opacity="0.96" />
+                <Ellipse Canvas.Left="24" Canvas.Top="0" Width="24" Height="24" Fill="#e9edf1" Opacity="0.96" />
+                <Ellipse Canvas.Left="42" Canvas.Top="13" Width="15" Height="15" Fill="#e9edf1" Opacity="0.96" />
+                <Rectangle Canvas.Left="8" Canvas.Top="17" Width="44" Height="15" RadiusX="8" RadiusY="7.5" Fill="#e9edf1" Opacity="0.96" />
+            </Canvas>
+
+            <Canvas x:Name="CloudOvercast" Canvas.Left="90" Canvas.Top="12" Width="58" Height="30" Visibility="Collapsed">
+                <Canvas.RenderTransform><TranslateTransform /></Canvas.RenderTransform>
+                <Ellipse Canvas.Left="6" Canvas.Top="6" Width="20" Height="20" Fill="#b9c2cc" Opacity="0.96" />
+                <Ellipse Canvas.Left="20" Canvas.Top="-1" Width="24" Height="24" Fill="#b9c2cc" Opacity="0.96" />
+                <Ellipse Canvas.Left="38" Canvas.Top="10" Width="16" Height="16" Fill="#b9c2cc" Opacity="0.96" />
+                <Rectangle Canvas.Left="4" Canvas.Top="14" Width="50" Height="16" RadiusX="8" RadiusY="8" Fill="#b9c2cc" Opacity="0.96" />
+            </Canvas>
+
+            <!-- Rain/drizzle drops, snowflakes and wind-blown leaves are
+                 generated in code (see KeeperView.xaml.cs), each with its own
+                 position and timing, same as the old inline styles. -->
+            <Canvas x:Name="Precipitation" />
+        </Canvas>
+
+        <!-- ===== fog: a low white wash, thickest near the ground ===== -->
+        <Canvas x:Name="Fog" Width="150" Height="270" Opacity="0" ClipToBounds="True">
+            <Rectangle Width="150" Height="270">
+                <Rectangle.Fill>
+                    <LinearGradientBrush StartPoint="0,1" EndPoint="0,0">
+                        <GradientStop Offset="0" Color="#D9FFFFFF" />
+                        <GradientStop Offset="0.45" Color="#80FFFFFF" />
+                        <GradientStop Offset="0.78" Color="#14FFFFFF" />
+                        <GradientStop Offset="1" Color="#14FFFFFF" />
+                    </LinearGradientBrush>
+                </Rectangle.Fill>
+            </Rectangle>
+            <Rectangle x:Name="Wisp1" Canvas.Left="-37.5" Canvas.Top="118" Width="225" Height="9" RadiusX="112.5" RadiusY="4.5" Fill="#8CFFFFFF">
+                <Rectangle.Effect><BlurEffect Radius="4" /></Rectangle.Effect>
+                <Rectangle.RenderTransform><TranslateTransform /></Rectangle.RenderTransform>
+            </Rectangle>
+            <Rectangle x:Name="Wisp2" Canvas.Left="-37.5" Canvas.Top="148" Width="225" Height="9" RadiusX="112.5" RadiusY="4.5" Fill="#8CFFFFFF">
+                <Rectangle.Effect><BlurEffect Radius="4" /></Rectangle.Effect>
+                <Rectangle.RenderTransform><TranslateTransform /></Rectangle.RenderTransform>
+            </Rectangle>
+        </Canvas>
+
+        <!-- ===== Keeper ===== -->
+        <Canvas x:Name="KeeperWrap" Canvas.Left="21" Canvas.Top="24" Width="108" Height="149" RenderTransformOrigin="0.5,1">
+            <Canvas.RenderTransform>
+                <TransformGroup>
+                    <ScaleTransform x:Name="WrapScale" />
+                    <RotateTransform x:Name="WrapRotate" />
+                    <TranslateTransform x:Name="WrapTranslate" />
+                </TransformGroup>
+            </Canvas.RenderTransform>
+            <Viewbox Width="108" Height="145" Stretch="Uniform">
+                <Canvas Width="100" Height="140">
+                    <Ellipse Canvas.Left="28" Canvas.Top="130" Width="44" Height="8" Fill="Black" Opacity="0.22" />
+
+                    <Canvas x:Name="UmbrellaLeaning" Visibility="Collapsed">
+                        <Line X1="91" Y1="84" X2="91" Y2="90" Stroke="{StaticResource Metal3}" StrokeThickness="1.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Path Data="M91 88 L86 118 L96 118 Z" Fill="{StaticResource Body1}" Stroke="{StaticResource Metal3}" StrokeThickness="0.7" />
+                        <Line X1="91" Y1="118" X2="90" Y2="130" Stroke="{StaticResource Metal3}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Path Data="M90 130 q0 4 -4 4" Stroke="{StaticResource Metal3}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                    </Canvas>
+
+                    <Rectangle Canvas.Left="40.5" Canvas.Top="104" Width="8.5" Height="25" RadiusX="4" RadiusY="4" Fill="#46506a" />
+                    <Rectangle Canvas.Left="51" Canvas.Top="104" Width="8.5" Height="25" RadiusX="4" RadiusY="4" Fill="#46506a" />
+                    <Ellipse Canvas.Left="38" Canvas.Top="126.2" Width="13" Height="7.6" Fill="#2a2320" />
+                    <Ellipse Canvas.Left="49" Canvas.Top="126.2" Width="13" Height="7.6" Fill="#2a2320" />
+
+                    <Canvas x:Name="TorsoDefault">
+                        <Path Data="M31 106 Q29 78 50 73 Q71 78 69 106 Z" Fill="{StaticResource Sweater}" />
+                        <Path Data="M43 74 q7 6 14 0" Stroke="{StaticResource Metal3}" StrokeThickness="1.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                    </Canvas>
+                    <Canvas x:Name="TorsoRain" Visibility="Collapsed">
+                        <Path Data="M29 112 Q28 78 50 73 Q72 78 71 112 Z" Fill="{StaticResource Raincoat}" />
+                        <Ellipse Canvas.Left="48.7" Canvas.Top="86.7" Width="2.6" Height="2.6" Fill="{StaticResource RaincoatDark}" />
+                        <Ellipse Canvas.Left="48.7" Canvas.Top="96.7" Width="2.6" Height="2.6" Fill="{StaticResource RaincoatDark}" />
+                    </Canvas>
+                    <Canvas x:Name="TorsoSnowExtra" Visibility="Collapsed">
+                        <Rectangle Canvas.Left="35" Canvas.Top="70" Width="30" Height="8" RadiusX="4" RadiusY="4" Fill="{StaticResource Wool}" />
+                        <Rectangle Canvas.Left="55" Canvas.Top="74" Width="7" Height="17" RadiusX="3" RadiusY="3" Fill="{StaticResource Wool}" />
+                        <Line X1="55" Y1="81" X2="62" Y2="81" Stroke="{StaticResource Cream}" StrokeThickness="1.2" />
+                        <Line X1="55" Y1="86" X2="62" Y2="86" Stroke="{StaticResource Cream}" StrokeThickness="1.2" />
+                    </Canvas>
+                    <Canvas x:Name="TorsoStorm" Visibility="Collapsed">
+                        <Path Data="M22 112 Q20 76 50 67 Q80 76 78 112 Q64 106 50 110 Q36 106 22 112 Z" Fill="{StaticResource Body1}" Stroke="{StaticResource Metal3}" StrokeThickness="0.8" />
+                        <Line X1="37" Y1="77" X2="35" Y2="108" StrokeThickness="1">
+                            <Line.Stroke><SolidColorBrush Color="#e6c476" Opacity="0.3" /></Line.Stroke>
+                        </Line>
+                        <Line X1="63" Y1="77" X2="65" Y2="108" StrokeThickness="1">
+                            <Line.Stroke><SolidColorBrush Color="#e6c476" Opacity="0.3" /></Line.Stroke>
+                        </Line>
+                        <Path Data="M24 94 Q50 88 76 94" StrokeThickness="1">
+                            <Path.Stroke><SolidColorBrush Color="#e6c476" Opacity="0.3" /></Path.Stroke>
+                        </Path>
+                    </Canvas>
+
+                    <!-- Counts down the break during a workout nudge — right on
+                         the shirt, where a real stopwatch would sit. -->
+                    <TextBlock x:Name="WorkoutCountdown" Canvas.Left="30" Canvas.Top="83.3" Width="40" TextAlignment="Center"
+                               FontFamily="IBM Plex Mono, Segoe UI" FontWeight="Bold" FontSize="9"
+                               Foreground="{StaticResource Paper}" Visibility="Collapsed" Text="2:00" />
+
+                    <Canvas x:Name="Head">
+                        <Canvas.RenderTransform><RotateTransform x:Name="HeadRotate" CenterX="50" CenterY="50" /></Canvas.RenderTransform>
+                        <Ellipse x:Name="RaincoatHoodBack" Canvas.Left="23" Canvas.Top="22" Width="54" Height="54" Fill="{StaticResource Raincoat}" Visibility="Collapsed" />
+                        <Ellipse Canvas.Left="23" Canvas.Top="48.5" Width="9" Height="9" Fill="{StaticResource Skin}" />
+                        <Ellipse Canvas.Left="68" Canvas.Top="48.5" Width="9" Height="9" Fill="{StaticResource Skin}" />
+                        <Ellipse Canvas.Left="27.5" Canvas.Top="27.5" Width="45" Height="45" Fill="{StaticResource Skin}" />
+                        <Ellipse Canvas.Left="33.8" Canvas.Top="54.8" Width="6.4" Height="6.4" Fill="#e8907c" Opacity="0.45" />
+                        <Ellipse Canvas.Left="59.8" Canvas.Top="54.8" Width="6.4" Height="6.4" Fill="#e8907c" Opacity="0.45" />
+                        <Path Data="M27.5 50 Q26 25 50 25 Q74 25 72.5 50 Q68 38 58 37 Q53 31 45 35 Q34 37 27.5 50 Z" Fill="{StaticResource Hair}" />
+
+                        <Canvas x:Name="EyesOpen">
+                            <Ellipse Canvas.Left="39.4" Canvas.Top="49.4" Width="5.2" Height="5.2" Fill="{StaticResource Ink}" />
+                            <Ellipse Canvas.Left="55.4" Canvas.Top="49.4" Width="5.2" Height="5.2" Fill="{StaticResource Ink}" />
+                            <Ellipse Canvas.Left="42.1" Canvas.Top="50.3" Width="1.6" Height="1.6" Fill="White" />
+                            <Ellipse Canvas.Left="58.1" Canvas.Top="50.3" Width="1.6" Height="1.6" Fill="White" />
+                        </Canvas>
+                        <Path x:Name="EyesClosed" Data="M38.5 52 q3.5 3 7 0 M54.5 52 q3.5 3 7 0" Stroke="{StaticResource Hair}" StrokeThickness="1.6"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" Visibility="Collapsed" />
+
+                        <Path x:Name="MouthAwake" Data="M46 62 q4 3 8 0" Stroke="{StaticResource Hair}" StrokeThickness="1.3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Path x:Name="MouthSleep" Data="M47 62.5 q3 2 6 0" Stroke="{StaticResource Hair}" StrokeThickness="1.3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Visibility="Collapsed" />
+                        <Ellipse x:Name="MouthWorkout" Canvas.Left="47.7" Canvas.Top="60.1" Width="4.6" Height="5.8" Fill="{StaticResource Hair}" Visibility="Collapsed" />
+                        <Canvas x:Name="Zzz" Visibility="Collapsed">
+                            <TextBlock x:Name="Z1" Canvas.Left="70" Canvas.Top="26.4" Text="z" FontFamily="Segoe UI" FontWeight="Bold" FontSize="7" Foreground="{StaticResource Paper}" Opacity="0.6">
+                                <TextBlock.RenderTransform><TranslateTransform /></TextBlock.RenderTransform>
+                            </TextBlock>
+                            <TextBlock x:Name="Z2" Canvas.Left="76" Canvas.Top="20.1" Text="z" FontFamily="Segoe UI" FontWeight="Bold" FontSize="5.5" Foreground="{StaticResource Paper}" Opacity="0.45">
+                                <TextBlock.RenderTransform><TranslateTransform /></TextBlock.RenderTransform>
+                            </TextBlock>
+                        </Canvas>
+
+                        <Path x:Name="RaincoatHood" Data="M24 52 Q22 20 50 20 Q78 20 76 52 Q72 34 50 32 Q28 34 24 52 Z" Fill="{StaticResource Raincoat}"
+                              Stroke="{StaticResource RaincoatDark}" StrokeThickness="0.8" Visibility="Collapsed" />
+
+                        <Canvas x:Name="SnowHat" Visibility="Collapsed">
+                            <Path Data="M27 44 Q27 19 50 19 Q73 19 73 44 Z" Fill="{StaticResource Wool}" />
+                            <Rectangle Canvas.Left="26" Canvas.Top="38" Width="48" Height="8" RadiusX="4" RadiusY="4" Fill="{StaticResource Cream}" />
+                            <Ellipse Canvas.Left="45" Canvas.Top="12" Width="10" Height="10" Fill="{StaticResource Cream}" />
+                        </Canvas>
+
+                        <Canvas x:Name="Sunglasses" Visibility="Collapsed">
+                            <Rectangle Canvas.Left="35" Canvas.Top="27" Width="12" Height="7" RadiusX="3" RadiusY="3" Fill="{StaticResource Shades}" />
+                            <Rectangle Canvas.Left="53" Canvas.Top="27" Width="12" Height="7" RadiusX="3" RadiusY="3" Fill="{StaticResource Shades}" />
+                            <Line X1="47" Y1="30" X2="53" Y2="30" Stroke="{StaticResource Shades}" StrokeThickness="1.5" />
+                            <Line X1="37" Y1="29" X2="40" Y2="29" StrokeThickness="0.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round">
+                                <Line.Stroke><SolidColorBrush Color="White" Opacity="0.5" /></Line.Stroke>
+                            </Line>
+                        </Canvas>
+                    </Canvas>
+
+                    <Canvas x:Name="HangingArms">
+                        <Path x:Name="ArmL" Data="M35 80 Q28 92 31 102" Stroke="{StaticResource Sweater}" StrokeThickness="7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Ellipse Canvas.Left="27" Canvas.Top="98" Width="8" Height="8" Fill="{StaticResource Skin}" />
+                        <Canvas x:Name="RightArm">
+                            <Canvas.RenderTransform><TranslateTransform x:Name="RightArmShift" /></Canvas.RenderTransform>
+                            <Path x:Name="ArmR" Data="M65 80 Q72 92 69 102" Stroke="{StaticResource Sweater}" StrokeThickness="7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            <Ellipse Canvas.Left="65" Canvas.Top="98" Width="8" Height="8" Fill="{StaticResource Skin}" />
+                        </Canvas>
+                    </Canvas>
+
+                    <!-- Arms-overhead stretch with a held-up sign, shown instead
+                         of the hanging arms during a workout reminder. -->
+                    <Canvas x:Name="WorkoutArms" Visibility="Collapsed">
+                        <Path Data="M35 80 Q25 60 32 45" Stroke="{StaticResource Sweater}" StrokeThickness="7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Ellipse Canvas.Left="28" Canvas.Top="41" Width="8" Height="8" Fill="{StaticResource Skin}" />
+                        <Path Data="M65 80 Q75 60 68 45" Stroke="{StaticResource Sweater}" StrokeThickness="7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Ellipse Canvas.Left="64" Canvas.Top="41" Width="8" Height="8" Fill="{StaticResource Skin}" />
+                        <Canvas Opacity="0.7">
+                            <Line X1="24" Y1="40" X2="19" Y2="36" Stroke="{StaticResource Paper}" StrokeThickness="1" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            <Line X1="24" Y1="47" X2="18" Y2="47" Stroke="{StaticResource Paper}" StrokeThickness="1" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            <Line X1="76" Y1="40" X2="81" Y2="36" Stroke="{StaticResource Paper}" StrokeThickness="1" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            <Line X1="76" Y1="47" X2="82" Y2="47" Stroke="{StaticResource Paper}" StrokeThickness="1" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        </Canvas>
+                        <Rectangle Canvas.Left="27" Canvas.Top="29" Width="46" Height="16" RadiusX="3" RadiusY="3" Fill="{StaticResource Paper}" Stroke="{StaticResource Metal3}" StrokeThickness="1.2" />
+                        <TextBlock Canvas.Left="27" Canvas.Top="30.8" Width="46" TextAlignment="Center" Text="BREAK"
+                                   FontFamily="IBM Plex Mono, Segoe UI" FontWeight="Bold" FontSize="9" Foreground="{StaticResource Hair}" />
+                    </Canvas>
+
+                    <Canvas x:Name="UmbrellaHeld" Visibility="Collapsed">
+                        <Line X1="69" Y1="100" X2="70" Y2="20" Stroke="{StaticResource Metal3}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Path Data="M69 102 q0 5 -4 5" Stroke="{StaticResource Metal3}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Path Data="M44 20 A26 17 0 0 1 96 20 A6.5 6.5 0 0 0 83 20 A6.5 6.5 0 0 0 70 20 A6.5 6.5 0 0 0 57 20 A6.5 6.5 0 0 0 44 20 Z"
+                              Fill="{StaticResource Body1}" Stroke="{StaticResource Metal3}" StrokeThickness="0.8" StrokeLineJoin="Round" />
+                        <Path Data="M70 3 Q62 9 57 20 M70 3 L70 20 M70 3 Q78 9 83 20" StrokeThickness="0.6">
+                            <Path.Stroke><SolidColorBrush Color="#8a6a2f" Opacity="0.7" /></Path.Stroke>
+                        </Path>
+                        <Line X1="70" Y1="3" X2="70" Y2="0" Stroke="{StaticResource Metal3}" StrokeThickness="1.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                    </Canvas>
+                </Canvas>
+            </Viewbox>
+        </Canvas>
+
+        <!-- ===== text: sky in words, temperature, place ===== -->
+        <TextBlock x:Name="SkyLabel" Style="{StaticResource Label}" Canvas.Left="0" Canvas.Top="-0.5" Width="150"
+                   TextAlignment="Center" FontSize="9" FontWeight="Bold" Visibility="Collapsed" />
+        <TextBlock x:Name="Temp" Style="{StaticResource Label}" Canvas.Left="0" Canvas.Top="171.9" Width="150"
+                   TextAlignment="Center" FontSize="19" FontWeight="ExtraBold" Text="--°" />
+        <TextBlock x:Name="Place" Style="{StaticResource Label}" Canvas.Left="5" Canvas.Top="194" Width="140"
+                   TextAlignment="Center" FontSize="10" Opacity="0.9" TextTrimming="CharacterEllipsis" Text="…" />
+
+        <!-- ===== battery, top-left ===== -->
+        <Canvas x:Name="Battery" Visibility="Collapsed">
+            <Canvas Effect="{StaticResource TextShadow}">
+                <Border Canvas.Left="8" Canvas.Top="18" Width="15" Height="8" BorderBrush="{StaticResource Face}" BorderThickness="1.2" CornerRadius="2" />
+                <Rectangle Canvas.Left="23.3" Canvas.Top="21.2" Width="1.5" Height="3" RadiusX="0.7" RadiusY="0.7" Fill="{StaticResource Face}" />
+                <Rectangle x:Name="BatteryFill" Canvas.Left="10.2" Canvas.Top="20.2" Width="2" Height="3.6" RadiusX="1" RadiusY="1" Fill="{StaticResource Face}" />
+            </Canvas>
+            <StackPanel Canvas.Left="26" Canvas.Top="15.3" Orientation="Horizontal">
+                <TextBlock x:Name="BatteryPercent" Style="{StaticResource Label}" FontSize="10" FontWeight="Bold" Text="--%" />
+                <TextBlock x:Name="BatteryBolt" Style="{StaticResource Label}" FontFamily="Segoe UI Emoji" FontSize="9" Margin="3,0,0,0"
+                           VerticalAlignment="Center" Text="⚡" Visibility="Collapsed" />
+            </StackPanel>
+            <TextBlock x:Name="BatteryTime" Style="{StaticResource Label}" Canvas.Left="9" Canvas.Top="30" FontSize="8.5"
+                       FontWeight="SemiBold" Opacity="0.85" Visibility="Collapsed" />
+        </Canvas>
+
+        <!-- ===== icon bar — must stay in sync with ComputeIconRects ===== -->
+        <Grid Canvas.Left="10" Canvas.Top="208" Width="140" Height="20">
+        <StackPanel x:Name="MediaBar" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Grid x:Name="IconYoutube" Style="{StaticResource MediaIcon}">
+                <Rectangle RadiusX="5" RadiusY="5" Fill="#ff0033" Effect="{StaticResource IconShadow}" />
+                <Path Data="M6.75,5 L12.75,9 L6.75,13 Z" Fill="White" />
+            </Grid>
+            <Grid x:Name="IconSpotify" Style="{StaticResource MediaIcon}">
+                <Ellipse Fill="#1db954" Effect="{StaticResource IconShadow}" />
+                <TextBlock Text="♪" FontFamily="Segoe UI Symbol" FontSize="11" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Grid>
+            <Grid x:Name="IconBell" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="13" Text="🔔" /></Grid>
+            <Grid x:Name="IconSearch" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="13" Text="🔍" /></Grid>
+            <Grid x:Name="IconGpu" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="🖥️" /></Grid>
+            <Grid x:Name="IconRead" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="🗣️" /></Grid>
+            <Grid x:Name="IconMic" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="🎤" /></Grid>
+            <Grid x:Name="IconConvert" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="💱" /></Grid>
+            <Grid x:Name="IconColor" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="🎨" /></Grid>
+            <Grid x:Name="IconQr" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="📱" /></Grid>
+            <Grid x:Name="IconVolume" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="🔊" /></Grid>
+            <Grid x:Name="IconClipboard" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="📋" /></Grid>
+        </StackPanel>
+        </Grid>
+
+        <!-- ===== now playing / latest notification label — PauseIconRect,
+             ListIconRect and LabelBodyRect must stay in sync with this ===== -->
+        <Canvas x:Name="NowPlaying" Visibility="Collapsed">
+            <Rectangle Canvas.Left="3" Canvas.Top="230" Width="144" Height="36" RadiusX="9" RadiusY="9" Fill="#66000000" />
+            <TextBlock x:Name="NowPlayingNote" Canvas.Left="9" Canvas.Top="235" Text="♪" FontFamily="Segoe UI Symbol" FontSize="10"
+                       Foreground="{StaticResource Face}" Opacity="0.85" />
+            <Image x:Name="NowPlayingIcon" Canvas.Left="9" Canvas.Top="235" Width="15" Height="15" Stretch="UniformToFill" Visibility="Collapsed">
+                <Image.Clip><RectangleGeometry Rect="0,0,15,15" RadiusX="3" RadiusY="3" /></Image.Clip>
+            </Image>
+            <Canvas x:Name="TitleLine" Canvas.Left="18" Canvas.Top="234" Width="97" Height="13.75" ClipToBounds="True">
+                <Canvas.OpacityMask>
+                    <LinearGradientBrush x:Name="TitleMask" StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Offset="0" Color="Transparent" />
+                        <GradientStop Offset="0.062" Color="Black" />
+                        <GradientStop Offset="0.938" Color="Black" />
+                        <GradientStop Offset="1" Color="Transparent" />
+                    </LinearGradientBrush>
+                </Canvas.OpacityMask>
+                <TextBlock x:Name="NowPlayingTitle" Canvas.Top="-0.45" FontFamily="Segoe UI" FontSize="11" FontWeight="SemiBold"
+                           Foreground="{StaticResource Face}">
+                    <TextBlock.RenderTransform><TranslateTransform /></TextBlock.RenderTransform>
+                </TextBlock>
+            </Canvas>
+            <Canvas x:Name="SubtitleLine" Canvas.Left="18" Canvas.Top="250.75" Width="97" Height="11.9" ClipToBounds="True">
+                <Canvas.OpacityMask>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Offset="0" Color="Transparent" />
+                        <GradientStop Offset="0.062" Color="Black" />
+                        <GradientStop Offset="0.938" Color="Black" />
+                        <GradientStop Offset="1" Color="Transparent" />
+                    </LinearGradientBrush>
+                </Canvas.OpacityMask>
+                <TextBlock x:Name="NowPlayingSubtitle" Canvas.Top="-0.38" FontFamily="Segoe UI" FontSize="9.5"
+                           Foreground="{StaticResource Face}" Opacity="0.8">
+                    <TextBlock.RenderTransform><TranslateTransform /></TextBlock.RenderTransform>
+                </TextBlock>
+            </Canvas>
+            <TextBlock x:Name="ListButton" Canvas.Left="115" Canvas.Top="233.5" Text="☰" FontFamily="Segoe UI Symbol" FontSize="9"
+                       Foreground="{StaticResource Face}" Opacity="0.8" Visibility="Collapsed" />
+            <TextBlock Canvas.Left="130" Canvas.Top="233.4" Text="⏸" FontFamily="Segoe UI Symbol" FontSize="10"
+                       Foreground="{StaticResource Face}" Opacity="0.8" />
+        </Canvas>
+    </Canvas>
+</UserControl>

@@ -7,7 +7,7 @@ using Windows.UI.Notifications.Management;
 
 namespace CloCloWidget;
 
-public readonly record struct LatestNotification(string AppName, string Title, string Body, string? IconDataUri, string? AppUserModelId);
+public readonly record struct LatestNotification(string AppName, string Title, string Body, byte[]? IconPng, string? AppUserModelId);
 
 // The most recent toast notification, via UserNotificationListener — the
 // same store Windows' own Action Center reads from. This API has
@@ -39,7 +39,7 @@ public static class NotificationWatcher
 
             var title = lines.Length > 0 ? lines[0] : appName;
             var body = lines.Length > 1 ? string.Join(" ", lines.Skip(1)) : "";
-            var icon = await TryGetIconDataUriAsync(latest.AppInfo);
+            var icon = await TryGetIconAsync(latest.AppInfo);
             return new LatestNotification(appName, title, body, icon, latest.AppInfo?.AppUserModelId);
         }
         catch
@@ -48,10 +48,9 @@ public static class NotificationWatcher
         }
     }
 
-    // The page can't reach into WinRT streams itself, so the icon is
-    // shipped over as a data: URI — small enough (a 32x32 logo) that the
-    // base64 bloat doesn't matter for a single postMessage payload.
-    private static async Task<string?> TryGetIconDataUriAsync(Windows.ApplicationModel.AppInfo? appInfo)
+    // The raw image bytes of the sending app's 32x32 logo — decoded for
+    // display by KeeperView.DecodeIcon.
+    private static async Task<byte[]?> TryGetIconAsync(Windows.ApplicationModel.AppInfo? appInfo)
     {
         try
         {
@@ -66,9 +65,7 @@ public static class NotificationWatcher
             await reader.LoadAsync(size);
             var bytes = new byte[size];
             reader.ReadBytes(bytes);
-
-            var contentType = string.IsNullOrEmpty(stream.ContentType) ? "image/png" : stream.ContentType;
-            return $"data:{contentType};base64,{Convert.ToBase64String(bytes)}";
+            return bytes;
         }
         catch
         {

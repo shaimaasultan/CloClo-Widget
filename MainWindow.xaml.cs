@@ -21,9 +21,6 @@ public partial class MainWindow : Window
     private DispatcherTimer? _batteryTimer;
     private DispatcherTimer? _idleTimer;
     private DispatcherTimer? _weatherTimer;
-    // The last successful reading, re-pushed whenever the page reloads so a
-    // menu change doesn't blank the temperature until the next fetch.
-    private WeatherReading? _weather;
     // "awake", "asleep", or "workout" — see UpdateActivityState.
     private string _activityState = "awake";
     // When the current unbroken stretch of activity began — reset every
@@ -111,8 +108,8 @@ public partial class MainWindow : Window
     // relevant), or until the pause button stops it explicitly. A plain
     // fetcher delegate so the same watch/poll/pause machinery works for
     // both "what's playing in this app" and "the latest notification".
-    // Icon is a data: URI (notifications only — media has none) or null.
-    private Func<Task<(string Title, string Subtitle, string? Icon, string? AppUserModelId)?>>? _watchedFetcher;
+    // Icon is the sending app's logo bytes (notifications only — media has none) or null.
+    private Func<Task<(string Title, string Subtitle, byte[]? Icon, string? AppUserModelId)?>>? _watchedFetcher;
     private string? _watchedAppUserModelId;
     // Notifications aren't really "one app" the way media is — the label
     // shows only the latest of possibly several, so clicking it opens
@@ -190,7 +187,7 @@ public partial class MainWindow : Window
         SetWindowLong(hwnd, GWL_EXSTYLE, exStyle);
     }
 
-    private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    private void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         PlaceWindow();
         SetupTrayIcon();
@@ -203,19 +200,9 @@ public partial class MainWindow : Window
         SetupBatteryTimer();
         SetupIdleTimer();
 
-        await Web.EnsureCoreWebView2Async();
-        Web.DefaultBackgroundColor = System.Drawing.Color.Transparent;
-        Web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
-        Web.CoreWebView2.Settings.AreDevToolsEnabled = false;
-        Web.CoreWebView2.Settings.IsStatusBarEnabled = false;
-        // Every NavigateToWidget() call (Refresh weather, a location or sky
-        // change) reloads the page from scratch, dropping whatever label
-        // was showing. Push a fresh one once the new page is actually ready,
-        // rather than relying on "did it change" — from the host's side
-        // nothing changed, but the page lost it regardless.
-        Web.CoreWebView2.NavigationCompleted += (_, _) => { _ = RefreshWatched(); RefreshBattery(); PushActivityState(); PushWeather(); };
-
-        NavigateToWidget();
+        ApplyDisplaySettings();
+        RefreshBattery();
+        PushActivityState();
         SetupWeatherTimer();
     }
 
@@ -229,16 +216,7 @@ public partial class MainWindow : Window
 
     private async Task RefreshWeatherAsync()
     {
-        _weather = await WeatherService.GetCurrentAsync(_settings.Latitude, _settings.Longitude);
-        PushWeather();
-    }
-
-    private void PushWeather()
-    {
-        var json = _weather is { } w
-            ? $"{{\"type\":\"weather\",\"temp\":{w.Temperature},\"sky\":{JsonSerializer.Serialize(w.Sky)},\"isDay\":{(w.IsDay ? "true" : "false")}}}"
-            : "{\"type\":\"weather\",\"temp\":null}";
-        try { Web.CoreWebView2?.PostWebMessageAsJson(json); } catch { /* page not ready yet */ }
+        Keeper.SetWeather(await WeatherService.GetCurrentAsync(_settings.Latitude, _settings.Longitude));
     }
 
     // "Current session" (tried first) turned out to be Windows' own guess
@@ -254,7 +232,7 @@ public partial class MainWindow : Window
         Watch(async () =>
         {
             var info = await NowPlaying.GetForAppAsync(aumidMatches);
-            return info is { } np ? (np.Title, np.Artist, (string?)null, (string?)np.AppUserModelId) : ((string, string, string?, string?)?)null;
+            return info is { } np ? (np.Title, np.Artist, (byte[]?)null, (string?)np.AppUserModelId) : ((string, string, byte[]?, string?)?)null;
         });
     }
 
@@ -264,7 +242,7 @@ public partial class MainWindow : Window
         Watch(async () =>
         {
             var n = await NotificationWatcher.GetLatestAsync();
-            return n is { } latest ? ($"{latest.AppName}: {latest.Title}", latest.Body, latest.IconDataUri, latest.AppUserModelId) : ((string, string, string?, string?)?)null;
+            return n is { } latest ? ($"{latest.AppName}: {latest.Title}", latest.Body, latest.IconPng, latest.AppUserModelId) : ((string, string, byte[]?, string?)?)null;
         });
     }
 
@@ -280,10 +258,10 @@ public partial class MainWindow : Window
         Watch(async () =>
         {
             var names = await Task.Run(GpuInfo.GetNames);
-            if (names.Count == 0) return ((string, string, string?, string?)?)null;
+            if (names.Count == 0) return ((string, string, byte[]?, string?)?)null;
             var title = names[0];
             var subtitle = names.Count > 1 ? string.Join(", ", names.Skip(1)) : "";
-            return (title, subtitle, (string?)null, (string?)null);
+            return (title, subtitle, (byte[]?)null, (string?)null);
         });
     }
 
@@ -526,13 +504,13 @@ public partial class MainWindow : Window
     // timer would be wrong rather than just wasteful.
     private void ShowOneShotLabel(string title, string subtitle)
     {
-        _watchedFetcher = () => Task.FromResult<(string, string, string?, string?)?>((title, subtitle, null, null));
+        _watchedFetcher = () => Task.FromResult<(string, string, byte[]?, string?)?>((title, subtitle, null, null));
         _watchedAppUserModelId = null;
         _nowPlayingTimer?.Stop();
         _ = RefreshWatched();
     }
 
-    private void Watch(Func<Task<(string Title, string Subtitle, string? Icon, string? AppUserModelId)?>> fetcher)
+    private void Watch(Func<Task<(string Title, string Subtitle, byte[]? Icon, string? AppUserModelId)?>> fetcher)
     {
         _watchedFetcher = fetcher;
         _nowPlayingTimer ??= CreateNowPlayingTimer();
@@ -544,10 +522,7 @@ public partial class MainWindow : Window
     // A one-shot cue the instant watching starts — ties Keeper's posture to
     // the same click that's about to start updating the label, purely
     // cosmetic like the rest of the activity-state work.
-    private void PushPerk()
-    {
-        try { Web.CoreWebView2?.PostWebMessageAsJson("{\"type\":\"perk\"}"); } catch { /* page not ready yet */ }
-    }
+    private void PushPerk() => Keeper.Perk();
 
     // The pause button inside the label itself, not a fourth icon — stops
     // polling immediately and hides the label, rather than waiting for the
@@ -559,7 +534,7 @@ public partial class MainWindow : Window
         _nowPlayingTimer?.Stop();
         SpeechReader.Stop();
         StopColorPicking();
-        try { Web.CoreWebView2?.PostWebMessageAsJson("{\"type\":\"nowPlaying\",\"title\":null,\"artist\":null,\"icon\":null}"); } catch { }
+        Keeper.SetNowPlaying(null, null, null, false);
     }
 
     // Clicking the label body (anywhere but the pause/list buttons)
@@ -672,18 +647,16 @@ public partial class MainWindow : Window
         if (_watchedFetcher == null) return;
         var result = await _watchedFetcher();
         _watchedAppUserModelId = result?.AppUserModelId;
-        var json = result is { } r
-            ? $"{{\"type\":\"nowPlaying\",\"title\":{JsonSerializer.Serialize(r.Title)},\"artist\":{JsonSerializer.Serialize(r.Subtitle)},\"icon\":{JsonSerializer.Serialize(r.Icon)},\"isNotification\":{(_watchingNotifications ? "true" : "false")}}}"
-            : "{\"type\":\"nowPlaying\",\"title\":null,\"artist\":null,\"icon\":null,\"isNotification\":false}";
-        try { Web.CoreWebView2?.PostWebMessageAsJson(json); } catch { /* page not ready yet */ }
+        if (result is { } r) Keeper.SetNowPlaying(r.Title, r.Subtitle, KeeperView.DecodeIcon(r.Icon), _watchingNotifications);
+        else Keeper.SetNowPlaying(null, null, null, false);
     }
 
     // A second, genuinely interactive window, invisible and sized to
     // roughly the character + its temperature/location text, sitting on
     // top of the (click-through) render window. It owns dragging and the
-    // right-click/double-click menu directly via normal WPF mouse events —
-    // no WebView2 message relay needed, since WebView2 never sees mouse
-    // input at all once the parent is WS_EX_TRANSPARENT.
+    // right-click/double-click menu directly via normal WPF mouse events,
+    // since the render window never sees mouse input at all once it's
+    // WS_EX_TRANSPARENT.
     private void CreateAvatarHitWindow()
     {
         _avatarWindow = new Window
@@ -872,11 +845,7 @@ public partial class MainWindow : Window
 
     private void RefreshBattery()
     {
-        var status = BatteryInfo.Read();
-        var json = status is { } s
-            ? $"{{\"type\":\"battery\",\"percent\":{s.Percent.ToString(System.Globalization.CultureInfo.InvariantCulture)},\"charging\":{(s.Charging ? "true" : "false")},\"timeRemaining\":{JsonSerializer.Serialize(s.TimeRemaining)}}}"
-            : "{\"type\":\"battery\",\"percent\":null,\"charging\":false,\"timeRemaining\":null}";
-        try { Web.CoreWebView2?.PostWebMessageAsJson(json); } catch { /* page not ready yet */ }
+        Keeper.SetBattery(BatteryInfo.Read());
     }
 
     // Purely cosmetic and purely local — checks Windows' own system-wide
@@ -955,8 +924,7 @@ public partial class MainWindow : Window
         var secondsLeft = _workoutCountdownEnd is { } end
             ? Math.Max(0, (int)Math.Ceiling((end - DateTime.Now).TotalSeconds))
             : 0;
-        var json = $"{{\"type\":\"activity\",\"state\":{JsonSerializer.Serialize(_activityState)},\"secondsLeft\":{secondsLeft}}}";
-        try { Web.CoreWebView2?.PostWebMessageAsJson(json); } catch { /* page not ready yet */ }
+        Keeper.SetActivity(_activityState, secondsLeft);
     }
 
     private void SetupForegroundTracking()
@@ -993,15 +961,11 @@ public partial class MainWindow : Window
         }
     }
 
-    private void NavigateToWidget()
+    private void ApplyDisplaySettings()
     {
-        var assetsDir = Path.Combine(AppContext.BaseDirectory, "Assets");
-        var htmlPath = Path.Combine(assetsDir, "widget.html");
-        var query =
-            $"?city={Uri.EscapeDataString(_settings.City)}" +
-            $"&sky={Uri.EscapeDataString(_settings.Sky)}" +
-            $"&icons={Uri.EscapeDataString(string.Join(",", IconOrder.Where(k => _settings.EnabledIcons.Contains(k))))}";
-        Web.CoreWebView2.Navigate(new Uri(htmlPath).AbsoluteUri + query);
+        Keeper.SetPlace(_settings.City);
+        Keeper.SetSkyOverride(_settings.Sky);
+        Keeper.SetEnabledIcons(IconOrder.Where(k => _settings.EnabledIcons.Contains(k)));
     }
 
     private void PlaceWindow()
@@ -1137,8 +1101,8 @@ public partial class MainWindow : Window
     // Shown two ways: as the tray icon's menu (Windows positions it near the
     // tray automatically), and via .Show(Point) at the cursor for a
     // right-click on the widget itself — a WPF ContextMenu popup turned out
-    // to be unreliable on this window (AllowsTransparency + a WebView2's own
-    // native child window both interfere with WPF's popup placement), so
+    // to be unreliable on this window (AllowsTransparency + what was then a WebView2's own
+    // native child window both interfered with WPF's popup placement), so
     // both paths share this one WinForms menu instead.
     private DrawingForms.ContextMenuStrip BuildMenu(bool includeShowHide)
     {
@@ -1314,14 +1278,14 @@ public partial class MainWindow : Window
             item.Checked = true;
         }
         _settings.Save();
-        NavigateToWidget();
+        ApplyDisplaySettings();
     }
 
     private void SetSky(string sky)
     {
         _settings.Sky = sky;
         _settings.Save();
-        NavigateToWidget();
+        ApplyDisplaySettings();
     }
 
     private void ShowContextMenu(double screenX, double screenY)
@@ -1339,7 +1303,7 @@ public partial class MainWindow : Window
             _settings.Latitude = dialog.ResolvedLat;
             _settings.Longitude = dialog.ResolvedLon;
             _settings.Save();
-            NavigateToWidget();
+            ApplyDisplaySettings();
             _ = RefreshWeatherAsync();
         }
     }
