@@ -109,6 +109,13 @@ stops with a message there rather than waiting for an answer it can't get.
 Every install closes a running CloClo first, so the exe can be replaced, and
 moves "Start with Windows" to the installed copy if it was on.
 
+CloClo then appears in **Settings → Apps → Installed apps**, and can be
+uninstalled from there. That runs the `uninstall.ps1` installed next to the
+exe, which removes the program, its shortcuts and its "Start with Windows"
+entry (asking for administrator rights for a Program Files copy) but leaves
+your settings and dictation files in AppData. `.\install.ps1 -Uninstall`
+from the project folder does the same.
+
 ### Per-user or Program Files
 
 | | Per-user (default) | Program Files (`-ProgramFiles`) |
@@ -357,7 +364,9 @@ loads anything)
   administrator rights for the copy alone, runs that step in a fresh
   PowerShell started by its full System32 path, and lets it load modules only
   from PowerShell's own system folder — a look-alike module planted in your
-  Documents folder can't run as administrator.
+  Documents folder can't run as administrator. The uninstaller works the
+  same way: it elevates only to remove the Program Files copy, and runs from
+  Program Files itself.
 - **No programs found by name.** The build and installer run `dotnet`,
   PowerShell and `signtool` by their full Program Files / System32 paths and
   find folders through Windows' known-folder lookup, never through `PATH` or

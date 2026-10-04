@@ -62,6 +62,9 @@ $startMenu  = Join-Path ([Environment]::GetFolderPath('Programs')) "$appName.lnk
 $desktop    = Join-Path ([Environment]::GetFolderPath('Desktop')) "$appName.lnk"
 $runKey     = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $runValue   = 'CloCloWidget'   # same name StartupRegistration.cs uses
+# The Installed apps entry (Settings > Apps): HKLM for a Program Files
+# install, HKCU for a per-user one.
+$uninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\CloClo'
 
 function Stop-RunningWidget {
     $running = Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($exeName)) -ErrorAction SilentlyContinue
@@ -110,13 +113,40 @@ function Invoke-Elevated([string]$script) {
 
 function Quote([string]$text) { "'" + $text.Replace("'", "''") + "'" }
 
+# PowerShell that writes the Installed apps entry under the given hive. Built
+# as text so the Program Files case can run it inside the one elevated step.
+# Its uninstall command is the uninstall.ps1 copied into the install folder,
+# run by PowerShell's full path.
+function Get-UninstallEntryScript([string]$hive, [string]$version, [long]$bytes) {
+    $key = "${hive}:\$uninstallKey"
+    $strings = [ordered]@{
+        DisplayName     = $appName
+        DisplayVersion  = $version
+        Publisher       = $appName
+        DisplayIcon     = "$installExe,0"
+        InstallLocation = $installDir
+        UninstallString = "`"$powershellExe`" -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $installDir 'uninstall.ps1')`""
+        InstallDate     = (Get-Date -Format 'yyyyMMdd')
+    }
+    $dwords = [ordered]@{ NoModify = 1; NoRepair = 1; EstimatedSize = [int][Math]::Ceiling($bytes / 1KB) }
+    $lines = @("New-Item -Path $(Quote $key) -Force | Out-Null")
+    foreach ($name in $strings.Keys) {
+        $lines += "New-ItemProperty -Path $(Quote $key) -Name '$name' -Value $(Quote $strings[$name]) -PropertyType String -Force | Out-Null"
+    }
+    foreach ($name in $dwords.Keys) {
+        $lines += "New-ItemProperty -Path $(Quote $key) -Name '$name' -Value $($dwords[$name]) -PropertyType DWord -Force | Out-Null"
+    }
+    $lines -join "`n"
+}
+
 if ($Uninstall) {
     Stop-RunningWidget
     Remove-Item $startMenu, $desktop -Force -ErrorAction SilentlyContinue
     Remove-ItemProperty -Path $runKey -Name $runValue -ErrorAction SilentlyContinue
     Remove-Item $userDir -Recurse -Force -ErrorAction SilentlyContinue
-    if (Test-Path $machineDir) {
-        Invoke-Elevated "Remove-Item -LiteralPath $(Quote $machineDir) -Recurse -Force"
+    Remove-Item -LiteralPath "HKCU:\$uninstallKey" -Recurse -Force -ErrorAction SilentlyContinue
+    if ((Test-Path $machineDir) -or (Test-Path -LiteralPath "HKLM:\$uninstallKey")) {
+        Invoke-Elevated "Remove-Item -LiteralPath $(Quote $machineDir) -Recurse -Force -ErrorAction SilentlyContinue`nRemove-Item -LiteralPath $(Quote "HKLM:\$uninstallKey") -Recurse -Force -ErrorAction SilentlyContinue"
     }
     Write-Host "Uninstalled. Settings and dictation files in AppData were left in place."
     return
@@ -210,7 +240,12 @@ if ($installed) {
 }
 
 Stop-RunningWidget   # again, in case one was started while building
-$files = Get-ChildItem $publishDir -File | Where-Object Extension -in '.exe', '.dll'
+$files = @(Get-ChildItem $publishDir -File | Where-Object Extension -in '.exe', '.dll')
+# The uninstaller goes along, so Settings > Apps can remove CloClo without
+# this project folder. In Program Files it's as protected as the exe.
+$files += Get-Item -LiteralPath (Join-Path $root 'uninstall.ps1')
+$version = (Get-Item -LiteralPath $builtExe).VersionInfo.ProductVersion -replace '\+.*$', ''
+$totalBytes = ($files | Measure-Object Length -Sum).Sum
 if ($ProgramFiles) {
     # Hashed here, as the user who built them, and re-checked by the
     # elevated copy - so what lands in Program Files is exactly the build.
@@ -229,7 +264,10 @@ foreach (`$f in @($($entries -join ', '))) {
         throw "`$target changed between build and install - not installed."
     }
 }
+$(Get-UninstallEntryScript 'HKLM' $version $totalBytes)
 "@
+    # A per-user Installed apps entry would now point at a removed copy.
+    Remove-Item -LiteralPath "HKCU:\$uninstallKey" -Recurse -Force -ErrorAction SilentlyContinue
     # A per-user copy left behind would still be the one anything else
     # (old shortcuts, "Start with Windows") points at.
     if (Test-Path $userDir) {
@@ -239,11 +277,13 @@ foreach (`$f in @($($entries -join ', '))) {
 } else {
     New-Item -ItemType Directory -Force -Path $installDir | Out-Null
     foreach ($f in $files) { Copy-Item $f.FullName (Join-Path $installDir $f.Name) -Force }
+    & ([scriptblock]::Create((Get-UninstallEntryScript 'HKCU' $version $totalBytes)))
     if (Test-Path $machineDir) {
         Write-Warning "A Program Files copy also exists in $machineDir. Remove it with: .\install.ps1 -Uninstall"
     }
 }
 Write-Host "Installed to $installExe"
+Write-Host "Listed in Settings > Apps > Installed apps as '$appName' (uninstall it from there)."
 
 # --- 3. shortcuts ----------------------------------------------------------
 $shell = New-Object -ComObject WScript.Shell
