@@ -102,6 +102,40 @@ is deliberately not added to Windows' trusted roots, so Windows still treats
 the publisher as unverified. Keep the certificate's private key to yourself —
 never export it with the key.
 
+#### Replacing the certificate
+
+To throw the CloClo certificate away and sign with a fresh one, run these in
+order from the `cloclo-widget` folder, in one PowerShell window:
+
+1. Delete every existing CloClo certificate together with its private key
+   (other certificates are left alone; deleting by path is what makes
+   `-DeleteKey` work):
+
+   ```powershell
+   Get-ChildItem Cert:\CurrentUser\My | Where-Object Subject -eq "CN=CloClo" | ForEach-Object { Remove-Item -Path "Cert:\CurrentUser\My\$($_.Thumbprint)" -DeleteKey }
+   ```
+
+2. Create the new certificate:
+
+   ```powershell
+   $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=CloClo" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(5)
+   ```
+
+3. Close the widget if it's running — right-click it → Exit, or:
+
+   ```powershell
+   Stop-Process -Name CloCloWidget -Force
+   ```
+
+4. Build, sign with the new certificate and install:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\install.ps1 -CertThumbprint $cert.Thumbprint -DesktopShortcut
+   ```
+
+Run step 1 only once per replacement: running step 2 twice leaves two CloClo
+certificates, and `$cert` then holds both.
+
 ## Rebuilding from source
 
 ```bash
