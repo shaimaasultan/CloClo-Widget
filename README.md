@@ -273,8 +273,16 @@ What the widget does to protect itself and what it shows:
   Windows reads those before any app code runs, and CloClo never creates
   them. The `DOTNET_STARTUP_HOOKS` variable, which would run another DLL's
   code before the app starts, is ignored.
-- **Never runs as administrator by accident.** `install.ps1` starts the
-  widget as your normal user even when run from an admin window.
+- **Administrator rights only where needed.** `install.ps1` refuses to run
+  from an administrator window, so building never runs as admin and the
+  widget always starts as your normal user. With `-ProgramFiles` it asks for
+  administrator rights for the copy alone, runs that step in a fresh
+  PowerShell started by its full System32 path, and lets it load modules only
+  from PowerShell's own system folder — a look-alike module planted in your
+  Documents folder can't run as administrator.
+- **Doesn't crash on errors.** Unexpected errors are logged to
+  `%LocalAppData%\CloCloWidget\errors.log` (error type and code location only,
+  never any text) and the widget keeps running.
 - **Signed builds.** Every DLL bundled into the exe and the exe itself can be
   Authenticode-signed and timestamped (see [Signing](#signing)).
 
