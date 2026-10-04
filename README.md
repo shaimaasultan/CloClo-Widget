@@ -6,32 +6,75 @@ sitting near your taskbar clock (Windows doesn't allow any app to draw
 directly on the system clock itself, so this is the closest a normal app can
 get — the bottom-right corner, just above the taskbar).
 
-## Running it
+## Getting started
 
-The ready-to-run build is in `publish\CloCloWidget.exe` — just double-click
-it. No install, no .NET required (it's self-contained). Windows may show a
-SmartScreen prompt the first time since the .exe isn't code-signed; choose
-"More info" → "Run anyway".
+1. Install it — from the `cloclo-widget` folder, in PowerShell:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\install.ps1 -DesktopShortcut
+   ```
+
+   This builds CloClo, installs it for your account and adds Start Menu and
+   desktop shortcuts. See [Installing](#installing) for signing and for
+   installing to Program Files.
+2. Start it from the Start Menu or desktop shortcut. It appears in the
+   bottom-right corner, just above the taskbar.
+3. Right-click it → **Set location…** to pick your city.
+
+Always start the installed copy, not `publish\CloCloWidget.exe`: every install
+empties and rebuilds `publish\`, and a copy running from there gets in the way.
+
+### Requirements
+
+- **To run:** Windows 10 version 2004 or later, or Windows 11, 64-bit. Nothing
+  else — the app carries its own .NET runtime.
+- **To build:** the [.NET 10 SDK](https://dotnet.microsoft.com/download).
+- **To sign:** additionally the Windows SDK, which provides `signtool.exe`.
 
 ## Using it
 
 - **Drag** anywhere on the widget to move it. It remembers where you leave it.
-- **Right-click** for a menu: set your location, refresh the weather, toggle
-  always-on-top, or exit.
-- A tray icon (near the clock, in the hidden-icons area) does the same —
-  double-click it to show/hide the widget if you ever lose track of it.
-- **Privacy** (right-click menu): the widget is hidden from screenshots,
-  recordings and screen sharing by default, and notification text can be
-  turned off so only the sending app's name shows.
-- Dictated text is saved under `%LocalAppData%\CloCloWidget\Dictation`
-  (right-click → "Open dictation folder").
-- Weather refreshes automatically every 20 minutes, from
+- **Icon bar** under the temperature — up to 7 of these at a time, picked in
+  right-click → **Icons**:
+
+  | Icon | What it does |
+  |---|---|
+  | YouTube / Spotify | Shows what's playing there, and keeps it updated |
+  | Notifications | Shows your latest notification; the list button opens Windows' notification panel |
+  | Search other apps | Lists apps playing media and every open app, to watch or switch to |
+  | GPU info | Shows the graphics cards in this PC |
+  | Read selection aloud | Reads the text you highlighted in another app |
+  | Dictate | Opens Windows voice typing; the text is saved to a file |
+  | Convert units | Converts a highlighted "5 km", "98 F"… (km/mi/m/ft, kg/lb, °C/°F/K) |
+  | Color picker | Pick any color on screen; its hex code is copied |
+  | QR code from selection | Makes a QR code of the highlighted text or link |
+  | Volume/mute toggle | Mutes or unmutes the system sound |
+  | Clipboard history | Lists Windows' clipboard history (Win+V); click one to copy it again |
+
+  Clicking the label that appears under the icons opens the app it's showing;
+  its pause button stops it.
+- **Right-click** (or double-click) for the menu: **Set location…**,
+  **Weather** (follow the live forecast, or pick a sky by hand), **Icons**,
+  **Sleep after** (Keeper dozes off when you're away), **Workout reminder**
+  (a stretch-break nudge after a long stretch at the keyboard), **Refresh
+  weather**, the two dictation items, **Privacy**, **Always on top**, **Start
+  with Windows** and **Exit**.
+- A **tray icon** (near the clock, in the hidden-icons area) has the same
+  menu — double-click it to show or hide the widget.
+- **Privacy:** the widget, and the clipboard-history and QR windows, are
+  hidden from screenshots, recordings and screen sharing by default.
+  Notification text can be switched off so only the sending app's name shows.
+- **Dictation** is saved under `%LocalAppData%\CloCloWidget\Dictation`
+  (right-click → **Open dictation folder**).
+- **Weather** refreshes every 20 minutes from
   [Open-Meteo](https://open-meteo.com) (no API key, no account).
+- **Settings** are kept in `%AppData%\CloCloWidget\settings.json`.
 
 ## Installing
 
-One command builds, signs (optional), installs for the current user (no admin
-needed) and adds a Start Menu shortcut — run it again any time to upgrade:
+One command builds, signs (optional), installs and adds a Start Menu
+shortcut — run it again any time to upgrade. By default it installs for your
+account only, with no administrator rights needed:
 
 ```powershell
 .\install.ps1                                   # unsigned
@@ -55,6 +98,10 @@ installed copy if it was on.
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -ProgramFiles -CertThumbprint $cert.Thumbprint -DesktopShortcut
 ```
+
+(`$cert` is your signing certificate — see
+[Signing with your own certificate](#signing-with-your-own-certificate-left-untrusted)
+for how to load it. Leave `-CertThumbprint …` out to install unsigned.)
 
 This installs to `C:\Program Files\CloClo`, which only administrators can
 change, so no other program running as you can replace CloClo or its files.
@@ -104,6 +151,10 @@ difference is that no Windows PC trusts it, so the publisher still shows as
 unverified. It stays that way on purpose — it's never added to Windows'
 trusted roots. Run everything below in PowerShell from the `cloclo-widget`
 folder.
+
+The commands use the name `CN=CloClo`. If you created yours under another
+name (say `CN=CloClo_yourname`), use that name in every command below —
+otherwise loading or deleting the certificate finds nothing.
 
 **First time — create the certificate** (once; it's valid for five years):
 
@@ -161,6 +212,10 @@ dotnet build
 dotnet run
 ```
 
+A plain `dotnet build` runs fine for development but isn't the shipped
+layout: it unpacks nothing, so the startup check of native files has nothing
+to do. `install.ps1` is the way to get a real installed copy.
+
 To produce another standalone .exe:
 
 ```bash
@@ -205,9 +260,10 @@ What the widget does to protect itself and what it shows:
   and then: never to a terminal (where Ctrl+C stops the running command),
   never to a password field, never to a window that's no longer in front, and
   the previous clipboard is put back afterwards, kept out of clipboard history.
-- **Checks its own native files at startup.** The single-file exe unpacks
-  WPF's native DLLs to `%TEMP%\.net\CloCloWidget\`, and .NET reuses whatever
-  it finds there. Before anything loads them, CloClo checks each one against
+- **Checks its own native files at startup.** In the per-user install, the
+  single-file exe unpacks WPF's native DLLs to `%TEMP%\.net\CloCloWidget\`,
+  and .NET reuses whatever it finds there. (A Program Files install puts
+  them next to the exe instead, where only administrators can change them.) Before anything loads them, CloClo checks each one against
   the exact name and SHA-256 recorded inside the signed exe at build time,
   plus an intact Microsoft signature. A planted, modified, older or renamed
   file makes it re-extract clean copies; if that doesn't fix it, it refuses
