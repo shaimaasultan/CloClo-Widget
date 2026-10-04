@@ -23,8 +23,11 @@
   The certificate is either -Thumbprint (a code-signing cert in the
   CurrentUser or LocalMachine "My" store - also where hardware tokens and
   cloud signing providers expose theirs) or -PfxFile, whose password is
-  read from the SIGN_CERT_PASSWORD environment variable so it never shows
-  up on a command line.
+  read from the SIGN_CERT_PASSWORD environment variable. A .pfx is never
+  handed to signtool directly - that needs the password on signtool's
+  command line, readable by any other process. Instead it's loaded here,
+  placed in the CurrentUser "My" store just for the signing, used by
+  thumbprint, then removed again together with its private key.
 #>
 param(
     [string]$Thumbprint,
@@ -50,17 +53,40 @@ if (-not $SignTool -or -not (Test-Path $SignTool)) {
     throw 'signtool.exe not found - install the Windows SDK, or pass -SignTool <path>.'
 }
 
+# Makes the .pfx's certificate available to signtool by thumbprint for the
+# duration of $action only. A certificate that was already in the store
+# beforehand is left exactly as it was.
+function Use-PfxCertificate([scriptblock]$action) {
+    $flags = [Security.Cryptography.X509Certificates.X509KeyStorageFlags]'UserKeySet, PersistKeySet'
+    $cert = [Security.Cryptography.X509Certificates.X509Certificate2]::new($PfxFile, $env:SIGN_CERT_PASSWORD, $flags)
+    $store = [Security.Cryptography.X509Certificates.X509Store]::new('My', 'CurrentUser')
+    $store.Open('ReadWrite')
+    $alreadyThere = $store.Certificates.Find('FindByThumbprint', $cert.Thumbprint, $false).Count -gt 0
+    try {
+        if (-not $alreadyThere) { $store.Add($cert) }
+        & $action $cert.Thumbprint
+    } finally {
+        if (-not $alreadyThere) {
+            $store.Remove($cert)
+            # Removing the certificate leaves its private key behind in the
+            # user's key store - delete that too.
+            $key = [Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
+            if ($key -is [Security.Cryptography.RSACng]) { $key.Key.Delete() }
+            elseif ($key -is [Security.Cryptography.RSACryptoServiceProvider]) { $key.PersistKeyInCsp = $false; $key.Clear() }
+        }
+        $store.Close()
+    }
+}
+
 function Invoke-SignTool([string[]]$files) {
-    $certArgs = if ($Thumbprint) { @('/sha1', $Thumbprint) }
-                else {
-                    $a = @('/f', $PfxFile)
-                    if ($env:SIGN_CERT_PASSWORD) { $a += @('/p', $env:SIGN_CERT_PASSWORD) }
-                    $a
-                }
-    # One signtool call for the whole batch: one timestamp round-trip per
-    # file, but a single certificate lookup / PIN prompt.
-    & $SignTool sign @certArgs /fd SHA256 /tr $TimestampUrl /td SHA256 /q @files
-    if ($LASTEXITCODE -ne 0) { throw "signtool failed (exit $LASTEXITCODE)." }
+    $sign = {
+        param($thumbprint)
+        # One signtool call for the whole batch: one timestamp round-trip
+        # per file, but a single certificate lookup / PIN prompt.
+        & $SignTool sign /sha1 $thumbprint /fd SHA256 /tr $TimestampUrl /td SHA256 /q @files
+        if ($LASTEXITCODE -ne 0) { throw "signtool failed (exit $LASTEXITCODE)." }
+    }
+    if ($Thumbprint) { & $sign $Thumbprint } else { Use-PfxCertificate $sign }
 
     foreach ($f in $files) {
         $sig = Get-AuthenticodeSignature -LiteralPath $f

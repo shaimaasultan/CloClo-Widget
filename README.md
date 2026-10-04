@@ -64,7 +64,9 @@ single-file exe carries every DLL inside it:
 Everything is SHA-256 signed with an RFC 3161 timestamp (so signatures stay
 valid after the certificate expires) and checked right after signing; any
 failure fails the build. A `.pfx` password is passed through the
-`SIGN_CERT_PASSWORD` environment variable, never on a command line. Any
+`SIGN_CERT_PASSWORD` environment variable, never on a command line: the
+certificate is loaded in memory, placed in your personal certificate store
+only while signing, and removed again afterwards along with its private key. Any
 Authenticode code-signing certificate works; Azure Trusted Signing is the
 cheapest option for an individual developer.
 
