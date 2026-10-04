@@ -56,6 +56,20 @@ public static partial class NativeLibraryCheck
         // build the assembly has a real path and there's nothing to check.
         if (!string.IsNullOrEmpty(typeof(NativeLibraryCheck).Assembly.Location)) return true;
 
+        // A .NET profiler named in the environment is loaded by the runtime
+        // before any code here exists, so this can't stop it from loading —
+        // but CloClo won't carry on with one attached. Nothing legitimate
+        // profiles an installed copy of a desktop widget.
+        var profiler = ProfilerVariables().ToList();
+        if (profiler.Count > 0)
+        {
+            Refuse("CloClo won't run with a .NET profiler attached. These environment variables load one:\n\n" +
+                string.Join("\n", profiler) +
+                "\n\nCloClo never sets them. Remove them (System Properties -> Environment Variables), " +
+                "sign out and back in, and consider a malware scan.");
+            return false;
+        }
+
         var sideFiles = LoaderSideFiles().ToList();
         if (sideFiles.Count > 0)
         {
@@ -113,6 +127,22 @@ public static partial class NativeLibraryCheck
     private static void Refuse(string message) =>
         System.Windows.Forms.MessageBox.Show(message, "CloClo",
             System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
+
+    // CORECLR_ENABLE_PROFILING / CORECLR_PROFILER(_PATH)(_32/_64) attach a
+    // startup profiler, CORECLR_ENABLE_NOTIFICATION_PROFILERS more of them;
+    // the DOTNET_/COMPlus_ spellings cover the runtime's other config names.
+    private static IEnumerable<string> ProfilerVariables()
+    {
+        foreach (System.Collections.DictionaryEntry entry in Environment.GetEnvironmentVariables())
+        {
+            var name = (string)entry.Key;
+            if (string.IsNullOrWhiteSpace(entry.Value as string)) continue;
+            var isProfiler = name.StartsWith("CORECLR_", StringComparison.OrdinalIgnoreCase)
+                || ((name.StartsWith("DOTNET_", StringComparison.OrdinalIgnoreCase) || name.StartsWith("COMPlus_", StringComparison.OrdinalIgnoreCase))
+                    && name.Contains("Profil", StringComparison.OrdinalIgnoreCase));
+            if (isProfiler) yield return name;
+        }
+    }
 
     private static IEnumerable<string> LoaderSideFiles()
     {

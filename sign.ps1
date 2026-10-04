@@ -81,6 +81,40 @@ function Use-PfxCertificate([scriptblock]$action) {
     }
 }
 
+# A certificate from the store may only sign if Windows guards its private
+# key: either a key with "strong key protection", where Windows asks for
+# confirmation every time anything signs with it, or a smart-card key that
+# needs its PIN. Otherwise any program running as this user could sign its
+# own files as CloClo without a trace. (A .pfx is protected by its
+# password instead, so that path isn't affected.)
+function Assert-ProtectedKey([string]$thumbprint) {
+    $cert = Get-ChildItem Cert:\CurrentUser\My, Cert:\LocalMachine\My -ErrorAction SilentlyContinue |
+        Where-Object Thumbprint -eq $thumbprint | Select-Object -First 1
+    if (-not $cert) { throw "No certificate with thumbprint $thumbprint in your certificate store." }
+    if (-not $cert.HasPrivateKey) { throw "The certificate $thumbprint has no private key here, so it can't sign." }
+
+    $key = [Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
+    if (-not $key) { $key = [Security.Cryptography.X509Certificates.ECDsaCertificateExtensions]::GetECDsaPrivateKey($cert) }
+    $protected = $false
+    $how = 'an unprotected software key'
+    if ($key -is [Security.Cryptography.RSACng] -or $key -is [Security.Cryptography.ECDsaCng]) {
+        $cng = $key.Key
+        $level = $cng.UIPolicy.ProtectionLevel
+        if ($level -ne [Security.Cryptography.CngUIProtectionLevels]::None) { $protected = $true; $how = "a protected key ($level)" }
+        elseif ($cng.Provider.Provider -eq 'Microsoft Smart Card Key Storage Provider') { $protected = $true; $how = 'a smart-card key' }
+    } elseif ($key -is [Security.Cryptography.RSACryptoServiceProvider]) {
+        $info = $key.CspKeyContainerInfo
+        if ($info.Protected -or $info.HardwareDevice) { $protected = $true; $how = 'a protected or hardware key' }
+    }
+    if (-not $protected) {
+        throw ("The certificate $($cert.Subject) has $how - any program running as you could sign with it silently. " +
+            "Create a protected one instead (Windows will then ask you to confirm each signing):`n" +
+            "  New-SelfSignedCertificate -Type CodeSigningCert -Subject `"CN=CloClo`" -CertStoreLocation Cert:\CurrentUser\My -KeyProtection Protect -NotAfter (Get-Date).AddYears(5)`n" +
+            "See README > Signing with your own certificate.")
+    }
+    Write-Host "Signing key: $how [$($cert.Subject)]"
+}
+
 function Invoke-SignTool([string[]]$files) {
     $sign = {
         param($thumbprint)
@@ -89,7 +123,7 @@ function Invoke-SignTool([string[]]$files) {
         & $SignTool sign /sha1 $thumbprint /fd SHA256 /tr $TimestampUrl /td SHA256 /q @files
         if ($LASTEXITCODE -ne 0) { throw "signtool failed (exit $LASTEXITCODE)." }
     }
-    if ($Thumbprint) { & $sign $Thumbprint } else { Use-PfxCertificate $sign }
+    if ($Thumbprint) { Assert-ProtectedKey $Thumbprint; & $sign $Thumbprint } else { Use-PfxCertificate $sign }
 
     foreach ($f in $files) {
         $sig = Get-AuthenticodeSignature -LiteralPath $f

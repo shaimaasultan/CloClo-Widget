@@ -156,10 +156,14 @@ The commands use the name `CN=CloClo`. If you created yours under another
 name (say `CN=CloClo_yourname`), use that name in every command below —
 otherwise loading or deleting the certificate finds nothing.
 
-**First time — create the certificate** (once; it's valid for five years):
+**First time — create the certificate** (once; it's valid for five years).
+`-KeyProtection Protect` gives it a protected private key: Windows asks you to
+confirm while creating it, and again every time something signs with it. The
+build refuses to sign with a certificate whose key isn't protected, since any
+program running as you could otherwise sign its own files as CloClo:
 
 ```powershell
-$cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=CloClo" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(5)
+$cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=CloClo" -CertStoreLocation Cert:\CurrentUser\My -KeyProtection Protect -NotAfter (Get-Date).AddYears(5)
 ```
 
 **Every time — sign and install.** In a new PowerShell window, first load the
@@ -181,11 +185,20 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -CertThumbprint $cert.Thu
 as administrator can't be closed that way; the script then says so — close it
 with right-click → Exit and run the command again.
 
-The build prints "signed, but the certificate isn't trusted on this machine"
+While building, Windows asks you to confirm the signing (once for the DLLs,
+once for the exe) — that's the key protection at work. The build prints
+"signed, but the certificate isn't trusted on this machine"
 for each file, and the last line reads "signed, but this PC doesn't trust the
 certificate yet". Both are expected.
 
-**Replacing the certificate** — delete every CloClo certificate together with
+**Updating with a different certificate.** The installer only replaces an
+installed CloClo with a build signed by the same certificate. After a
+certificate change it shows the installed and the new thumbprints, and
+continues only if you type `YES` — a swapped build signed by someone else
+would look exactly like that, so only say yes when you changed it yourself.
+
+**Replacing the certificate** — for example one made before key protection
+was required, which the build now refuses. Delete every CloClo certificate together with
 its private key (other certificates aren't touched), then create a new one
 and sign and install as above:
 
@@ -194,7 +207,7 @@ Get-ChildItem Cert:\CurrentUser\My | Where-Object Subject -eq "CN=CloClo" | ForE
 ```
 
 ```powershell
-$cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=CloClo" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(5)
+$cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=CloClo" -CertStoreLocation Cert:\CurrentUser\My -KeyProtection Protect -NotAfter (Get-Date).AddYears(5)
 ```
 
 ```powershell
@@ -291,6 +304,15 @@ What the widget does to protect itself and what it shows:
   never any text) and the widget keeps running.
 - **Signed builds.** Every DLL bundled into the exe and the exe itself can be
   Authenticode-signed and timestamped (see [Signing](#signing)).
+- **Only a protected key can sign.** The build refuses a certificate from
+  your store unless Windows guards its private key (strong key protection,
+  so you confirm each signing, or a smart card). An unprotected key could be
+  used by any program running as you to sign its own files as CloClo.
+- **Updates keep the signer.** The installer won't replace an installed
+  CloClo with a build signed by a different certificate (or an unsigned one)
+  unless you type `YES` after seeing both thumbprints.
+- **No profilers.** CloClo refuses to run while a .NET profiler is set in the
+  environment (`CORECLR_ENABLE_PROFILING` and related variables).
 
 Limits — what a program already running as you can still do:
 
@@ -300,7 +322,8 @@ Limits — what a program already running as you can still do:
   closes this: the exe and its native DLLs are then writable only by
   administrators, and nothing is unpacked to `%TEMP%`.
 - **With either install,** attach a .NET profiler by setting environment
-  variables (`CORECLR_ENABLE_PROFILING` and friends), which loads code before
-  any of CloClo's own runs. Your environment variables belong to your account,
-  so no install location changes this. The same goes for your shortcuts and
+  variables (`CORECLR_ENABLE_PROFILING` and friends). The runtime loads it
+  before any of CloClo's own code runs; CloClo then notices and refuses to
+  continue, but the profiler's code has already run by then. Your environment
+  variables belong to your account, so no install location changes this. The same goes for your shortcuts and
   the "Start with Windows" entry, which another program could repoint.

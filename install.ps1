@@ -176,6 +176,24 @@ $builtExe = Join-Path $publishDir $exeName
 if (-not (Test-Path $builtExe)) { throw "Build output not found at $builtExe." }
 
 # --- 2. install ------------------------------------------------------------
+# An update must come from the same signer as what's installed. A different
+# certificate (or none, replacing a signed copy) is exactly what a swapped
+# build would look like, so it needs an explicit YES - with both thumbprints
+# shown - rather than going through quietly.
+$installed = @((Join-Path $machineDir $exeName), (Join-Path $userDir $exeName)) | Where-Object { Test-Path $_ } | Select-Object -First 1
+if ($installed) {
+    $oldSigner = (Get-AuthenticodeSignature -LiteralPath $installed).SignerCertificate
+    $newSigner = (Get-AuthenticodeSignature -LiteralPath $builtExe).SignerCertificate
+    if ($oldSigner -and (-not $newSigner -or $newSigner.Thumbprint -ne $oldSigner.Thumbprint)) {
+        Write-Warning "This build isn't signed by the same certificate as the installed CloClo."
+        Write-Host "  Installed: $($oldSigner.Thumbprint)  $($oldSigner.Subject)"
+        Write-Host "  New build: $(if ($newSigner) { "$($newSigner.Thumbprint)  $($newSigner.Subject)" } else { 'not signed' })"
+        Write-Host "Continue only if you changed the certificate yourself."
+        $answer = try { Read-Host "Type YES to replace it" } catch { '' }
+        if ($answer -cne 'YES') { throw "Not installed - the installed copy was left as it was." }
+    }
+}
+
 Stop-RunningWidget   # again, in case one was started while building
 $files = Get-ChildItem $publishDir -File | Where-Object Extension -in '.exe', '.dll'
 if ($ProgramFiles) {
