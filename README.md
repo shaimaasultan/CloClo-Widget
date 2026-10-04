@@ -156,3 +156,48 @@ Open-Meteo on the host and maps it to a sky (clear/cloudy/rain/snow/storm…).
 A second, invisible window sized to the avatar takes the clicks — dragging,
 the icon bar and the right-click menu. Settings (location, window position,
 always-on-top) persist to `%AppData%\CloCloWidget\settings.json`.
+
+## Security
+
+What the widget does to protect itself and what it shows:
+
+- **No browser engine.** Keeper is drawn natively in WPF, so there's no web
+  page, script or embedded Chromium to attack. The only network calls are
+  HTTPS requests to Open-Meteo (weather, place search) and OpenStreetMap
+  Nominatim ("Use my location"), with fixed hosts, a 15-second timeout and a
+  1 MB response limit.
+- **Location stays coarse.** Coordinates are rounded to about 1 km before
+  they're saved or sent anywhere; a precise GPS fix never leaves the machine.
+- **Out of screen sharing.** The widget and the clipboard-history and QR
+  windows are hidden from screenshots, recordings and screen sharing by
+  default (right-click → Privacy). Notification text can be switched off so
+  only the sending app's name shows.
+- **Careful with your selection.** "Read selection", "Convert" and "QR" ask
+  the app for the highlighted text through UI Automation first, without
+  touching the clipboard. Only when that isn't supported do they send Ctrl+C,
+  and then: never to a terminal (where Ctrl+C stops the running command),
+  never to a password field, never to a window that's no longer in front, and
+  the previous clipboard is put back afterwards, kept out of clipboard history.
+- **Checks its own native files at startup.** The single-file exe unpacks
+  WPF's native DLLs to `%TEMP%\.net\CloCloWidget\`, and .NET reuses whatever
+  it finds there. Before anything loads them, CloClo checks each one against
+  the exact name and SHA-256 recorded inside the signed exe at build time,
+  plus an intact Microsoft signature. A planted, modified, older or renamed
+  file makes it re-extract clean copies; if that doesn't fix it, it refuses
+  to run.
+- **Refuses loader tricks.** It won't start while `CloCloWidget.exe.config`,
+  `CloCloWidget.exe.local` or `CloCloWidget.exe.manifest` sits next to it —
+  Windows reads those before any app code runs, and CloClo never creates
+  them. The `DOTNET_STARTUP_HOOKS` variable, which would run another DLL's
+  code before the app starts, is ignored.
+- **Never runs as administrator by accident.** `install.ps1` starts the
+  widget as your normal user even when run from an admin window.
+- **Signed builds.** Every DLL bundled into the exe and the exe itself can be
+  Authenticode-signed and timestamped (see [Signing](#signing)).
+
+Limits: everything above protects against tampering by other programs, but a
+program already running as you can still change the installed exe itself
+(`%LocalAppData%\Programs` belongs to your account), or attach a .NET
+profiler through environment variables before any app code runs. Closing
+that gap needs an install location your account can't write to, such as
+Program Files, which needs administrator rights.
