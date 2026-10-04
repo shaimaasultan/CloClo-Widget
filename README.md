@@ -70,71 +70,62 @@ only while signing, and removed again afterwards along with its private key. Any
 Authenticode code-signing certificate works; Azure Trusted Signing is the
 cheapest option for an individual developer.
 
-#### Signing locally with a self-signed certificate (left untrusted)
+#### Signing with your own certificate (left untrusted)
 
-Run these in PowerShell from the `cloclo-widget` folder, all in the same
-window (step 3 uses the `$cert` variable from step 1 or 2).
+A self-signed certificate signs everything exactly like a bought one; the only
+difference is that no Windows PC trusts it, so the publisher still shows as
+unverified. It stays that way on purpose — it's never added to Windows'
+trusted roots. Run everything below in PowerShell from the `cloclo-widget`
+folder.
 
-1. Create a code-signing certificate named CloClo in your personal
-   certificate store — once only:
+**First time — create the certificate** (once; it's valid for five years):
 
-   ```powershell
-   $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=CloClo" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(5)
-   ```
+```powershell
+$cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=CloClo" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(5)
+```
 
-2. In any later PowerShell window, load that certificate again instead of
-   creating a new one:
+**Every time — sign and install.** In a new PowerShell window, first load the
+certificate (this picks the newest CloClo certificate, so it works even if
+there's more than one); in the window you just created it in, `$cert` is
+already set and you can skip this line:
 
-   ```powershell
-   $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Where-Object Subject -eq "CN=CloClo"
-   ```
+```powershell
+$cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Where-Object Subject -eq "CN=CloClo" | Sort-Object NotBefore -Descending | Select-Object -First 1
+```
 
-3. Build, sign, install and create the shortcuts:
+Then build, sign and install:
 
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\install.ps1 -CertThumbprint $cert.Thumbprint -DesktopShortcut
-   ```
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -CertThumbprint $cert.Thumbprint -DesktopShortcut
+```
+
+`install.ps1` closes a running widget by itself. Only a copy that was started
+as administrator can't be closed that way; the script then says so — close it
+with right-click → Exit and run the command again.
 
 The build prints "signed, but the certificate isn't trusted on this machine"
 for each file, and the last line reads "signed, but this PC doesn't trust the
-certificate yet". That's expected: the files are signed, and the certificate
-is deliberately not added to Windows' trusted roots, so Windows still treats
-the publisher as unverified. Keep the certificate's private key to yourself —
-never export it with the key.
+certificate yet". Both are expected.
 
-#### Replacing the certificate
+**Replacing the certificate** — delete every CloClo certificate together with
+its private key (other certificates aren't touched), then create a new one
+and sign and install as above:
 
-To throw the CloClo certificate away and sign with a fresh one, run these in
-order from the `cloclo-widget` folder, in one PowerShell window:
+```powershell
+Get-ChildItem Cert:\CurrentUser\My | Where-Object Subject -eq "CN=CloClo" | ForEach-Object { Remove-Item -Path "Cert:\CurrentUser\My\$($_.Thumbprint)" -DeleteKey }
+```
 
-1. Delete every existing CloClo certificate together with its private key
-   (other certificates are left alone; deleting by path is what makes
-   `-DeleteKey` work):
+```powershell
+$cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=CloClo" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(5)
+```
 
-   ```powershell
-   Get-ChildItem Cert:\CurrentUser\My | Where-Object Subject -eq "CN=CloClo" | ForEach-Object { Remove-Item -Path "Cert:\CurrentUser\My\$($_.Thumbprint)" -DeleteKey }
-   ```
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -CertThumbprint $cert.Thumbprint -DesktopShortcut
+```
 
-2. Create the new certificate:
-
-   ```powershell
-   $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=CloClo" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(5)
-   ```
-
-3. Close the widget if it's running — right-click it → Exit, or:
-
-   ```powershell
-   Stop-Process -Name CloCloWidget -Force
-   ```
-
-4. Build, sign with the new certificate and install:
-
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\install.ps1 -CertThumbprint $cert.Thumbprint -DesktopShortcut
-   ```
-
-Run step 2 only once: running it twice leaves two CloClo certificates (if that
-happens, start again from step 1).
+Deleting the key is permanent, and already-signed copies keep their
+signature. Keep the private key to yourself — never export the certificate
+with its key.
 
 ## Rebuilding from source
 
