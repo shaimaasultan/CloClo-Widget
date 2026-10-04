@@ -28,6 +28,22 @@ SmartScreen prompt the first time since the .exe isn't code-signed; choose
 - Weather refreshes automatically every 20 minutes, from
   [Open-Meteo](https://open-meteo.com) (no API key, no account).
 
+## Installing
+
+One command builds, signs (optional), installs for the current user (no admin
+needed) and adds a Start Menu shortcut — run it again any time to upgrade:
+
+```powershell
+.\install.ps1                                   # unsigned
+.\install.ps1 -CertThumbprint <thumbprint>      # signed
+.\install.ps1 -DesktopShortcut                  # also put a shortcut on the desktop
+.\install.ps1 -Uninstall
+```
+
+It installs to `%LocalAppData%\Programs\CloCloWidget`, closes a running
+widget first so the exe can be replaced, and moves "Start with Windows" to the
+installed copy if it was on.
+
 ## Rebuilding from source
 
 ```bash
