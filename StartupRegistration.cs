@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using Microsoft.Win32;
 
 namespace CloCloWidget;
@@ -16,6 +17,50 @@ public static class StartupRegistration
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: false);
         return key?.GetValue(ValueName) is string;
+    }
+
+    // Keeps an enabled "Start with Windows" pointing at the installed copy
+    // that's actually running. After moving to Program Files, an entry left
+    // pointing at the removed per-user copy would never start CloClo - and
+    // that folder is writable by any program running as this user, which
+    // could put its own CloCloWidget.exe there for Windows to start at every
+    // sign-in. Only an installed copy (Program Files, or the per-user install
+    // folder) ever repairs it, so a development build or a copy run from
+    // elsewhere can't take the entry over; and it only does so when the
+    // registered file is gone, or when the running copy is the Program Files
+    // one and the entry points somewhere else.
+    public static void RepairIfStale()
+    {
+        try
+        {
+            var exe = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(exe)) return;
+            using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: true);
+            var replacement = RepairedValue(exe, key?.GetValue(ValueName) as string, File.Exists,
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
+            if (replacement != null) key!.SetValue(ValueName, replacement);
+        }
+        catch
+        {
+            // Best effort - the menu item still lets the user turn it off and on.
+        }
+    }
+
+    // The decision alone, kept apart from the registry so it can be checked
+    // on its own: the new Run value, or null to leave the entry as it is.
+    internal static string? RepairedValue(string exe, string? registeredValue, Func<string, bool> fileExists,
+        string programFiles, string localAppData)
+    {
+        if (registeredValue == null) return null; // not enabled
+        var programFilesDir = Path.Combine(programFiles, "CloClo") + Path.DirectorySeparatorChar;
+        var userDir = Path.Combine(localAppData, "Programs", "CloCloWidget") + Path.DirectorySeparatorChar;
+        var inProgramFiles = exe.StartsWith(programFilesDir, StringComparison.OrdinalIgnoreCase);
+        if (!inProgramFiles && !exe.StartsWith(userDir, StringComparison.OrdinalIgnoreCase)) return null;
+
+        var registered = registeredValue.Trim().Trim('"');
+        if (string.Equals(registered, exe, StringComparison.OrdinalIgnoreCase)) return null;
+        return inProgramFiles || !fileExists(registered) ? $"\"{exe}\"" : null;
     }
 
     public static void SetEnabled(bool enabled)

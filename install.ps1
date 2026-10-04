@@ -53,6 +53,9 @@ $machineDir = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'CloClo'
 # the per-user "App Paths" registry key and PATH, both of which another
 # program running as this user could point at its own executable.
 $powershellExe = Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe'
+# Same for dotnet: the SDK's own installer puts it under Program Files, where
+# only administrators can change it.
+$dotnetExe = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'dotnet\dotnet.exe'
 $installDir = if ($ProgramFiles) { $machineDir } else { $userDir }
 $installExe = Join-Path $installDir $exeName
 $startMenu  = Join-Path ([Environment]::GetFolderPath('Programs')) "$appName.lnk"
@@ -166,7 +169,10 @@ if ($CertThumbprint) {
 
 Write-Host "Building$(if ($signing) { ' and signing' })..."
 try {
-    & dotnet @publishArgs
+    if (-not (Test-Path -LiteralPath $dotnetExe)) {
+        throw "The .NET SDK wasn't found at $dotnetExe. Install it from https://dotnet.microsoft.com/download (it installs there)."
+    }
+    & $dotnetExe @publishArgs
     if ($LASTEXITCODE -ne 0) { throw "Build failed (dotnet publish exited with $LASTEXITCODE)." }
 } finally {
     Remove-Item Env:\SIGN_CERT_PASSWORD -ErrorAction SilentlyContinue
@@ -255,9 +261,18 @@ foreach ($path in $targets) {
 
 # "Start with Windows" stores the exe path it was enabled from - if it's on,
 # point it at the installed copy rather than wherever it used to run from.
+# Read back afterwards: an entry left pointing at a removed per-user copy
+# means CloClo won't start, and that folder is writable by any program
+# running as this user.
 if (Get-ItemProperty -Path $runKey -Name $runValue -ErrorAction SilentlyContinue) {
-    Set-ItemProperty -Path $runKey -Name $runValue -Value "`"$installExe`""
-    Write-Host "Updated 'Start with Windows' to the installed copy."
+    $wanted = "`"$installExe`""
+    Set-ItemProperty -Path $runKey -Name $runValue -Value $wanted
+    $now = (Get-ItemProperty -Path $runKey -Name $runValue).$runValue
+    if ($now -eq $wanted) {
+        Write-Host "Updated 'Start with Windows' to the installed copy."
+    } else {
+        Write-Warning "Couldn't update 'Start with Windows' (it still points to $now). Turn it off and on again from CloClo's right-click menu."
+    }
 }
 
 if ($signing) {

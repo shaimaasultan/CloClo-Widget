@@ -319,6 +319,16 @@ What the widget does to protect itself and what it shows:
   unless you type `YES` after seeing both thumbprints.
 - **No profilers.** CloClo refuses to run while a .NET profiler is set in the
   environment (`CORECLR_ENABLE_PROFILING` and related variables).
+- **Never signs over a tampered file.** The build signs only DLLs that have
+  no signature at all. A DLL whose signature no longer verifies — for example
+  a runtime file tampered with in the NuGet cache — stops the build instead
+  of getting CloClo's signature on top. The build also runs `dotnet` and
+  PowerShell by their full Program Files / System32 paths, never by name.
+- **"Start with Windows" follows the installed copy.** When an installed
+  CloClo starts and the startup entry points to a copy that's gone (or, for
+  the Program Files copy, anywhere else), it repoints the entry to itself —
+  so it can't be left aimed at a deleted per-user folder that another program
+  could fill. Development builds and copies run from elsewhere never touch it.
 
 Limits — what a program already running as you can still do:
 

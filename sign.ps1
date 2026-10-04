@@ -147,13 +147,29 @@ if ($Path) {
 
 if (-not ($BundleList -and $OutDir -and $SignedList)) { throw 'Bundle mode needs -BundleList, -OutDir and -SignedList.' }
 
-$toSign = @()
-$signedRelative = @()
+# First check every file, then copy: a tampered file stops the build before
+# anything is copied or signed.
+$unsigned = @()
 foreach ($line in Get-Content -LiteralPath $BundleList) {
     if (-not $line.Trim()) { continue }
     $source, $relative = $line.Split('|', 2)
-    if ((Get-AuthenticodeSignature -LiteralPath $source).Status -eq 'Valid') { continue }
+    # Only a file with no signature at all gets ours. A file that carries a
+    # signature which no longer verifies has been changed since its
+    # publisher signed it - most likely a runtime DLL tampered with in the
+    # NuGet cache, which any program running as this user can write to.
+    # Signing over it would launder it under CloClo's name, so stop instead.
+    $status = (Get-AuthenticodeSignature -LiteralPath $source).Status
+    if ($status -eq 'Valid') { continue }
+    if ($status -ne 'NotSigned') {
+        throw "$source carries a signature that doesn't verify ($status) - it was changed after its publisher signed it. Not signing over it. Clear that package from the NuGet cache (dotnet nuget locals all --clear) and build again."
+    }
+    $unsigned += , @($source, $relative)
+}
 
+$toSign = @()
+$signedRelative = @()
+foreach ($entry in $unsigned) {
+    $source, $relative = $entry
     $copy = Join-Path $OutDir $relative
     New-Item -ItemType Directory -Force -Path (Split-Path $copy) | Out-Null
     Copy-Item -LiteralPath $source -Destination $copy -Force

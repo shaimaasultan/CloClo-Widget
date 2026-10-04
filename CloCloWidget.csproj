@@ -82,7 +82,11 @@
     <_SignCertArgs Condition="'$(SignCertThumbprint)' == '' and '$(SignCertFile)' != ''">-PfxFile &quot;$([System.IO.Path]::GetFullPath('$(SignCertFile)'))&quot;</_SignCertArgs>
     <_SignCertArgs Condition="'$(SignToolPath)' != ''">$(_SignCertArgs) -SignTool &quot;$(SignToolPath)&quot;</_SignCertArgs>
     <_SignCertArgs Condition="'$(SignTimestampUrl)' != ''">$(_SignCertArgs) -TimestampUrl $(SignTimestampUrl)</_SignCertArgs>
-    <_SignCommand>powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $(_SignScript) $(_SignCertArgs)</_SignCommand>
+    <!-- Full path, not "powershell.exe": a bare name is looked up through
+         PATH, where another program could put a look-alike that then gets
+         to hand its own files to the signing key. -->
+    <_SignPowerShell>$([System.IO.Path]::Combine($([System.Environment]::GetFolderPath(SpecialFolder.System)), 'WindowsPowerShell', 'v1.0', 'powershell.exe'))</_SignPowerShell>
+    <_SignCommand>&quot;$(_SignPowerShell)&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $(_SignScript) $(_SignCertArgs)</_SignCommand>
   </PropertyGroup>
 
   <Target Name="SignBundledBinaries" AfterTargets="PrepareForBundle" Condition="'$(_SignEnabled)' == 'true'">

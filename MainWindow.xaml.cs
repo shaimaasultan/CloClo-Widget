@@ -186,6 +186,7 @@ public partial class MainWindow : Window
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
+        StartupRegistration.RepairIfStale();
         PlaceWindow();
         SetupTrayIcon();
         CreateAvatarHitWindow();
