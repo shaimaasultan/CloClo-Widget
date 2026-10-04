@@ -3,9 +3,11 @@
   Builds, optionally signs, and installs CloClo for the current user.
 
 .DESCRIPTION
-  Publishes a self-contained single-file build, signs it when a
-  code-signing certificate thumbprint is given (see the csproj's
-  SignPublishedExe target), copies it to %LocalAppData%\Programs\CloCloWidget
+  Publishes a self-contained single-file build and, when a certificate is
+  given, signs it (via sign.ps1, see the csproj's signing targets): first
+  every unsigned DLL that goes inside the exe - the app's own
+  CloCloWidget.dll and any unsigned third-party library - then the
+  finished exe itself. It then copies the exe to %LocalAppData%\Programs\CloCloWidget
   and creates a Start Menu shortcut (plus a desktop one with -DesktopShortcut).
   No admin rights needed. Re-running it upgrades in place.
 
@@ -14,10 +16,14 @@
 .EXAMPLE
   .\install.ps1 -CertThumbprint 0123ABCD... -DesktopShortcut
 .EXAMPLE
+  .\install.ps1 -PfxPath C:\certs\codesign.pfx     # prompts for its password
+.EXAMPLE
   .\install.ps1 -Uninstall
 #>
 param(
     [string]$CertThumbprint,
+    [string]$PfxPath,
+    [SecureString]$PfxPassword,
     [switch]$DesktopShortcut,
     [switch]$NoLaunch,
     [switch]$Uninstall
@@ -60,15 +66,26 @@ $publishArgs = @(
     '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true',
     '-o', $publishDir, '-nologo'
 )
+$signing = [bool]($CertThumbprint -or $PfxPath)
 if ($CertThumbprint) {
     $publishArgs += "-p:SignCertThumbprint=$CertThumbprint"
+} elseif ($PfxPath) {
+    $PfxPath = (Resolve-Path -LiteralPath $PfxPath).Path
+    if (-not $PfxPassword) { $PfxPassword = Read-Host -AsSecureString "Password for $(Split-Path $PfxPath -Leaf) (Enter if none)" }
+    $publishArgs += "-p:SignCertFile=$PfxPath"
+    # Handed to sign.ps1 through the environment, never on a command line.
+    $env:SIGN_CERT_PASSWORD = [Net.NetworkCredential]::new('', $PfxPassword).Password
 } else {
-    Write-Warning "No -CertThumbprint given: the exe will be unsigned (Windows SmartScreen may warn on first run)."
+    Write-Warning "No -CertThumbprint or -PfxPath given: the app will be unsigned (Windows SmartScreen may warn on first run)."
 }
 
-Write-Host "Building..."
-& dotnet @publishArgs
-if ($LASTEXITCODE -ne 0) { throw "Build failed (dotnet publish exited with $LASTEXITCODE)." }
+Write-Host "Building$(if ($signing) { ' and signing' })..."
+try {
+    & dotnet @publishArgs
+    if ($LASTEXITCODE -ne 0) { throw "Build failed (dotnet publish exited with $LASTEXITCODE)." }
+} finally {
+    Remove-Item Env:\SIGN_CERT_PASSWORD -ErrorAction SilentlyContinue
+}
 
 $builtExe = Join-Path $publishDir $exeName
 if (-not (Test-Path $builtExe)) { throw "Build output not found at $builtExe." }
@@ -93,14 +110,14 @@ foreach ($path in $targets) {
     Write-Host "Shortcut: $path"
 }
 
-# "Start with Windows" stores the exe path it was enabled from — if it's on,
+# "Start with Windows" stores the exe path it was enabled from - if it's on,
 # point it at the installed copy rather than wherever it used to run from.
 if (Get-ItemProperty -Path $runKey -Name $runValue -ErrorAction SilentlyContinue) {
     Set-ItemProperty -Path $runKey -Name $runValue -Value "`"$installExe`""
     Write-Host "Updated 'Start with Windows' to the installed copy."
 }
 
-if ($CertThumbprint) {
+if ($signing) {
     $sig = Get-AuthenticodeSignature $installExe
     Write-Host "Signature: $($sig.Status) ($($sig.SignerCertificate.Subject))"
 }

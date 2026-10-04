@@ -19,28 +19,64 @@
   </ItemGroup>
 
   <!--
-    Opt-in Authenticode signing of the published exe — runs only when a
-    code-signing certificate's thumbprint is passed in, e.g.
-      dotnet publish ... -p:SignCertThumbprint=<sha1 thumbprint>
-    The certificate must be in the current user's (or machine's) "My"
-    store, which is also where a hardware token or Azure Key Vault/Trusted
-    Signing CSP surfaces it. signtool comes from the newest installed
-    Windows SDK unless SignToolPath says otherwise. The signature is
-    RFC 3161 timestamped so it stays valid after the certificate expires,
-    and verified straight after signing so a bad signature fails the build.
+    Opt-in Authenticode signing, done by sign.ps1 (install.ps1 drives it).
+    Runs only when a certificate is given:
+      -p:SignCertThumbprint=<sha1>   a code-signing cert in the "My" store
+                                     (also where hardware tokens and cloud
+                                     signing providers expose theirs), or
+      -p:SignCertFile=<path.pfx>     password in env var SIGN_CERT_PASSWORD
+    Two stages, because a single-file publish packs every DLL inside the exe:
+      1. SignBundledBinaries — just before bundling, signs copies of every
+         DLL that isn't already validly signed (CloCloWidget.dll and any
+         unsigned third-party library), and bundles those copies instead.
+      2. SignPublishedExe — signs the finished CloCloWidget.exe.
+    Signatures are RFC 3161 timestamped (valid after the cert expires) and
+    checked straight after signing; a failure fails the build.
   -->
-  <Target Name="SignPublishedExe" AfterTargets="Publish" Condition="'$(SignCertThumbprint)' != ''">
-    <ItemGroup>
-      <_SignToolCandidate Include="$(MSBuildProgramFiles32)\Windows Kits\10\bin\*\x64\signtool.exe" />
-    </ItemGroup>
+  <PropertyGroup>
+    <_SignEnabled Condition="'$(SignCertThumbprint)' != '' or '$(SignCertFile)' != ''">true</_SignEnabled>
+    <_SignScript>&quot;$(MSBuildProjectDirectory)\sign.ps1&quot;</_SignScript>
+    <_SignCertArgs Condition="'$(SignCertThumbprint)' != ''">-Thumbprint $(SignCertThumbprint)</_SignCertArgs>
+    <_SignCertArgs Condition="'$(SignCertThumbprint)' == '' and '$(SignCertFile)' != ''">-PfxFile &quot;$([System.IO.Path]::GetFullPath('$(SignCertFile)'))&quot;</_SignCertArgs>
+    <_SignCertArgs Condition="'$(SignToolPath)' != ''">$(_SignCertArgs) -SignTool &quot;$(SignToolPath)&quot;</_SignCertArgs>
+    <_SignCertArgs Condition="'$(SignTimestampUrl)' != ''">$(_SignCertArgs) -TimestampUrl $(SignTimestampUrl)</_SignCertArgs>
+    <_SignCommand>powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $(_SignScript) $(_SignCertArgs)</_SignCommand>
+  </PropertyGroup>
+
+  <Target Name="SignBundledBinaries" AfterTargets="PrepareForBundle" Condition="'$(_SignEnabled)' == 'true'">
     <PropertyGroup>
-      <SignToolPath Condition="'$(SignToolPath)' == ''">$([System.Text.RegularExpressions.Regex]::Match('@(_SignToolCandidate)', '[^;]+$'))</SignToolPath>
-      <SignTimestampUrl Condition="'$(SignTimestampUrl)' == ''">http://timestamp.digicert.com</SignTimestampUrl>
-      <_SignTarget>$([System.IO.Path]::GetFullPath('$(PublishDir)$(AssemblyName).exe'))</_SignTarget>
+      <_SignWorkDir>$(MSBuildProjectDirectory)\$(IntermediateOutputPath)signed\</_SignWorkDir>
     </PropertyGroup>
-    <Error Condition="!Exists('$(SignToolPath)')" Text="signtool.exe not found — install the Windows SDK or pass -p:SignToolPath=..." />
-    <Exec Command="&quot;$(SignToolPath)&quot; sign /sha1 $(SignCertThumbprint) /fd SHA256 /tr $(SignTimestampUrl) /td SHA256 &quot;$(_SignTarget)&quot;" />
-    <Exec Command="&quot;$(SignToolPath)&quot; verify /pa &quot;$(_SignTarget)&quot;" />
+    <ItemGroup>
+      <!-- DLLs only: the one .exe in here is the host stub the bundle gets
+           appended to, and a signature on it would be broken by that —
+           it's signed once, as the finished exe, by SignPublishedExe. -->
+      <_SignCandidate Include="@(FilesToBundle)" Condition="'%(Extension)' == '.dll'" />
+    </ItemGroup>
+    <RemoveDir Directories="$(_SignWorkDir)" />
+    <MakeDir Directories="$(_SignWorkDir)" />
+    <WriteLinesToFile File="$(_SignWorkDir)bundle.txt" Lines="@(_SignCandidate->'%(FullPath)|%(RelativePath)')" Overwrite="true" />
+    <Exec Command="$(_SignCommand) -BundleList &quot;$(_SignWorkDir)bundle.txt&quot; -OutDir &quot;$(_SignWorkDir)files&quot; -SignedList &quot;$(_SignWorkDir)signed.txt&quot;" />
+    <ReadLinesFromFile File="$(_SignWorkDir)signed.txt">
+      <Output TaskParameter="Lines" ItemName="_SignedLine" />
+    </ReadLinesFromFile>
+    <ItemGroup>
+      <!-- The bundle items that were signed, found by RelativePath (their
+           place inside the bundle) — item paths here mix absolute and
+           project-relative forms, so matching on those misses some. -->
+      <_SignedRelative Include="@(_SignedLine)" RelativePath="%(Identity)" />
+      <_SignUntouched Include="@(FilesToBundle)" />
+      <_SignUntouched Remove="@(_SignedRelative)" MatchOnMetadata="RelativePath" />
+      <_SignReplaced Include="@(FilesToBundle)" />
+      <_SignReplaced Remove="@(_SignUntouched)" MatchOnMetadata="RelativePath" />
+      <!-- ...swapped for their signed copies (a transform keeps metadata). -->
+      <FilesToBundle Remove="@(_SignReplaced)" MatchOnMetadata="RelativePath" />
+      <FilesToBundle Include="@(_SignReplaced->'$(_SignWorkDir)files\%(RelativePath)')" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="SignPublishedExe" AfterTargets="Publish" Condition="'$(_SignEnabled)' == 'true'">
+    <Exec Command="$(_SignCommand) -Path &quot;$([System.IO.Path]::GetFullPath('$(PublishDir)$(AssemblyName).exe'))&quot;" />
   </Target>
 
 </Project>

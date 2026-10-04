@@ -35,7 +35,8 @@ needed) and adds a Start Menu shortcut — run it again any time to upgrade:
 
 ```powershell
 .\install.ps1                                   # unsigned
-.\install.ps1 -CertThumbprint <thumbprint>      # signed
+.\install.ps1 -CertThumbprint <thumbprint>      # signed, cert from your certificate store
+.\install.ps1 -PfxPath C:\certs\codesign.pfx    # signed, cert from a .pfx (asks for its password)
 .\install.ps1 -DesktopShortcut                  # also put a shortcut on the desktop
 .\install.ps1 -Uninstall
 ```
@@ -43,6 +44,25 @@ needed) and adds a Start Menu shortcut — run it again any time to upgrade:
 It installs to `%LocalAppData%\Programs\CloCloWidget`, closes a running
 widget first so the exe can be replaced, and moves "Start with Windows" to the
 installed copy if it was on.
+
+### Signing
+
+With a certificate, `sign.ps1` runs inside the build in two stages, since the
+single-file exe carries every DLL inside it:
+
+1. Just before bundling, every DLL that isn't already validly signed — the
+   app's own `CloCloWidget.dll` and unsigned third-party ones such as
+   `QRCoder.dll` — is copied to `obj\...\signed\`, the copy is signed, and the
+   bundle is built from the signed copies. Microsoft's runtime DLLs keep their
+   own signatures, and nothing in the NuGet cache is modified.
+2. The finished `CloCloWidget.exe` is signed.
+
+Everything is SHA-256 signed with an RFC 3161 timestamp (so signatures stay
+valid after the certificate expires) and checked right after signing; any
+failure fails the build. A `.pfx` password is passed through the
+`SIGN_CERT_PASSWORD` environment variable, never on a command line. Any
+Authenticode code-signing certificate works; Azure Trusted Signing is the
+cheapest option for an individual developer.
 
 ## Rebuilding from source
 
@@ -57,17 +77,9 @@ To produce another standalone .exe:
 dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o ./publish
 ```
 
-To code-sign it (removes the SmartScreen prompt and lets people verify the
-build), add the thumbprint of a code-signing certificate from your
-certificate store — the exe is then signed, timestamped and verified as part
-of the publish, and the build fails if any of that doesn't succeed:
-
-```bash
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o ./publish -p:SignCertThumbprint=<thumbprint>
-```
-
-Any Authenticode certificate works; Azure Trusted Signing is the cheapest
-option for an individual developer.
+To sign it the same way `install.ps1` does, add
+`-p:SignCertThumbprint=<thumbprint>`, or `-p:SignCertFile=<path.pfx>` with the
+password in `SIGN_CERT_PASSWORD`.
 
 ## How it's built
 
