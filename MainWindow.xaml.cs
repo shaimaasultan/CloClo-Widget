@@ -476,8 +476,7 @@ public partial class MainWindow : Window
         _colorPickerOverlay.Picked += color =>
         {
             var hex = ColorPicker.ToHex(color);
-            System.Windows.Clipboard.SetText(hex);
-            ShowOneShotLabel(hex, "Copied to clipboard");
+            ShowOneShotLabel(hex, SafeClipboard.TrySetText(hex) ? "Copied to clipboard" : "Clipboard busy - not copied");
             new ColorViewerWindow(color) { Owner = this }.Show();
             _colorPickerOverlay = null;
         };

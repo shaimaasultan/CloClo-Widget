@@ -46,8 +46,7 @@ public partial class ColorViewerWindow : Window
         Controls.Grid.SetColumn(copyButton, 2);
         copyButton.Click += (_, _) =>
         {
-            System.Windows.Clipboard.SetText(value);
-            copyButton.Content = "Copied!";
+            copyButton.Content = SafeClipboard.TrySetText(value) ? "Copied!" : "Clipboard busy";
         };
 
         grid.Children.Add(labelBlock);

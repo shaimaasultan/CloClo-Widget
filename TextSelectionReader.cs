@@ -61,6 +61,9 @@ public static class TextSelectionReader
         SetForegroundWindow(targetWindow);
         await Task.Delay(120);
         if (GetForegroundWindow() != targetWindow) return null;
+        // Never read out of a password box — not via UI Automation, and not
+        // by sending it Ctrl+C either.
+        if (await Task.Run(IsFocusedPasswordField)) return null;
 
         var automationTask = Task.Run(() => TryReadViaUiAutomation(targetWindow));
         if (await Task.WhenAny(automationTask, Task.Delay(UiAutomationTimeout)) == automationTask
@@ -74,6 +77,12 @@ public static class TextSelectionReader
         // have moved on to another window since.
         if (GetForegroundWindow() != targetWindow) return null;
         return await ReadViaClipboardAsync();
+    }
+
+    private static bool IsFocusedPasswordField()
+    {
+        try { return AutomationElement.FocusedElement?.Current.IsPassword == true; }
+        catch { return false; }
     }
 
     private static string? TryReadViaUiAutomation(IntPtr targetWindow)

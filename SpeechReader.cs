@@ -18,10 +18,14 @@ public static class SpeechReader
 {
     private static readonly SpeechSynthesizer Synth = new();
     private static readonly MediaPlayer Player = new();
+    // Plenty for a highlighted paragraph; an accidental select-all of a huge
+    // document would otherwise be synthesized in full, all in memory.
+    private const int MaxSpokenChars = 5000;
 
     public static void Speak(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
+        if (text.Length > MaxSpokenChars) text = text[..MaxSpokenChars];
         _ = SpeakAsync(text);
     }
 

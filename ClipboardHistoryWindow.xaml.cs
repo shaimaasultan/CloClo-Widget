@@ -47,8 +47,7 @@ public partial class ClipboardHistoryWindow : Window
         };
         border.MouseLeftButtonUp += (_, _) =>
         {
-            System.Windows.Clipboard.SetText(text);
-            Close();
+            if (SafeClipboard.TrySetText(text)) Close();
         };
         return border;
     }

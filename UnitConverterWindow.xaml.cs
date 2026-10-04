@@ -58,8 +58,7 @@ public partial class UnitConverterWindow : Window
     private void Copy_Click(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrEmpty(ResultBox.Text)) return;
-        System.Windows.Clipboard.SetText(ResultBox.Text);
-        CopyButton.Content = "Copied!";
+        CopyButton.Content = SafeClipboard.TrySetText(ResultBox.Text) ? "Copied!" : "Clipboard busy";
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();

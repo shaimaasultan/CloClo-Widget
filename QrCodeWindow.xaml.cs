@@ -34,8 +34,7 @@ public partial class QrCodeWindow : Window
 
     private void Copy_Click(object sender, RoutedEventArgs e)
     {
-        System.Windows.Clipboard.SetText(SourceTextBox.Text);
-        CopyButton.Content = "Copied!";
+        CopyButton.Content = SafeClipboard.TrySetText(SourceTextBox.Text) ? "Copied!" : "Clipboard busy";
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
