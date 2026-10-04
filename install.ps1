@@ -1,6 +1,7 @@
 <#
 .SYNOPSIS
-  Builds, optionally signs, and installs CloClo for the current user.
+  Builds, optionally signs, and installs CloClo - for the current user, or
+  into Program Files with -ProgramFiles.
 
 .DESCRIPTION
   Publishes a self-contained single-file build and, when a certificate is
@@ -11,6 +12,14 @@
   and creates a Start Menu shortcut (plus a desktop one with -DesktopShortcut).
   No admin rights needed. Re-running it upgrades in place.
 
+  -ProgramFiles installs to "C:\Program Files\CloClo" instead, which only
+  administrators can change - so no other program running as you can swap
+  the exe or its files. The build and signing still run as you; only the
+  copy asks for administrator rights (one UAC prompt), and every copied file
+  is checked against the build's SHA-256 afterwards. WPF's native DLLs are
+  installed next to the exe there, rather than unpacked into %TEMP% at
+  runtime. An existing per-user copy is removed.
+
 .EXAMPLE
   .\install.ps1
 .EXAMPLE
@@ -18,7 +27,9 @@
 .EXAMPLE
   .\install.ps1 -PfxPath C:\certs\codesign.pfx     # prompts for its password
 .EXAMPLE
-  .\install.ps1 -Uninstall
+  .\install.ps1 -ProgramFiles -CertThumbprint 0123ABCD...
+.EXAMPLE
+  .\install.ps1 -Uninstall     # removes either kind of install
 #>
 param(
     [string]$CertThumbprint,
@@ -26,6 +37,7 @@ param(
     [SecureString]$PfxPassword,
     [switch]$DesktopShortcut,
     [switch]$NoLaunch,
+    [switch]$ProgramFiles,
     [switch]$Uninstall
 )
 
@@ -33,7 +45,9 @@ $ErrorActionPreference = 'Stop'
 
 $appName    = 'CloClo'
 $exeName    = 'CloCloWidget.exe'
-$installDir = Join-Path $env:LOCALAPPDATA 'Programs\CloCloWidget'
+$userDir    = Join-Path $env:LOCALAPPDATA 'Programs\CloCloWidget'
+$machineDir = Join-Path $env:ProgramFiles 'CloClo'
+$installDir = if ($ProgramFiles) { $machineDir } else { $userDir }
 $installExe = Join-Path $installDir $exeName
 $startMenu  = Join-Path ([Environment]::GetFolderPath('Programs')) "$appName.lnk"
 $desktop    = Join-Path ([Environment]::GetFolderPath('Desktop')) "$appName.lnk"
@@ -55,11 +69,36 @@ function Stop-RunningWidget {
     }
 }
 
+function Test-Elevated {
+    ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+# Runs a script as administrator. The script travels inline (base64 on the
+# command line), never as a file: a script file in a folder this user can
+# write to could be swapped by another program just before it runs elevated.
+function Invoke-Elevated([string]$script) {
+    if (Test-Elevated) { & ([scriptblock]::Create($script)); return }
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
+    try {
+        $p = Start-Process powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden `
+            -ArgumentList '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded
+    } catch {
+        throw "Administrator rights are needed for Program Files, and the request was declined."
+    }
+    if ($p.ExitCode -ne 0) { throw "The administrator step failed (exit code $($p.ExitCode))." }
+}
+
+function Quote([string]$text) { "'" + $text.Replace("'", "''") + "'" }
+
 if ($Uninstall) {
     Stop-RunningWidget
     Remove-Item $startMenu, $desktop -Force -ErrorAction SilentlyContinue
     Remove-ItemProperty -Path $runKey -Name $runValue -ErrorAction SilentlyContinue
-    Remove-Item $installDir -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item $userDir -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path $machineDir) {
+        Invoke-Elevated "Remove-Item -LiteralPath $(Quote $machineDir) -Recurse -Force"
+    }
     Write-Host "Uninstalled. Settings and dictation files in AppData were left in place."
     return
 }
@@ -76,10 +115,17 @@ if (-not (Test-Path (Join-Path $root 'CloCloWidget.csproj'))) {
     throw "CloCloWidget.csproj not found in $root - run this from the cloclo-widget folder: .\install.ps1"
 }
 $publishDir = Join-Path $root 'publish'
+# Emptied first: the two install kinds publish different file sets, and a
+# stale DLL from the other kind must never be installed.
+if (Test-Path $publishDir) { Get-ChildItem $publishDir -Force | Remove-Item -Recurse -Force }
+# Per-user: WPF's native DLLs ride inside the exe and get unpacked to %TEMP%
+# (verified at startup, see NativeLibraryCheck.cs). Program Files: they sit
+# next to the exe instead, where only administrators can change them.
+$selfExtract = if ($ProgramFiles) { 'false' } else { 'true' }
 $publishArgs = @(
     'publish', (Join-Path $root 'CloCloWidget.csproj'),
     '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true',
-    '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true',
+    '-p:PublishSingleFile=true', "-p:IncludeNativeLibrariesForSelfExtract=$selfExtract",
     '-o', $publishDir, '-nologo'
 )
 $signing = [bool]($CertThumbprint -or $PfxPath)
@@ -108,8 +154,40 @@ if (-not (Test-Path $builtExe)) { throw "Build output not found at $builtExe." }
 
 # --- 2. install ------------------------------------------------------------
 Stop-RunningWidget   # again, in case one was started while building
-New-Item -ItemType Directory -Force -Path $installDir | Out-Null
-Copy-Item $builtExe $installExe -Force
+$files = Get-ChildItem $publishDir -File | Where-Object Extension -in '.exe', '.dll'
+if ($ProgramFiles) {
+    # Hashed here, as the user who built them, and re-checked by the
+    # elevated copy - so what lands in Program Files is exactly the build.
+    $entries = foreach ($f in $files) {
+        "@{ Src = $(Quote $f.FullName); Hash = '$((Get-FileHash $f.FullName -Algorithm SHA256).Hash)' }"
+    }
+    Invoke-Elevated @"
+`$ErrorActionPreference = 'Stop'
+`$dest = $(Quote $machineDir)
+New-Item -ItemType Directory -Force -Path `$dest | Out-Null
+Get-ChildItem `$dest -File | Remove-Item -Force
+foreach (`$f in @($($entries -join ', '))) {
+    `$target = Join-Path `$dest (Split-Path `$f.Src -Leaf)
+    Copy-Item -LiteralPath `$f.Src -Destination `$target -Force
+    if ((Get-FileHash -LiteralPath `$target -Algorithm SHA256).Hash -ne `$f.Hash) {
+        Remove-Item -LiteralPath `$target -Force
+        throw "`$target changed between build and install - not installed."
+    }
+}
+"@
+    # A per-user copy left behind would still be the one anything else
+    # (old shortcuts, "Start with Windows") points at.
+    if (Test-Path $userDir) {
+        Remove-Item $userDir -Recurse -Force
+        Write-Host "Removed the previous per-user copy."
+    }
+} else {
+    New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+    foreach ($f in $files) { Copy-Item $f.FullName (Join-Path $installDir $f.Name) -Force }
+    if (Test-Path $machineDir) {
+        Write-Warning "A Program Files copy also exists in $machineDir. Remove it with: .\install.ps1 -Uninstall"
+    }
+}
 Write-Host "Installed to $installExe"
 
 # --- 3. shortcuts ----------------------------------------------------------
@@ -147,9 +225,7 @@ if ($signing) {
 }
 
 if (-not $NoLaunch) {
-    $elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
-        [Security.Principal.WindowsBuiltInRole]::Administrator)
-    if ($elevated) {
+    if (Test-Elevated) {
         # Started directly, it would inherit this window's admin rights - and
         # a widget that sends keystrokes to other apps shouldn't have them.
         # Explorer always launches things as the normal, non-admin user.

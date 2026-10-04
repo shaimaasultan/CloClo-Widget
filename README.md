@@ -38,7 +38,8 @@ needed) and adds a Start Menu shortcut — run it again any time to upgrade:
 .\install.ps1 -CertThumbprint <thumbprint>      # signed, cert from your certificate store
 .\install.ps1 -PfxPath C:\certs\codesign.pfx    # signed, cert from a .pfx (asks for its password)
 .\install.ps1 -DesktopShortcut                  # also put a shortcut on the desktop
-.\install.ps1 -Uninstall
+.\install.ps1 -ProgramFiles                     # install to Program Files instead (see below)
+.\install.ps1 -Uninstall                        # removes either kind of install
 ```
 
 If Windows says running scripts is disabled, start it as
@@ -48,6 +49,32 @@ that allows this one run without changing any system setting.
 It installs to `%LocalAppData%\Programs\CloCloWidget`, closes a running
 widget first so the exe can be replaced, and moves "Start with Windows" to the
 installed copy if it was on.
+
+### Installing to Program Files
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -ProgramFiles -CertThumbprint $cert.Thumbprint -DesktopShortcut
+```
+
+This installs to `C:\Program Files\CloClo`, which only administrators can
+change, so no other program running as you can replace CloClo or its files.
+The difference from the per-user install:
+
+- **One administrator prompt.** Building and signing still run as you (your
+  certificate is in your own store); only the copy into Program Files asks
+  for administrator rights. The widget itself still starts as your normal
+  user, never as administrator.
+- **Every file is checked after copying.** Each file's SHA-256 is taken from
+  the build and re-checked inside Program Files; a file that changed in
+  between is removed and the install stops.
+- **Nothing is unpacked to `%TEMP%`.** WPF's native DLLs are installed next to
+  the exe in Program Files instead of being unpacked at runtime.
+- **The per-user copy is removed**, so shortcuts and "Start with Windows" all
+  point at the Program Files one.
+
+To go back to a per-user install, run `.\install.ps1 -Uninstall` first (it
+asks for administrator rights to remove the Program Files copy), then install
+without `-ProgramFiles`.
 
 ### Signing
 
@@ -195,9 +222,15 @@ What the widget does to protect itself and what it shows:
 - **Signed builds.** Every DLL bundled into the exe and the exe itself can be
   Authenticode-signed and timestamped (see [Signing](#signing)).
 
-Limits: everything above protects against tampering by other programs, but a
-program already running as you can still change the installed exe itself
-(`%LocalAppData%\Programs` belongs to your account), or attach a .NET
-profiler through environment variables before any app code runs. Closing
-that gap needs an install location your account can't write to, such as
-Program Files, which needs administrator rights.
+Limits — what a program already running as you can still do:
+
+- **With the default per-user install,** replace the installed exe itself,
+  since `%LocalAppData%\Programs` belongs to your account. Installing to
+  Program Files (`-ProgramFiles`, [above](#installing-to-program-files))
+  closes this: the exe and its native DLLs are then writable only by
+  administrators, and nothing is unpacked to `%TEMP%`.
+- **With either install,** attach a .NET profiler by setting environment
+  variables (`CORECLR_ENABLE_PROFILING` and friends), which loads code before
+  any of CloClo's own runs. Your environment variables belong to your account,
+  so no install location changes this. The same goes for your shortcuts and
+  the "Start with Windows" entry, which another program could repoint.
