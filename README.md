@@ -8,27 +8,30 @@ get — the bottom-right corner, just above the taskbar).
 
 ## Getting started
 
-Open a regular PowerShell window — Start → **Windows PowerShell** (or Windows
-Terminal), not PowerShell ISE and not one opened as administrator — and go to
-the project folder:
+1. **Double-click `Install-CloClo.cmd`** in the `cloclo-widget` folder — as
+   yourself, not with "Run as administrator". It builds, signs and installs
+   CloClo the recommended way:
+   - into `C:\Program Files\CloClo`, where no other program running as you can
+     change it (one administrator prompt, for the copy only);
+   - signed with your newest CloClo certificate whose key is protected — if
+     you have none, it offers to create one, and it never signs with an
+     unprotected key;
+   - with Start Menu and desktop shortcuts, and listed in **Settings → Apps →
+     Installed apps**.
 
-```powershell
-cd C:\Ranah\cloclo-widget
-```
-
-1. Install it. The recommended way installs to Program Files, where no other
-   program running as you can change it (one administrator prompt):
-
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\install.ps1 -ProgramFiles -DesktopShortcut
-   ```
-
-   Leave out `-ProgramFiles` for a per-user install that needs no
-   administrator rights. To sign the build, see
-   [Signing with your own certificate](#signing-with-your-own-certificate-left-untrusted).
-2. Start it from the Start Menu or desktop shortcut. It appears in the
-   bottom-right corner, just above the taskbar.
+   Windows asks you to confirm the signing twice (once for the DLLs, once for
+   the exe), then shows the administrator prompt. The window stays open at
+   the end so you can read the result.
+2. CloClo starts by itself afterwards; next time, use the Start Menu or
+   desktop shortcut. It appears in the bottom-right corner, just above the
+   taskbar.
 3. Right-click it → **Set location…** to pick your city.
+
+To remove it, double-click `Uninstall-CloClo.cmd`, or use **Settings → Apps →
+Installed apps → CloClo → Uninstall**.
+
+To choose differently (a per-user install, a `.pfx`, no signing…), run
+`install.ps1` yourself — see [Installing](#installing).
 
 Always start the installed copy, not `publish\CloCloWidget.exe`: every install
 empties and rebuilds `publish\`, and a copy running from there gets in the way.
@@ -87,11 +90,15 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
 One command builds, signs (optional), installs and adds a Start Menu
 shortcut — run it again any time to upgrade:
 
+`Install-CloClo.cmd` runs `install.ps1 -ProgramFiles -UseCloCloCertificate
+-DesktopShortcut`. All the options:
+
 ```powershell
 .\install.ps1                                   # per-user install, unsigned
 .\install.ps1 -ProgramFiles                     # install to Program Files instead (recommended)
 .\install.ps1 -CertThumbprint <thumbprint>      # sign with a certificate from your store
 .\install.ps1 -PfxPath C:\certs\codesign.pfx    # sign with a .pfx (asks for its password)
+.\install.ps1 -UseCloCloCertificate            # sign with your newest protected CloClo certificate (offers to create one)
 .\install.ps1 -DesktopShortcut                  # also put a shortcut on the desktop
 .\install.ps1 -NoLaunch                         # don't start CloClo afterwards
 .\install.ps1 -Uninstall                        # removes either kind of install

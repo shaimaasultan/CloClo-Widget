@@ -29,6 +29,10 @@
 .EXAMPLE
   .\install.ps1 -ProgramFiles -CertThumbprint 0123ABCD...
 .EXAMPLE
+  .\install.ps1 -ProgramFiles -UseCloCloCertificate -DesktopShortcut
+  # what Install-CloClo.cmd runs: signs with your newest protected CloClo
+  # certificate, offering to create one if there is none
+.EXAMPLE
   .\install.ps1 -Uninstall     # removes either kind of install
 #>
 param(
@@ -38,6 +42,7 @@ param(
     [switch]$DesktopShortcut,
     [switch]$NoLaunch,
     [switch]$ProgramFiles,
+    [switch]$UseCloCloCertificate,
     [switch]$Uninstall
 )
 
@@ -157,6 +162,55 @@ if ($Uninstall) {
 # rights itself, for that one step only.
 if (Test-Elevated) {
     throw "Run this from a normal PowerShell window, not one opened as administrator. With -ProgramFiles it asks for administrator rights itself, only for copying into Program Files."
+}
+
+# --- 0. find (or create) the signing certificate -----------------------------
+# -UseCloCloCertificate: sign with the newest valid "CN=CloClo..." code-signing
+# certificate in the user's store whose private key Windows protects - the
+# same rule sign.ps1 enforces, checked here up front so an unprotected one is
+# never even tried. With none, offer to create a protected one.
+function Test-ProtectedKey($cert) {
+    try {
+        $key = [Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
+        if ($key -is [Security.Cryptography.RSACng]) {
+            return $key.Key.UIPolicy.ProtectionLevel -ne [Security.Cryptography.CngUIProtectionLevels]::None -or
+                $key.Key.Provider.Provider -eq 'Microsoft Smart Card Key Storage Provider'
+        }
+        if ($key -is [Security.Cryptography.RSACryptoServiceProvider]) {
+            return $key.CspKeyContainerInfo.Protected -or $key.CspKeyContainerInfo.HardwareDevice
+        }
+    } catch { }
+    $false
+}
+
+if ($UseCloCloCertificate -and -not $CertThumbprint -and -not $PfxPath) {
+    $candidates = @(Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert |
+        Where-Object { $_.Subject -like 'CN=CloClo*' -and $_.HasPrivateKey -and $_.NotAfter -gt (Get-Date) } |
+        Sort-Object NotBefore -Descending)
+    $usable = $candidates | Where-Object { Test-ProtectedKey $_ } | Select-Object -First 1
+    if ($usable) {
+        $CertThumbprint = $usable.Thumbprint
+        Write-Host "Signing certificate: $($usable.Subject) ($CertThumbprint)"
+    } else {
+        foreach ($c in $candidates) {
+            Write-Warning "$($c.Subject) ($($c.Thumbprint)) has no protected key, so it can't sign. Delete it in certmgr.msc > Personal > Certificates when you no longer need it."
+        }
+        if ([Console]::IsInputRedirected) {
+            throw "No protected CloClo signing certificate found, and this window can't ask whether to create one. Run it from a regular PowerShell window."
+        }
+        Write-Host "No protected CloClo signing certificate was found."
+        Write-Host "Create one now? Windows will show a dialog for the new key - Medium asks you to click OK at each signing, High asks for a password." -ForegroundColor Yellow
+        Write-Host "Type Y and press Enter to create it (anything else cancels): " -NoNewline -ForegroundColor Yellow
+        $answer = try { Read-Host } catch { '' }
+        if ($answer -notin 'Y', 'y') { throw "Nothing was built or installed." }
+        $created = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=CloClo' -CertStoreLocation Cert:\CurrentUser\My `
+            -KeyProtection Protect -NotAfter (Get-Date).AddYears(5)
+        if (-not (Test-ProtectedKey $created)) {
+            throw "The new certificate's key didn't come out protected - nothing was built or installed."
+        }
+        $CertThumbprint = $created.Thumbprint
+        Write-Host "Created signing certificate CN=CloClo ($CertThumbprint)."
+    }
 }
 
 # --- 1. build (and sign) ---------------------------------------------------
