@@ -251,6 +251,15 @@ if ($CertThumbprint) {
     Write-Warning "No -CertThumbprint or -PfxPath given: the app will be unsigned (Windows SmartScreen may warn on first run)."
 }
 
+# Record every source file's SHA-256 now, before building. It's checked
+# again right after the build (so the record matches what was actually
+# built) and then installed next to the program, where Check-Source.cmd
+# compares the project folder against it later.
+$checkSource = Join-Path $root 'check-source.ps1'
+$sourceRecord = Join-Path $root 'obj\source-manifest.json'
+New-Item -ItemType Directory -Force -Path (Split-Path $sourceRecord) | Out-Null
+& $checkSource -Create $sourceRecord -Root $root -Quiet
+
 Write-Host "Building$(if ($signing) { ' and signing' })..."
 try {
     if (-not (Test-Path -LiteralPath $dotnetExe)) {
@@ -264,6 +273,10 @@ try {
 
 $builtExe = Join-Path $publishDir $exeName
 if (-not (Test-Path $builtExe)) { throw "Build output not found at $builtExe." }
+& $checkSource -Root $root -Manifest $sourceRecord -Quiet
+if ($LASTEXITCODE -ne 0) {
+    throw "Source files in $root changed while building, so the build can't be tied to a known state. Nothing was installed - run it again."
+}
 
 # --- 2. install ------------------------------------------------------------
 # An update must come from the same signer as what's installed. A different
@@ -298,6 +311,9 @@ $files = @(Get-ChildItem $publishDir -File | Where-Object Extension -in '.exe', 
 # The uninstaller goes along, so Settings > Apps can remove CloClo without
 # this project folder. In Program Files it's as protected as the exe.
 $files += Get-Item -LiteralPath (Join-Path $root 'uninstall.ps1')
+# The source record and its checker, for Check-Source.cmd.
+$files += Get-Item -LiteralPath $checkSource
+$files += Get-Item -LiteralPath $sourceRecord
 $version = (Get-Item -LiteralPath $builtExe).VersionInfo.ProductVersion -replace '\+.*$', ''
 $totalBytes = ($files | Measure-Object Length -Sum).Sum
 if ($ProgramFiles) {

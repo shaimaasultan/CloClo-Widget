@@ -30,6 +30,10 @@ get — the bottom-right corner, just above the taskbar).
 To remove it, double-click `Uninstall-CloClo.cmd`, or use **Settings → Apps →
 Installed apps → CloClo → Uninstall**.
 
+To see whether anything in the project folder changed since the last
+install, double-click **`Check-Source.cmd`** — see
+[Checking the source](#checking-the-source).
+
 To choose differently (a per-user install, a `.pfx`, no signing…), run
 `install.ps1` yourself — see [Installing](#installing).
 
@@ -244,6 +248,23 @@ Deleting the key is permanent, and already-signed copies keep their
 signature. Keep the private key to yourself — never export the certificate
 with its key.
 
+## Checking the source
+
+Every install records the SHA-256 of each source file in the project folder
+(everything except build output: `bin`, `obj`, `publish`, `.vs`), plus the
+git commit, in `source-manifest.json` — taken just before the build and
+checked again right after it, so the record matches what was actually built.
+The record and its checker, `check-source.ps1`, are installed next to the
+program; in Program Files only administrators can change them, so whatever
+might change the code can't also rewrite the record.
+
+Double-click **`Check-Source.cmd`** to compare the project folder with the
+last install. It runs the *installed* checker and lists every file that was
+changed, added or removed since then — or says that all of them still match.
+Run it before building again if you're unsure whether something touched the
+code. (With a per-user install the record sits in a folder you can write to,
+so the check is weaker; the script says so.)
+
 ## Troubleshooting
 
 | What you see | What to do |
@@ -257,7 +278,8 @@ with its key.
 | "The .NET SDK wasn't found" | Install the .NET 10 SDK from dotnet.microsoft.com (it installs under Program Files) |
 | CloClo says it "won't start while these files are next to it" or "found native files it can't verify" | Something placed files beside or into CloClo — delete the files it names, consider a malware scan, and reinstall |
 | CloClo "won't run with a .NET profiler attached" | Remove the listed environment variables (System Properties → Environment Variables), sign out and back in |
-| CloClo doesn't start at sign-in | Right-click it → **Start with Windows** off and on again |
+| CloClo doesn't start at sign-in | Check **Settings → Apps → Startup** has CloClo switched on; otherwise right-click it → **Start with Windows** off and on again |
+| "Source files … changed while building" | Something edited the project during the build — run the install again, and use `Check-Source.cmd` if you didn't expect changes |
 
 ## Rebuilding from source
 
