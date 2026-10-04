@@ -164,6 +164,41 @@ if (Test-Elevated) {
     throw "Run this from a normal PowerShell window, not one opened as administrator. With -ProgramFiles it asks for administrator rights itself, only for copying into Program Files."
 }
 
+# $PSScriptRoot is empty when the script's text is pasted into a console
+# rather than run as a file - fall back to the current folder then.
+$root = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+if (-not (Test-Path (Join-Path $root 'CloCloWidget.csproj'))) {
+    throw "CloCloWidget.csproj not found in $root - run this from the cloclo-widget folder: .\install.ps1"
+}
+
+# --- pre-check: has the source changed since the last install? ------------
+# The installed copy carries a record of the source it was built from, and
+# the checker that reads it - in Program Files only administrators can change
+# either. Run that installed checker against this folder before building, so
+# code nobody meant to change doesn't get built and signed unnoticed. Changes
+# you made yourself (editing, git pull) just need a YES.
+$installedChecker = @((Join-Path $machineDir 'check-source.ps1'), (Join-Path $userDir 'check-source.ps1')) |
+    Where-Object { (Test-Path -LiteralPath $_) -and (Test-Path -LiteralPath (Join-Path (Split-Path $_) 'source-manifest.json')) } |
+    Select-Object -First 1
+if (-not $installedChecker) {
+    Write-Host "No source record from an earlier install yet - this install will create one."
+} else {
+    & $installedChecker -Root $root -Quiet
+    if ($LASTEXITCODE -eq 1) {
+        & $installedChecker -Root $root | Out-Host
+        if ([Console]::IsInputRedirected) {
+            throw "The source changed since the last install, and this window can't ask whether to go on. Nothing was built or installed. Run it from a regular PowerShell window."
+        }
+        Write-Host "Type YES and press Enter to build and install these changes (anything else cancels): " -NoNewline -ForegroundColor Yellow
+        $answer = try { Read-Host } catch { '' }
+        if ($answer -cne 'YES') { throw "Nothing was built or installed." }
+    } elseif ($LASTEXITCODE -eq 0) {
+        Write-Host "Source unchanged since the last install."
+    } else {
+        Write-Warning "Couldn't compare the source with the last install's record (see above) - continuing; this install records a new one."
+    }
+}
+
 # --- 0. find (or create) the signing certificate -----------------------------
 # -UseCloCloCertificate: sign with the newest valid "CN=CloClo..." code-signing
 # certificate in the user's store whose private key Windows protects - the
@@ -218,12 +253,6 @@ if ($UseCloCloCertificate -and -not $CertThumbprint -and -not $PfxPath) {
 # publish\ locks the exe the build is about to overwrite.
 Stop-RunningWidget
 
-# $PSScriptRoot is empty when the script's text is pasted into a console
-# rather than run as a file - fall back to the current folder then.
-$root = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
-if (-not (Test-Path (Join-Path $root 'CloCloWidget.csproj'))) {
-    throw "CloCloWidget.csproj not found in $root - run this from the cloclo-widget folder: .\install.ps1"
-}
 $publishDir = Join-Path $root 'publish'
 # Emptied first: the two install kinds publish different file sets, and a
 # stale DLL from the other kind must never be installed.

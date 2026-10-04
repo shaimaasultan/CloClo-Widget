@@ -270,7 +270,12 @@ last install. It runs the *installed* checker and lists every file that was
 changed, added or removed since then — or says that all of them still match.
 Right after an install it reports no changes; any change you then make
 yourself (editing code, `git pull`) shows up until the next install records
-the new state. Run it before building again if you're unsure whether
+the new state.
+
+The installer runs the same check automatically before every build: if the
+source changed since the last install, it lists the changed files and only
+builds after you type `YES` — so code nobody meant to change can't be built
+and signed with your key unnoticed. Run it before building again if you're unsure whether
 something touched the code. (With a per-user install the record sits in a
 folder you can write to, so the check is weaker; the script says so.)
 
@@ -291,6 +296,8 @@ folder you can write to, so the check is weaker; the script says so.)
 | "Source files … changed while building" | Something edited the project during the build — run the install again, and use `Check-Source.cmd` if you didn't expect changes |
 | `Check-Source.cmd`: "isn't installed with a source record yet" | The installed copy predates source records — run `Install-CloClo.cmd` once |
 | `Check-Source.cmd` lists changes you didn't make | Don't build or install; look at the listed files first (`git diff` shows what changed) |
+| The installer lists source changes and asks for `YES` | Expected after you edited code or pulled; if you didn't, answer anything else and check the files |
+| Restore fails with NU3004 / NU3018 | A package isn't signed by nuget.org (or nuget.org renewed its certificate) — if it's genuinely from nuget.org, re-run `dotnet nuget trust source nuget.org` with the configfile option pointing at `nuget.config` |
 
 ## Rebuilding from source
 
@@ -400,6 +407,15 @@ loads anything)
   over** — a DLL whose signature no longer verifies stops the build.
 - **Updates keep the signer** unless you type `YES` after seeing both
   thumbprints.
+- **Only signed packages from nuget.org.** `nuget.config` allows nuget.org as
+  the only package source, maps every package to it, and requires each
+  package to carry nuget.org's repository signature
+  (`signatureValidationMode=require`, trusted certificate fingerprints
+  included), so an unsigned or re-packed package is refused (tested: error
+  NU3004). NuGet checks this when it unpacks a package into its cache;
+  packages already in the cache from before were unpacked without it —
+  `dotnet nuget locals global-packages --clear` makes everything download
+  and get checked again (other projects then re-download too).
 - **The source is fingerprinted** at every install, checked unchanged across
   the build, and the record is kept where only administrators can change it
   (Program Files), so `Check-Source.cmd` can tell whether the code changed
