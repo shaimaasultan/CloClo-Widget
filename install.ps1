@@ -189,7 +189,11 @@ if ($installed) {
         Write-Host "  Installed: $($oldSigner.Thumbprint)  $($oldSigner.Subject)"
         Write-Host "  New build: $(if ($newSigner) { "$($newSigner.Thumbprint)  $($newSigner.Subject)" } else { 'not signed' })"
         Write-Host "Continue only if you changed the certificate yourself."
-        $answer = try { Read-Host "Type YES to replace it" } catch { '' }
+        # The question goes out through Write-Host: Read-Host's own prompt
+        # text didn't show up when this script runs via "powershell -File",
+        # leaving what looked like a hung window.
+        Write-Host "Type YES and press Enter to replace it (anything else cancels): " -NoNewline -ForegroundColor Yellow
+        $answer = try { Read-Host } catch { '' }
         if ($answer -cne 'YES') { throw "Not installed - the installed copy was left as it was." }
     }
 }
