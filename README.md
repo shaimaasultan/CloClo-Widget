@@ -8,15 +8,24 @@ get — the bottom-right corner, just above the taskbar).
 
 ## Getting started
 
-1. Install it — from the `cloclo-widget` folder, in PowerShell:
+Open a regular PowerShell window — Start → **Windows PowerShell** (or Windows
+Terminal), not PowerShell ISE and not one opened as administrator — and go to
+the project folder:
+
+```powershell
+cd C:\Ranah\cloclo-widget
+```
+
+1. Install it. The recommended way installs to Program Files, where no other
+   program running as you can change it (one administrator prompt):
 
    ```powershell
-   powershell -ExecutionPolicy Bypass -File .\install.ps1 -DesktopShortcut
+   powershell -ExecutionPolicy Bypass -File .\install.ps1 -ProgramFiles -DesktopShortcut
    ```
 
-   This builds CloClo, installs it for your account and adds Start Menu and
-   desktop shortcuts. See [Installing](#installing) for signing and for
-   installing to Program Files.
+   Leave out `-ProgramFiles` for a per-user install that needs no
+   administrator rights. To sign the build, see
+   [Signing with your own certificate](#signing-with-your-own-certificate-left-untrusted).
 2. Start it from the Start Menu or desktop shortcut. It appears in the
    bottom-right corner, just above the taskbar.
 3. Right-click it → **Set location…** to pick your city.
@@ -28,7 +37,9 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
 
 - **To run:** Windows 10 version 2004 or later, or Windows 11, 64-bit. Nothing
   else — the app carries its own .NET runtime.
-- **To build:** the [.NET 10 SDK](https://dotnet.microsoft.com/download).
+- **To build:** the [.NET 10 SDK](https://dotnet.microsoft.com/download),
+  installed in its standard location (`C:\Program Files\dotnet`) —
+  `install.ps1` only runs `dotnet` from there.
 - **To sign:** additionally the Windows SDK, which provides `signtool.exe`.
 
 ## Using it
@@ -43,10 +54,10 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   | Notifications | Shows your latest notification; the list button opens Windows' notification panel |
   | Search other apps | Lists apps playing media and every open app, to watch or switch to |
   | GPU info | Shows the graphics cards in this PC |
-  | Read selection aloud | Reads the text you highlighted in another app |
+  | Read selection aloud | Reads the text you highlighted in another app (up to 5,000 characters) |
   | Dictate | Opens Windows voice typing; the text is saved to a file |
   | Convert units | Converts a highlighted "5 km", "98 F"… (km/mi/m/ft, kg/lb, °C/°F/K) |
-  | Color picker | Pick any color on screen; its hex code is copied |
+  | Color picker | Pick any color on screen; its hex code is copied (Esc cancels) |
   | QR code from selection | Makes a QR code of the highlighted text or link |
   | Volume/mute toggle | Mutes or unmutes the system sound |
   | Clipboard history | Lists Windows' clipboard history (Win+V); click one to copy it again |
@@ -57,125 +68,130 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   **Weather** (follow the live forecast, or pick a sky by hand), **Icons**,
   **Sleep after** (Keeper dozes off when you're away), **Workout reminder**
   (a stretch-break nudge after a long stretch at the keyboard), **Refresh
-  weather**, the two dictation items, **Privacy**, **Always on top**, **Start
-  with Windows** and **Exit**.
+  weather**, **Start new dictation file**, **Open dictation folder**,
+  **Privacy**, **Always on top**, **Start with Windows** and **Exit**.
 - A **tray icon** (near the clock, in the hidden-icons area) has the same
   menu — double-click it to show or hide the widget.
 - **Privacy:** the widget, and the clipboard-history and QR windows, are
   hidden from screenshots, recordings and screen sharing by default.
   Notification text can be switched off so only the sending app's name shows.
-- **Dictation** is saved under `%LocalAppData%\CloCloWidget\Dictation`
-  (right-click → **Open dictation folder**).
 - **Weather** refreshes every 20 minutes from
   [Open-Meteo](https://open-meteo.com) (no API key, no account).
-- **Settings** are kept in `%AppData%\CloCloWidget\settings.json`.
+- **Where things are kept:**
+  - Settings: `%AppData%\CloCloWidget\settings.json`
+  - Dictation: `%LocalAppData%\CloCloWidget\Dictation`
+  - Error log: `%LocalAppData%\CloCloWidget\errors.log`
 
 ## Installing
 
 One command builds, signs (optional), installs and adds a Start Menu
-shortcut — run it again any time to upgrade. By default it installs for your
-account only, with no administrator rights needed:
+shortcut — run it again any time to upgrade:
 
 ```powershell
-.\install.ps1                                   # unsigned
-.\install.ps1 -CertThumbprint <thumbprint>      # signed, cert from your certificate store
-.\install.ps1 -PfxPath C:\certs\codesign.pfx    # signed, cert from a .pfx (asks for its password)
+.\install.ps1                                   # per-user install, unsigned
+.\install.ps1 -ProgramFiles                     # install to Program Files instead (recommended)
+.\install.ps1 -CertThumbprint <thumbprint>      # sign with a certificate from your store
+.\install.ps1 -PfxPath C:\certs\codesign.pfx    # sign with a .pfx (asks for its password)
 .\install.ps1 -DesktopShortcut                  # also put a shortcut on the desktop
-.\install.ps1 -ProgramFiles                     # install to Program Files instead (see below)
+.\install.ps1 -NoLaunch                         # don't start CloClo afterwards
 .\install.ps1 -Uninstall                        # removes either kind of install
 ```
 
-If Windows says running scripts is disabled, start it as
+The options combine. If Windows says running scripts is disabled, start it as
 `powershell -ExecutionPolicy Bypass -File .\install.ps1` (plus any options) —
 that allows this one run without changing any system setting.
 
-Use a regular PowerShell window (Start → Windows PowerShell, or Windows
-Terminal), not PowerShell ISE and not one opened as administrator. ISE can't
-pass your typing to the installer, so a question such as the certificate
-`YES` check would never get an answer; the installer now stops with a
-message instead of waiting.
+Run it from a regular PowerShell window: it refuses an administrator window
+(building should never run as admin; it asks for administrator rights itself
+when it needs them), and PowerShell ISE can't pass your typing to it, so it
+stops with a message there rather than waiting for an answer it can't get.
 
-It installs to `%LocalAppData%\Programs\CloCloWidget`, closes a running
-widget first so the exe can be replaced, and moves "Start with Windows" to the
-installed copy if it was on.
+Every install closes a running CloClo first, so the exe can be replaced, and
+moves "Start with Windows" to the installed copy if it was on.
 
-### Installing to Program Files
+### Per-user or Program Files
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -ProgramFiles -CertThumbprint $cert.Thumbprint -DesktopShortcut
-```
+| | Per-user (default) | Program Files (`-ProgramFiles`) |
+|---|---|---|
+| Location | `%LocalAppData%\Programs\CloCloWidget` | `C:\Program Files\CloClo` |
+| Administrator prompt | none | one, for the copy only |
+| Who can change the installed files | any program running as you | administrators only |
+| WPF's native DLLs | inside the exe, unpacked to `%TEMP%` at runtime and checked at startup | next to the exe, in Program Files |
 
-(`$cert` is your signing certificate — see
-[Signing with your own certificate](#signing-with-your-own-certificate-left-untrusted)
-for how to load it. Leave `-CertThumbprint …` out to install unsigned.)
+With `-ProgramFiles`, building and signing still run as you (your certificate
+is in your own store); only the copy into Program Files is elevated. Each
+file's SHA-256 is taken from the build and re-checked inside Program Files —
+a file that changed in between is removed and the install stops — and the
+per-user copy, if any, is removed. CloClo itself always starts as your normal
+user.
 
-This installs to `C:\Program Files\CloClo`, which only administrators can
-change, so no other program running as you can replace CloClo or its files.
-The difference from the per-user install:
-
-- **One administrator prompt.** Building and signing still run as you (your
-  certificate is in your own store); only the copy into Program Files asks
-  for administrator rights. The widget itself still starts as your normal
-  user, never as administrator.
-- **Every file is checked after copying.** Each file's SHA-256 is taken from
-  the build and re-checked inside Program Files; a file that changed in
-  between is removed and the install stops.
-- **Nothing is unpacked to `%TEMP%`.** WPF's native DLLs are installed next to
-  the exe in Program Files instead of being unpacked at runtime.
-- **The per-user copy is removed**, so shortcuts and "Start with Windows" all
-  point at the Program Files one.
-
-To go back to a per-user install, run `.\install.ps1 -Uninstall` first (it
-asks for administrator rights to remove the Program Files copy), then install
-without `-ProgramFiles`.
+To switch back to a per-user install, run `.\install.ps1 -Uninstall` first
+(it asks for administrator rights to remove the Program Files copy), then
+install without `-ProgramFiles`.
 
 ### Signing
 
 With a certificate, `sign.ps1` runs inside the build in two stages, since the
 single-file exe carries every DLL inside it:
 
-1. Just before bundling, every DLL that isn't already validly signed — the
-   app's own `CloCloWidget.dll` and unsigned third-party ones such as
-   `QRCoder.dll` — is copied to `obj\...\signed\`, the copy is signed, and the
-   bundle is built from the signed copies. Microsoft's runtime DLLs keep their
-   own signatures, and nothing in the NuGet cache is modified.
+1. Just before bundling, every DLL that has no signature at all — the app's
+   own `CloCloWidget.dll` and unsigned third-party ones such as `QRCoder.dll`
+   — is copied to `obj\...\signed\`, the copy is signed, and the bundle is
+   built from the signed copies. Microsoft's runtime DLLs keep their own
+   signatures, and nothing in the NuGet cache is modified. A DLL whose
+   signature no longer verifies (changed after its publisher signed it)
+   stops the build instead of being signed over.
 2. The finished `CloCloWidget.exe` is signed.
 
 Everything is SHA-256 signed with an RFC 3161 timestamp (so signatures stay
 valid after the certificate expires) and checked right after signing; any
-failure fails the build. A `.pfx` password is passed through the
-`SIGN_CERT_PASSWORD` environment variable, never on a command line: the
-certificate is loaded in memory, placed in your personal certificate store
-only while signing, and removed again afterwards along with its private key. Any
-Authenticode code-signing certificate works; Azure Trusted Signing is the
+failure fails the build.
+
+Which certificates can sign:
+
+- **From your certificate store** (`-CertThumbprint`): only one whose private
+  key Windows protects — strong key protection, where Windows asks you to
+  confirm (or enter a password) every time something signs with it, or a
+  smart card. An unprotected key is refused, since any program running as you
+  could sign its own files as CloClo with it.
+- **From a `.pfx` file** (`-PfxPath`): protected by its password, which is
+  passed through the `SIGN_CERT_PASSWORD` environment variable, never on a
+  command line. The certificate is loaded in memory, placed in your personal
+  store only while signing, and removed again afterwards with its private key.
+
+Any Authenticode code-signing certificate works; Azure Trusted Signing is the
 cheapest option for an individual developer.
+
+**Updates keep the certificate.** The installer only replaces an installed
+CloClo with a build signed by the same certificate. If it differs — or the
+new build is unsigned and the installed one isn't — it shows both thumbprints
+and continues only if you type `YES`. A swapped build signed by someone else
+would look exactly like that, so only answer yes when you changed the
+certificate yourself.
 
 #### Signing with your own certificate (left untrusted)
 
 A self-signed certificate signs everything exactly like a bought one; the only
 difference is that no Windows PC trusts it, so the publisher still shows as
 unverified. It stays that way on purpose — it's never added to Windows'
-trusted roots. Run everything below in PowerShell from the `cloclo-widget`
-folder.
+trusted roots.
 
-The commands use the name `CN=CloClo`. If you created yours under another
-name (say `CN=CloClo_yourname`), use that name in every command below —
-otherwise loading or deleting the certificate finds nothing.
+The commands below use the name `CN=CloClo`. If yours has another name (say
+`CN=CloClo_yourname`), use that name in every command — otherwise loading or
+deleting the certificate finds nothing.
 
 **First time — create the certificate** (once; it's valid for five years).
-`-KeyProtection Protect` gives it a protected private key: Windows asks you to
-confirm while creating it, and again every time something signs with it. The
-build refuses to sign with a certificate whose key isn't protected, since any
-program running as you could otherwise sign its own files as CloClo:
+`-KeyProtection Protect` gives it a protected private key; Windows shows a
+dialog while creating it, where you pick how each signing is confirmed —
+Medium asks you to click OK, High asks for a password:
 
 ```powershell
 $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=CloClo" -CertStoreLocation Cert:\CurrentUser\My -KeyProtection Protect -NotAfter (Get-Date).AddYears(5)
 ```
 
-**Every time — sign and install.** In a new PowerShell window, first load the
-certificate (this picks the newest CloClo certificate, so it works even if
-there's more than one); in the window you just created it in, `$cert` is
-already set and you can skip this line:
+**Every time — sign and install.** In a new PowerShell window, load the
+certificate first (this picks the newest one, so it works even if there's
+more than one); in the window you just created it in, `$cert` is already set:
 
 ```powershell
 $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Where-Object Subject -eq "CN=CloClo" | Sort-Object NotBefore -Descending | Select-Object -First 1
@@ -184,29 +200,19 @@ $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Where-Object Subje
 Then build, sign and install:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -CertThumbprint $cert.Thumbprint -DesktopShortcut
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -ProgramFiles -CertThumbprint $cert.Thumbprint -DesktopShortcut
 ```
 
-`install.ps1` closes a running widget by itself. Only a copy that was started
-as administrator can't be closed that way; the script then says so — close it
-with right-click → Exit and run the command again.
-
-While building, Windows asks you to confirm the signing (once for the DLLs,
-once for the exe) — that's the key protection at work. The build prints
-"signed, but the certificate isn't trusted on this machine"
-for each file, and the last line reads "signed, but this PC doesn't trust the
-certificate yet". Both are expected.
-
-**Updating with a different certificate.** The installer only replaces an
-installed CloClo with a build signed by the same certificate. After a
-certificate change it shows the installed and the new thumbprints, and
-continues only if you type `YES` — a swapped build signed by someone else
-would look exactly like that, so only say yes when you changed it yourself.
+Windows asks you to confirm the signing twice — once for the DLLs, once for
+the exe. The build prints "signed, but the certificate isn't trusted on this
+machine" for each file, and the last line reads "signed, but this PC doesn't
+trust the certificate yet". Both are expected.
 
 **Replacing the certificate** — for example one made before key protection
-was required, which the build now refuses. Delete every CloClo certificate together with
-its private key (other certificates aren't touched), then create a new one
-and sign and install as above:
+was required, which the build now refuses. Delete every CloClo certificate
+together with its private key (other certificates aren't touched), create a
+new one, and install; the installer will ask for `YES` once, because the
+certificate changed:
 
 ```powershell
 Get-ChildItem Cert:\CurrentUser\My | Where-Object Subject -eq "CN=CloClo" | ForEach-Object { Remove-Item -Path "Cert:\CurrentUser\My\$($_.Thumbprint)" -DeleteKey }
@@ -217,12 +223,27 @@ $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=CloClo" -Ce
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -CertThumbprint $cert.Thumbprint -DesktopShortcut
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -ProgramFiles -CertThumbprint $cert.Thumbprint -DesktopShortcut
 ```
 
 Deleting the key is permanent, and already-signed copies keep their
 signature. Keep the private key to yourself — never export the certificate
 with its key.
+
+## Troubleshooting
+
+| What you see | What to do |
+|---|---|
+| "running scripts is disabled on this system" | Start it as `powershell -ExecutionPolicy Bypass -File .\install.ps1 …` |
+| "Run this from a normal PowerShell window" | You're in an administrator window — open a regular one |
+| It stops with "Can't ask for YES here" | You're in PowerShell ISE — use Windows PowerShell or Windows Terminal |
+| "has an unprotected software key" | Replace the certificate (see [Replacing the certificate](#signing-with-your-own-certificate-left-untrusted)) |
+| "This build isn't signed by the same certificate" | Expected once after you change certificates — type `YES`; otherwise stop and find out why |
+| "Couldn't close the running CloClo" | A copy was started as administrator — right-click it → Exit, then run the installer again |
+| "The .NET SDK wasn't found" | Install the .NET 10 SDK from dotnet.microsoft.com (it installs under Program Files) |
+| CloClo says it "won't start while these files are next to it" or "found native files it can't verify" | Something placed files beside or into CloClo — delete the files it names, consider a malware scan, and reinstall |
+| CloClo "won't run with a .NET profiler attached" | Remove the listed environment variables (System Properties → Environment Variables), sign out and back in |
+| CloClo doesn't start at sign-in | Right-click it → **Start with Windows** off and on again |
 
 ## Rebuilding from source
 
@@ -231,11 +252,12 @@ dotnet build
 dotnet run
 ```
 
-A plain `dotnet build` runs fine for development but isn't the shipped
-layout: it unpacks nothing, so the startup check of native files has nothing
-to do. `install.ps1` is the way to get a real installed copy.
+A plain `dotnet build` is fine for development but isn't the installed
+layout: it unpacks nothing, so the startup checks of native files have
+nothing to do, and it never touches "Start with Windows". `install.ps1` is
+the way to get a real installed copy.
 
-To produce another standalone .exe:
+To produce a standalone .exe by hand:
 
 ```bash
 dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o ./publish
@@ -255,12 +277,17 @@ fidgets and sky effects as WPF animations. There's no embedded browser:
 `WeatherService` fetches the current temperature and WMO weather code from
 Open-Meteo on the host and maps it to a sky (clear/cloudy/rain/snow/storm…).
 A second, invisible window sized to the avatar takes the clicks — dragging,
-the icon bar and the right-click menu. Settings (location, window position,
-always-on-top) persist to `%AppData%\CloCloWidget\settings.json`.
+the icon bar and the right-click menu.
+
+`Program.Main` runs `NativeLibraryCheck` before WPF loads anything (see
+Security below). The build itself, through targets in `CloCloWidget.csproj`,
+records the SHA-256 of every native runtime DLL it ships
+(`NativeLibraryPins.g.cs`) and, with a certificate, calls `sign.ps1`;
+`install.ps1` drives the whole build-sign-install sequence.
 
 ## Security
 
-What the widget does to protect itself and what it shows:
+**What CloClo shows and sends**
 
 - **No browser engine.** Keeper is drawn natively in WPF, so there's no web
   page, script or embedded Chromium to attack. The only network calls are
@@ -279,25 +306,51 @@ What the widget does to protect itself and what it shows:
   and then: never to a terminal (where Ctrl+C stops the running command),
   never to a password field, never to a window that's no longer in front, and
   the previous clipboard is put back afterwards, kept out of clipboard history.
-- **Checks its own native files at startup.** In the per-user install, the
-  single-file exe unpacks WPF's native DLLs to `%TEMP%\.net\CloCloWidget\`,
-  and .NET reuses whatever it finds there. (A Program Files install puts
-  them next to the exe instead, where only administrators can change them.) Before anything loads them, CloClo checks each one against
-  the exact name and SHA-256 recorded inside the signed exe at build time,
-  plus an intact Microsoft signature. A planted, modified, older or renamed
-  file makes it re-extract clean copies; if that doesn't fix it, it refuses
-  to run.
-- **Refuses loader tricks.** It won't start while `CloCloWidget.exe.config`,
+- **Doesn't crash on errors.** Unexpected errors are logged to
+  `errors.log` (error type and code location only, never any text) and the
+  widget keeps running — a crash would also hand Windows Error Reporting a
+  memory dump that could contain clipboard or notification text.
+
+**What CloClo checks before it runs** (in `NativeLibraryCheck`, before WPF
+loads anything)
+
+- **Its own native files.** In the per-user install, the single-file exe
+  unpacks WPF's native DLLs to `%TEMP%\.net\CloCloWidget\`, and .NET reuses
+  whatever it finds there. Each one must match the exact name and SHA-256
+  recorded inside the signed exe at build time and carry an intact Microsoft
+  signature. A planted, modified, older or renamed file makes CloClo
+  re-extract clean copies; if that doesn't fix it, it refuses to run. (A
+  Program Files install keeps these DLLs next to the exe instead, where only
+  administrators can change them.)
+- **No look-alike DLLs beside the exe.** Windows looks in the exe's own
+  folder first for many system DLLs it loads by name. Every DLL beside the
+  exe must be one of CloClo's pinned files; anything else makes it refuse to
+  start. In testing, every DLL name that could be confirmed — 47 of the names
+  CloClo loads, including `version.dll`, `dwmapi.dll`, `winmm.dll`,
+  `cryptbase.dll`, `cryptsp.dll` and `profapi.dll` — was refused before it
+  loaded. CloClo's own calls into Windows DLLs only ever load them from
+  System32.
+- **No loader tricks.** It won't start while `CloCloWidget.exe.config`,
   `CloCloWidget.exe.local` or `CloCloWidget.exe.manifest` sits next to it —
   Windows reads those before any app code runs, and CloClo never creates
   them. The `DOTNET_STARTUP_HOOKS` variable, which would run another DLL's
   code before the app starts, is ignored.
-- **No look-alike DLLs beside the exe.** Windows looks in the exe's own
-  folder first for several system DLLs it loads by name (`version.dll`,
-  `dwmapi.dll`, `winmm.dll`, `cryptbase.dll`, `profapi.dll` — each one
-  tested). CloClo refuses to start while any DLL there isn't one of its own
-  pinned files, and its own calls into Windows DLLs only ever load them from
-  System32.
+- **No profilers.** It refuses to run while a .NET profiler is set in the
+  environment (`CORECLR_ENABLE_PROFILING` and related variables).
+- **"Start with Windows" follows the installed copy.** When an installed
+  CloClo starts and the startup entry points to a copy that's gone (or, for
+  the Program Files copy, anywhere else), it repoints the entry to itself, so
+  it can't be left aimed at a deleted per-user folder that another program
+  could fill. Development builds and copies run from elsewhere never touch it.
+
+**How builds and installs are protected**
+
+- **Signed builds** — every unsigned DLL bundled into the exe, and the exe
+  itself, timestamped (see [Signing](#signing)).
+- **Only a protected key can sign**, and **tampered files are never signed
+  over** — a DLL whose signature no longer verifies stops the build.
+- **Updates keep the signer** unless you type `YES` after seeing both
+  thumbprints.
 - **Administrator rights only where needed.** `install.ps1` refuses to run
   from an administrator window, so building never runs as admin and the
   widget always starts as your normal user. With `-ProgramFiles` it asks for
@@ -305,41 +358,23 @@ What the widget does to protect itself and what it shows:
   PowerShell started by its full System32 path, and lets it load modules only
   from PowerShell's own system folder — a look-alike module planted in your
   Documents folder can't run as administrator.
-- **Doesn't crash on errors.** Unexpected errors are logged to
-  `%LocalAppData%\CloCloWidget\errors.log` (error type and code location only,
-  never any text) and the widget keeps running.
-- **Signed builds.** Every DLL bundled into the exe and the exe itself can be
-  Authenticode-signed and timestamped (see [Signing](#signing)).
-- **Only a protected key can sign.** The build refuses a certificate from
-  your store unless Windows guards its private key (strong key protection,
-  so you confirm each signing, or a smart card). An unprotected key could be
-  used by any program running as you to sign its own files as CloClo.
-- **Updates keep the signer.** The installer won't replace an installed
-  CloClo with a build signed by a different certificate (or an unsigned one)
-  unless you type `YES` after seeing both thumbprints.
-- **No profilers.** CloClo refuses to run while a .NET profiler is set in the
-  environment (`CORECLR_ENABLE_PROFILING` and related variables).
-- **Never signs over a tampered file.** The build signs only DLLs that have
-  no signature at all. A DLL whose signature no longer verifies — for example
-  a runtime file tampered with in the NuGet cache — stops the build instead
-  of getting CloClo's signature on top. The build also runs `dotnet` and
-  PowerShell by their full Program Files / System32 paths, never by name.
-- **"Start with Windows" follows the installed copy.** When an installed
-  CloClo starts and the startup entry points to a copy that's gone (or, for
-  the Program Files copy, anywhere else), it repoints the entry to itself —
-  so it can't be left aimed at a deleted per-user folder that another program
-  could fill. Development builds and copies run from elsewhere never touch it.
+- **No programs found by name.** The build and installer run `dotnet`,
+  PowerShell and `signtool` by their full Program Files / System32 paths and
+  find folders through Windows' known-folder lookup, never through `PATH` or
+  environment variables another program could change.
 
-Limits — what a program already running as you can still do:
+**Limits — what a program already running as you can still do**
 
-- **With the default per-user install,** replace the installed exe itself,
-  since `%LocalAppData%\Programs` belongs to your account. Installing to
-  Program Files (`-ProgramFiles`, [above](#installing-to-program-files))
-  closes this: the exe and its native DLLs are then writable only by
-  administrators, and nothing is unpacked to `%TEMP%`.
-- **With either install,** attach a .NET profiler by setting environment
-  variables (`CORECLR_ENABLE_PROFILING` and friends). The runtime loads it
-  before any of CloClo's own code runs; CloClo then notices and refuses to
-  continue, but the profiler's code has already run by then. Your environment
-  variables belong to your account, so no install location changes this. The same goes for your shortcuts and
-  the "Start with Windows" entry, which another program could repoint.
+- **With the per-user install,** replace the installed exe itself, since
+  `%LocalAppData%\Programs` belongs to your account — and plant a DLL under
+  a name that Windows or .NET loads before any of CloClo's code runs, which
+  no check inside the app can catch. Installing to Program Files
+  (`-ProgramFiles`) closes both: the exe and its native DLLs are then
+  writable only by administrators, and nothing is unpacked to `%TEMP%`.
+- **With either install,** attach a .NET profiler through environment
+  variables. The runtime loads it before CloClo's own code runs; CloClo then
+  notices and refuses to continue, but the profiler's code has already run.
+  Your environment variables belong to your account, so no install location
+  changes this — and the same goes for your shortcuts and the "Start with
+  Windows" entry, which another program could repoint before CloClo next
+  starts.
