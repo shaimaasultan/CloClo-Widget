@@ -46,7 +46,10 @@ if (-not $Thumbprint -and -not $PfxFile) { throw 'Pass -Thumbprint or -PfxFile.'
 if ($PfxFile -and -not (Test-Path $PfxFile)) { throw "Certificate file not found: $PfxFile" }
 
 if (-not $SignTool) {
-    $SignTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
+    # Known folder, not ${env:ProgramFiles(x86)}, which this user's
+    # environment could redirect to a look-alike signtool.
+    $kits = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Windows Kits\10\bin'
+    $SignTool = Get-ChildItem "$kits\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
         Sort-Object { [version]$_.Directory.Parent.Name } | Select-Object -Last 1 -ExpandProperty FullName
 }
 if (-not $SignTool -or -not (Test-Path $SignTool)) {

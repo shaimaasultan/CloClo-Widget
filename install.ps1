@@ -45,8 +45,14 @@ $ErrorActionPreference = 'Stop'
 
 $appName    = 'CloClo'
 $exeName    = 'CloCloWidget.exe'
-$userDir    = Join-Path $env:LOCALAPPDATA 'Programs\CloCloWidget'
-$machineDir = Join-Path $env:ProgramFiles 'CloClo'
+# Known-folder lookups rather than environment variables, which any
+# program running as this user can change.
+$userDir    = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Programs\CloCloWidget'
+$machineDir = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'CloClo'
+# Full paths, never a bare "powershell.exe": Windows resolves bare names via
+# the per-user "App Paths" registry key and PATH, both of which another
+# program running as this user could point at its own executable.
+$powershellExe = Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe'
 $installDir = if ($ProgramFiles) { $machineDir } else { $userDir }
 $installExe = Join-Path $installDir $exeName
 $startMenu  = Join-Path ([Environment]::GetFolderPath('Programs')) "$appName.lnk"
@@ -74,15 +80,25 @@ function Test-Elevated {
         [Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-# Runs a script as administrator. The script travels inline (base64 on the
-# command line), never as a file: a script file in a folder this user can
-# write to could be swapped by another program just before it runs elevated.
+# Runs a script as administrator, always in a fresh PowerShell process.
+# - The script travels inline (base64 on the command line), never as a file:
+#   a script file in a folder this user can write to could be swapped by
+#   another program just before it runs elevated.
+# - Its first line limits module loading to PowerShell's own system folder.
+#   Otherwise commands like Copy-Item or Get-FileHash are looked up in the
+#   user's Documents\WindowsPowerShell\Modules first, where another program
+#   could plant a look-alike module and have it run as administrator
+#   (reproduced).
 function Invoke-Elevated([string]$script) {
-    if (Test-Elevated) { & ([scriptblock]::Create($script)); return }
+    $script = "`$env:PSModulePath = `"`$PSHOME\Modules`"`n`$ErrorActionPreference = 'Stop'`n" + $script
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
+    $psArgs = '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded
     try {
-        $p = Start-Process powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden `
-            -ArgumentList '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded
+        $p = if (Test-Elevated) {
+            Start-Process $powershellExe -Wait -PassThru -WindowStyle Hidden -ArgumentList $psArgs
+        } else {
+            Start-Process $powershellExe -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList $psArgs
+        }
     } catch {
         throw "Administrator rights are needed for Program Files, and the request was declined."
     }
@@ -101,6 +117,13 @@ if ($Uninstall) {
     }
     Write-Host "Uninstalled. Settings and dictation files in AppData were left in place."
     return
+}
+
+# Building runs dotnet, NuGet packages and build tasks - none of which
+# should ever run as administrator. The Program Files copy asks for those
+# rights itself, for that one step only.
+if (Test-Elevated) {
+    throw "Run this from a normal PowerShell window, not one opened as administrator. With -ProgramFiles it asks for administrator rights itself, only for copying into Program Files."
 }
 
 # --- 1. build (and sign) ---------------------------------------------------
@@ -162,7 +185,6 @@ if ($ProgramFiles) {
         "@{ Src = $(Quote $f.FullName); Hash = '$((Get-FileHash $f.FullName -Algorithm SHA256).Hash)' }"
     }
     Invoke-Elevated @"
-`$ErrorActionPreference = 'Stop'
 `$dest = $(Quote $machineDir)
 New-Item -ItemType Directory -Force -Path `$dest | Out-Null
 Get-ChildItem `$dest -File | Remove-Item -Force
@@ -224,14 +246,7 @@ if ($signing) {
     Write-Host "Signature: $meaning [$($sig.SignerCertificate.Subject)]"
 }
 
-if (-not $NoLaunch) {
-    if (Test-Elevated) {
-        # Started directly, it would inherit this window's admin rights - and
-        # a widget that sends keystrokes to other apps shouldn't have them.
-        # Explorer always launches things as the normal, non-admin user.
-        Start-Process explorer.exe -ArgumentList "`"$installExe`""
-    } else {
-        Start-Process $installExe
-    }
-}
+# Never elevated here (checked above), so the widget starts as the normal
+# user too.
+if (-not $NoLaunch) { Start-Process $installExe }
 Write-Host "Done."
