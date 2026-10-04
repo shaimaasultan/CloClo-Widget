@@ -1,6 +1,7 @@
 using System;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 
 namespace CloCloWidget;
 
@@ -23,6 +24,15 @@ public partial class ColorPickerOverlay : Window
     public event Action<System.Drawing.Color>? Picked;
     public event Action? Cancelled;
 
+    // A fullscreen topmost window that swallows every click is a trap if
+    // it ever can't be dismissed: once it loses keyboard focus, Escape no
+    // longer reaches it. So it also cancels itself the moment it's
+    // deactivated (Alt+Tab, Win key, another app grabbing focus), and after
+    // a minute regardless.
+    private static readonly TimeSpan MaxPickTime = TimeSpan.FromMinutes(1);
+    private readonly DispatcherTimer _timeout = new() { Interval = MaxPickTime };
+    private bool _finished;
+
     public ColorPickerOverlay()
     {
         InitializeComponent();
@@ -32,20 +42,31 @@ public partial class ColorPickerOverlay : Window
         Height = SystemParameters.VirtualScreenHeight;
 
         MouseMove += (_, _) => Previewed?.Invoke(SampleAtCursor());
-        MouseLeftButtonDown += (_, _) =>
-        {
-            Picked?.Invoke(SampleAtCursor());
-            Close();
-        };
+        MouseLeftButtonDown += (_, _) => Finish(picked: true);
         KeyDown += (_, e) =>
         {
-            if (e.Key == Key.Escape)
-            {
-                Cancelled?.Invoke();
-                Close();
-            }
+            if (e.Key == Key.Escape) Finish(picked: false);
         };
-        Loaded += (_, _) => Focus(); // needs keyboard focus to actually see Escape
+        Deactivated += (_, _) => Finish(picked: false);
+        _timeout.Tick += (_, _) => Finish(picked: false);
+        Loaded += (_, _) =>
+        {
+            Activate();
+            Focus(); // needs keyboard focus to actually see Escape
+            _timeout.Start();
+        };
+        Closed += (_, _) => _timeout.Stop();
+    }
+
+    // Exactly once, whichever way it ends — closing also deactivates the
+    // window, which must not turn a pick into a cancel after the fact.
+    private void Finish(bool picked)
+    {
+        if (_finished) return;
+        _finished = true;
+        if (picked) Picked?.Invoke(SampleAtCursor());
+        else Cancelled?.Invoke();
+        Close();
     }
 
     private static System.Drawing.Color SampleAtCursor() =>

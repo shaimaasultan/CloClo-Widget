@@ -46,6 +46,10 @@ public class WidgetSettings
     // message text itself (2FA codes, message previews…).
     public bool ShowNotificationText { get; set; } = true;
 
+    // Two decimals is ~1 km: plenty for weather and a city name, without
+    // keeping or sending a precise position.
+    public static double RoundCoordinate(double value) => Math.Round(value, 2);
+
     private static string FolderPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CloCloWidget");
 
@@ -59,7 +63,14 @@ public class WidgetSettings
             {
                 var json = File.ReadAllText(FilePath);
                 var loaded = JsonSerializer.Deserialize<WidgetSettings>(json);
-                if (loaded != null) return loaded;
+                if (loaded != null)
+                {
+                    // Older builds stored full GPS precision; trimmed here so
+                    // the next save no longer keeps it on disk.
+                    loaded.Latitude = RoundCoordinate(loaded.Latitude);
+                    loaded.Longitude = RoundCoordinate(loaded.Longitude);
+                    return loaded;
+                }
             }
         }
         catch
@@ -75,7 +86,12 @@ public class WidgetSettings
         {
             Directory.CreateDirectory(FolderPath);
             var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(FilePath, json);
+            // Written beside and then swapped in, so a crash mid-write can
+            // never leave a half-written file — which Load would discard,
+            // silently resetting privacy choices like ShowNotificationText.
+            var temp = FilePath + ".tmp";
+            File.WriteAllText(temp, json);
+            File.Move(temp, FilePath, overwrite: true);
         }
         catch
         {

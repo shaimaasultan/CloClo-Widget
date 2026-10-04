@@ -14,7 +14,11 @@ namespace CloCloWidget;
 // instead of crashing.
 public static class GeoLocation
 {
-    private static readonly HttpClient Http = new();
+    private static readonly HttpClient Http = new()
+    {
+        Timeout = TimeSpan.FromSeconds(15),
+        MaxResponseContentBufferSize = 1024 * 1024,
+    };
 
     static GeoLocation()
     {
@@ -46,8 +50,10 @@ public static class GeoLocation
         try
         {
             var url = "https://nominatim.openstreetmap.org/reverse?format=json" +
-                $"&lat={lat.ToString(CultureInfo.InvariantCulture)}" +
-                $"&lon={lon.ToString(CultureInfo.InvariantCulture)}&zoom=10";
+                // City-level lookup (zoom=10), so a ~1 km point is all it
+                // needs — the precise GPS fix never leaves the machine.
+                $"&lat={WidgetSettings.RoundCoordinate(lat).ToString(CultureInfo.InvariantCulture)}" +
+                $"&lon={WidgetSettings.RoundCoordinate(lon).ToString(CultureInfo.InvariantCulture)}&zoom=10";
             var json = await Http.GetStringAsync(url);
             using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("address", out var address)) return null;

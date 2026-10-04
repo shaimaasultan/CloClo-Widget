@@ -9,7 +9,11 @@ namespace CloCloWidget;
 
 public partial class LocationDialog : Window
 {
-    private static readonly HttpClient Http = new();
+    private static readonly HttpClient Http = new()
+    {
+        Timeout = TimeSpan.FromSeconds(15),
+        MaxResponseContentBufferSize = 1024 * 1024,
+    };
 
     public string ResolvedCity { get; private set; } = "";
     public double ResolvedLat { get; private set; }
@@ -59,8 +63,8 @@ public partial class LocationDialog : Window
             var city = await GeoLocation.ReverseGeocodeAsync(lat, lon)
                 ?? $"{lat.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}, {lon.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}";
 
-            ResolvedLat = lat;
-            ResolvedLon = lon;
+            ResolvedLat = WidgetSettings.RoundCoordinate(lat);
+            ResolvedLon = WidgetSettings.RoundCoordinate(lon);
             ResolvedCity = city;
             DialogResult = true;
             Close();
@@ -87,8 +91,8 @@ public partial class LocationDialog : Window
             if (doc.RootElement.TryGetProperty("results", out var results) && results.GetArrayLength() > 0)
             {
                 var first = results[0];
-                ResolvedLat = first.GetProperty("latitude").GetDouble();
-                ResolvedLon = first.GetProperty("longitude").GetDouble();
+                ResolvedLat = WidgetSettings.RoundCoordinate(first.GetProperty("latitude").GetDouble());
+                ResolvedLon = WidgetSettings.RoundCoordinate(first.GetProperty("longitude").GetDouble());
                 ResolvedCity = first.TryGetProperty("name", out var n) ? n.GetString() ?? name : name;
                 DialogResult = true;
                 Close();

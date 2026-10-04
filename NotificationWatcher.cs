@@ -59,8 +59,11 @@ public static class NotificationWatcher
 
             using var stream = await logo.OpenReadAsync();
             using var reader = new DataReader(stream);
+            // A 32x32 logo is a few KB; anything far bigger isn't worth
+            // reading into memory from another app's package.
+            const ulong maxLogoBytes = 512 * 1024;
+            if (stream.Size == 0 || stream.Size > maxLogoBytes) return null;
             var size = (uint)stream.Size;
-            if (size == 0) return null;
 
             await reader.LoadAsync(size);
             var bytes = new byte[size];

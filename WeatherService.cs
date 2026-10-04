@@ -16,7 +16,11 @@ public readonly record struct WeatherReading(int Temperature, string Sky, bool I
 // numbers it formats itself.
 public static class WeatherService
 {
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
+    private static readonly HttpClient Http = new()
+    {
+        Timeout = TimeSpan.FromSeconds(15),
+        MaxResponseContentBufferSize = 1024 * 1024,
+    };
 
     // Wind only gets its own visual when it's the most notable thing
     // happening — under a plain or overcast sky. Rain/snow/storm/fog already
@@ -34,8 +38,8 @@ public static class WeatherService
         // Two decimals is ~1 km — plenty for a weather lookup, and it means
         // a GPS fix from "Use my location" never leaves the machine at full
         // precision.
-        var lat = Math.Round(latitude, 2).ToString(CultureInfo.InvariantCulture);
-        var lon = Math.Round(longitude, 2).ToString(CultureInfo.InvariantCulture);
+        var lat = WidgetSettings.RoundCoordinate(latitude).ToString(CultureInfo.InvariantCulture);
+        var lon = WidgetSettings.RoundCoordinate(longitude).ToString(CultureInfo.InvariantCulture);
         var url = $"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}" +
             "&current=temperature_2m,weather_code,wind_speed_10m,cloud_cover,is_day&timezone=auto";
 

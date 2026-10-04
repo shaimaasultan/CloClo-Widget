@@ -21,10 +21,7 @@ namespace CloCloWidget;
 // focused text target.
 public partial class DictationCaptureWindow : Window
 {
-    [DllImport("user32.dll")] private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
-    private const byte VK_LWIN = 0x5B;
-    private const byte VK_H = 0x48;
-    private const uint KEYEVENTF_KEYUP = 0x0002;
+    private const ushort VK_H = 0x48;
 
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
     [DllImport("user32.dll")] private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
@@ -40,6 +37,9 @@ public partial class DictationCaptureWindow : Window
     private static readonly Media.Brush InactiveLangBrush = new Media.SolidColorBrush(Media.Color.FromRgb(0x3c, 0x2f, 0x1a));
 
     private string _currentLanguageTag = EnglishLanguageTag;
+    // Switching languages changes the input language (see below) — put
+    // back whatever the user had once this window is done.
+    private readonly CultureInfo _originalInputLanguage = InputLanguageManager.Current.CurrentInputLanguage;
 
     public string CapturedText { get; private set; } = "";
 
@@ -47,6 +47,11 @@ public partial class DictationCaptureWindow : Window
     {
         InitializeComponent();
         UpdateLanguageHighlight();
+        Closed += (_, _) =>
+        {
+            try { InputLanguageManager.Current.CurrentInputLanguage = _originalInputLanguage; }
+            catch { /* that layout was removed meanwhile */ }
+        };
         Loaded += async (_, _) =>
         {
             CaptureBox.Focus();
@@ -87,13 +92,7 @@ public partial class DictationCaptureWindow : Window
         ArabicButton.Background = _currentLanguageTag == ArabicLanguageTag ? ActiveLangBrush : InactiveLangBrush;
     }
 
-    private static void OpenVoiceTyping()
-    {
-        keybd_event(VK_LWIN, 0, 0, UIntPtr.Zero);
-        keybd_event(VK_H, 0, 0, UIntPtr.Zero);
-        keybd_event(VK_H, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-        keybd_event(VK_LWIN, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-    }
+    private static void OpenVoiceTyping() => KeyboardInput.SendChord(KeyboardInput.VK_LWIN, VK_H);
 
     // Neither re-sending Win+H (it TOGGLES, so it can reopen a session that
     // already auto-closed on its own) nor sending Escape (Voice Typing's
