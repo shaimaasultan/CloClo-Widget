@@ -273,6 +273,12 @@ What the widget does to protect itself and what it shows:
   Windows reads those before any app code runs, and CloClo never creates
   them. The `DOTNET_STARTUP_HOOKS` variable, which would run another DLL's
   code before the app starts, is ignored.
+- **No look-alike DLLs beside the exe.** Windows looks in the exe's own
+  folder first for several system DLLs it loads by name (`version.dll`,
+  `dwmapi.dll`, `winmm.dll`, `cryptbase.dll`, `profapi.dll` — each one
+  tested). CloClo refuses to start while any DLL there isn't one of its own
+  pinned files, and its own calls into Windows DLLs only ever load them from
+  System32.
 - **Administrator rights only where needed.** `install.ps1` refuses to run
   from an administrator window, so building never runs as admin and the
   widget always starts as your normal user. With `-ProgramFiles` it asks for

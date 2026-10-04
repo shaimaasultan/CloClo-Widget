@@ -28,6 +28,14 @@ namespace CloCloWidget;
 // own loader reads before any code here runs: <exe>.config (side-by-side
 // redirects of the system components Windows loads into the process) and
 // <exe>.local (DLL redirection), plus <exe>.manifest.
+//
+// And it checks the exe's own folder the same way: Windows looks there
+// first for many system DLLs loaded by name (version.dll, dwmapi.dll,
+// winmm.dll… — reproduced), so a look-alike placed beside the exe would be
+// loaded into CloClo. Any DLL there must be one of the pinned files (the
+// Program Files layout keeps WPF's native DLLs there); anything else makes
+// CloClo refuse to start. Re-extracting can't fix that folder, so there's
+// no retry for it.
 public static partial class NativeLibraryCheck
 {
     private const string RetriedVariable = "CLOCLO_NATIVE_REEXTRACTED";
@@ -61,6 +69,19 @@ public static partial class NativeLibraryCheck
         if (PinnedLibraries.Count == 0)
         {
             Refuse("This build of CloClo carries no list of its native files, so it can't verify them. Reinstall CloClo.");
+            return false;
+        }
+
+        var appDir = Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
+        var strangers = Directory.EnumerateFiles(appDir, "*.dll")
+            .Where(f => !IsPinned(f) || !IsMicrosoftSigned(f))
+            .ToList();
+        if (strangers.Count > 0)
+        {
+            Refuse("CloClo won't start while these files are next to it:\n\n" +
+                string.Join("\n", strangers.Select(Path.GetFileName)) +
+                "\n\nThey aren't part of CloClo, and Windows could load them into it. " +
+                "Delete them (and consider a malware scan), then start CloClo again.");
             return false;
         }
 
