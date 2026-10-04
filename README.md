@@ -17,7 +17,9 @@ get — the bottom-right corner, just above the taskbar).
      you have none, it offers to create one, and it never signs with an
      unprotected key;
    - with Start Menu and desktop shortcuts, and listed in **Settings → Apps →
-     Installed apps**.
+     Installed apps**;
+   - recording a fingerprint of the source it was built from, for
+     `Check-Source.cmd`.
 
    Windows asks you to confirm the signing twice (once for the DLLs, once for
    the exe), then shows the administrator prompt. The window stays open at
@@ -91,18 +93,17 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
 
 ## Installing
 
-One command builds, signs (optional), installs and adds a Start Menu
-shortcut — run it again any time to upgrade:
-
-`Install-CloClo.cmd` runs `install.ps1 -ProgramFiles -UseCloCloCertificate
--DesktopShortcut`. All the options:
+`install.ps1` builds, signs (optional) and installs CloClo with a Start Menu
+shortcut; run it again any time to upgrade. `Install-CloClo.cmd` is simply
+`install.ps1 -ProgramFiles -UseCloCloCertificate -DesktopShortcut`. All the
+options:
 
 ```powershell
 .\install.ps1                                   # per-user install, unsigned
 .\install.ps1 -ProgramFiles                     # install to Program Files instead (recommended)
 .\install.ps1 -CertThumbprint <thumbprint>      # sign with a certificate from your store
 .\install.ps1 -PfxPath C:\certs\codesign.pfx    # sign with a .pfx (asks for its password)
-.\install.ps1 -UseCloCloCertificate            # sign with your newest protected CloClo certificate (offers to create one)
+.\install.ps1 -UseCloCloCertificate             # sign with your newest protected CloClo certificate (offers to create one)
 .\install.ps1 -DesktopShortcut                  # also put a shortcut on the desktop
 .\install.ps1 -NoLaunch                         # don't start CloClo afterwards
 .\install.ps1 -Uninstall                        # removes either kind of install
@@ -194,9 +195,14 @@ difference is that no Windows PC trusts it, so the publisher still shows as
 unverified. It stays that way on purpose — it's never added to Windows'
 trusted roots.
 
-The commands below use the name `CN=CloClo`. If yours has another name (say
-`CN=CloClo_yourname`), use that name in every command — otherwise loading or
-deleting the certificate finds nothing.
+**The easy way:** double-click `Install-CloClo.cmd`. It uses your newest
+certificate named `CN=CloClo…` (for example `CN=CloClo` or
+`CN=CloClo_yourname`) whose key is protected, and if there's none it asks
+whether to create one — nothing else to type.
+
+**By hand** — the commands below use the name `CN=CloClo`. If yours has
+another name, use that name in every command, otherwise loading or deleting
+the certificate finds nothing.
 
 **First time — create the certificate** (once; it's valid for five years).
 `-KeyProtection Protect` gives it a protected private key; Windows shows a
@@ -228,9 +234,10 @@ trust the certificate yet". Both are expected.
 
 **Replacing the certificate** — for example one made before key protection
 was required, which the build now refuses. Delete every CloClo certificate
-together with its private key (other certificates aren't touched), create a
-new one, and install; the installer will ask for `YES` once, because the
-certificate changed:
+together with its private key (other certificates aren't touched), then
+either double-click `Install-CloClo.cmd` (it offers to create the new one) or
+create it and install by hand as below. Either way the installer asks for
+`YES` once, because the certificate changed:
 
 ```powershell
 Get-ChildItem Cert:\CurrentUser\My | Where-Object Subject -eq "CN=CloClo" | ForEach-Object { Remove-Item -Path "Cert:\CurrentUser\My\$($_.Thumbprint)" -DeleteKey }
@@ -261,9 +268,11 @@ might change the code can't also rewrite the record.
 Double-click **`Check-Source.cmd`** to compare the project folder with the
 last install. It runs the *installed* checker and lists every file that was
 changed, added or removed since then — or says that all of them still match.
-Run it before building again if you're unsure whether something touched the
-code. (With a per-user install the record sits in a folder you can write to,
-so the check is weaker; the script says so.)
+Right after an install it reports no changes; any change you then make
+yourself (editing code, `git pull`) shows up until the next install records
+the new state. Run it before building again if you're unsure whether
+something touched the code. (With a per-user install the record sits in a
+folder you can write to, so the check is weaker; the script says so.)
 
 ## Troubleshooting
 
@@ -280,6 +289,8 @@ so the check is weaker; the script says so.)
 | CloClo "won't run with a .NET profiler attached" | Remove the listed environment variables (System Properties → Environment Variables), sign out and back in |
 | CloClo doesn't start at sign-in | Check **Settings → Apps → Startup** has CloClo switched on; otherwise right-click it → **Start with Windows** off and on again |
 | "Source files … changed while building" | Something edited the project during the build — run the install again, and use `Check-Source.cmd` if you didn't expect changes |
+| `Check-Source.cmd`: "isn't installed with a source record yet" | The installed copy predates source records — run `Install-CloClo.cmd` once |
+| `Check-Source.cmd` lists changes you didn't make | Don't build or install; look at the listed files first (`git diff` shows what changed) |
 
 ## Rebuilding from source
 
@@ -319,7 +330,9 @@ the icon bar and the right-click menu.
 Security below). The build itself, through targets in `CloCloWidget.csproj`,
 records the SHA-256 of every native runtime DLL it ships
 (`NativeLibraryPins.g.cs`) and, with a certificate, calls `sign.ps1`;
-`install.ps1` drives the whole build-sign-install sequence.
+`install.ps1` drives the whole build-sign-install sequence, and
+`check-source.ps1` records and checks the source fingerprint. The `.cmd`
+files are double-click launchers for those scripts.
 
 ## Security
 
@@ -387,6 +400,10 @@ loads anything)
   over** — a DLL whose signature no longer verifies stops the build.
 - **Updates keep the signer** unless you type `YES` after seeing both
   thumbprints.
+- **The source is fingerprinted** at every install, checked unchanged across
+  the build, and the record is kept where only administrators can change it
+  (Program Files), so `Check-Source.cmd` can tell whether the code changed
+  since.
 - **Administrator rights only where needed.** `install.ps1` refuses to run
   from an administrator window, so building never runs as admin and the
   widget always starts as your normal user. With `-ProgramFiles` it asks for
