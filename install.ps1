@@ -129,7 +129,15 @@ if (Get-ItemProperty -Path $runKey -Name $runValue -ErrorAction SilentlyContinue
 
 if ($signing) {
     $sig = Get-AuthenticodeSignature $installExe
-    Write-Host "Signature: $($sig.Status) ($($sig.SignerCertificate.Subject))"
+    $meaning = switch ($sig.Status) {
+        'Valid' { 'signed and trusted' }
+        # Get-AuthenticodeSignature's name for "intact signature, but the
+        # certificate chains to a root this PC doesn't trust" - always the
+        # case for a self-signed certificate until it's trusted.
+        'UnknownError' { "signed, but this PC doesn't trust the certificate yet (normal for a self-signed one)" }
+        default { "$($sig.Status) - $($sig.StatusMessage)" }
+    }
+    Write-Host "Signature: $meaning [$($sig.SignerCertificate.Subject)]"
 }
 
 if (-not $NoLaunch) { Start-Process $installExe }
