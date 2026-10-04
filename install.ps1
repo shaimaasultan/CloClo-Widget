@@ -59,9 +59,15 @@ if ($Uninstall) {
 }
 
 # --- 1. build (and sign) ---------------------------------------------------
-$publishDir = Join-Path $PSScriptRoot 'publish'
+# $PSScriptRoot is empty when the script's text is pasted into a console
+# rather than run as a file - fall back to the current folder then.
+$root = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+if (-not (Test-Path (Join-Path $root 'CloCloWidget.csproj'))) {
+    throw "CloCloWidget.csproj not found in $root - run this from the cloclo-widget folder: .\install.ps1"
+}
+$publishDir = Join-Path $root 'publish'
 $publishArgs = @(
-    'publish', (Join-Path $PSScriptRoot 'CloCloWidget.csproj'),
+    'publish', (Join-Path $root 'CloCloWidget.csproj'),
     '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true',
     '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true',
     '-o', $publishDir, '-nologo'

@@ -41,6 +41,10 @@ needed) and adds a Start Menu shortcut — run it again any time to upgrade:
 .\install.ps1 -Uninstall
 ```
 
+If Windows says running scripts is disabled, start it as
+`powershell -ExecutionPolicy Bypass -File .\install.ps1` (plus any options) —
+that allows this one run without changing any system setting.
+
 It installs to `%LocalAppData%\Programs\CloCloWidget`, closes a running
 widget first so the exe can be replaced, and moves "Start with Windows" to the
 installed copy if it was on.
