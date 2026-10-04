@@ -44,7 +44,13 @@ function Stop-RunningWidget {
     $running = Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($exeName)) -ErrorAction SilentlyContinue
     if ($running) {
         Write-Host "Closing the running widget..."
-        $running | Stop-Process -Force
+        try {
+            $running | Stop-Process -Force -ErrorAction Stop
+        } catch {
+            # A copy started from an admin window runs elevated, and a
+            # normal window isn't allowed to close it.
+            throw "Couldn't close the running CloClo (it was probably started as administrator). Close it yourself - right-click it -> Exit - then run this again."
+        }
         $running | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue
     }
 }
@@ -140,5 +146,16 @@ if ($signing) {
     Write-Host "Signature: $meaning [$($sig.SignerCertificate.Subject)]"
 }
 
-if (-not $NoLaunch) { Start-Process $installExe }
+if (-not $NoLaunch) {
+    $elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)
+    if ($elevated) {
+        # Started directly, it would inherit this window's admin rights - and
+        # a widget that sends keystrokes to other apps shouldn't have them.
+        # Explorer always launches things as the normal, non-admin user.
+        Start-Process explorer.exe -ArgumentList "`"$installExe`""
+    } else {
+        Start-Process $installExe
+    }
+}
 Write-Host "Done."
