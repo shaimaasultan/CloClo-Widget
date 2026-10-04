@@ -138,7 +138,10 @@ from the project folder does the same.
 | WPF's native DLLs | inside the exe, unpacked to `%TEMP%` at runtime and checked at startup | next to the exe, in Program Files |
 
 With `-ProgramFiles`, building and signing still run as you (your certificate
-is in your own store); only the copy into Program Files is elevated. Each
+is in your own store); only the copy into Program Files is elevated. The
+administrator prompt's **Show more details** shows exactly what that step
+will do, in plain PowerShell: every file's source path, its SHA-256, the
+destination folder and the Installed apps entry being written. Each
 file's SHA-256 is taken from the build and re-checked inside Program Files —
 a file that changed in between is removed and the install stops — and the
 per-user copy, if any, is removed. CloClo itself always starts as your normal

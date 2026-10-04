@@ -92,23 +92,56 @@ function Test-Elevated {
 }
 
 # Runs a script as administrator, always in a fresh PowerShell process.
-# - The script travels inline (base64 on the command line), never as a file:
-#   a script file in a folder this user can write to could be swapped by
-#   another program just before it runs elevated.
-# - Its first line limits module loading to PowerShell's own system folder.
-#   Otherwise commands like Copy-Item or Get-FileHash are looked up in the
-#   user's Documents\WindowsPowerShell\Modules first, where another program
+# - The script travels inline on the command line, never as a file: a script
+#   file in a folder this user can write to could be swapped by another
+#   program just before it runs elevated.
+# - It travels as plain, readable PowerShell (-Command), not base64, so the
+#   UAC prompt's "Show more details" shows exactly what will run as
+#   administrator: every source and destination path, every file's SHA-256
+#   and the registry entry written. Its lines are joined with "; " into one
+#   line, and it's quoted with ConvertTo-NativeArgument so Windows hands it
+#   to PowerShell exactly as written.
+# - Its first statement limits module loading to PowerShell's own system
+#   folder. Otherwise commands like Copy-Item or Get-FileHash are looked up in
+#   the user's Documents\WindowsPowerShell\Modules first, where another program
 #   could plant a look-alike module and have it run as administrator
 #   (reproduced).
+function ConvertTo-NativeArgument([string]$text) {
+    # Windows' command-line rules (CommandLineToArgvW): inside a quoted
+    # argument, a run of backslashes is literal unless a double quote follows
+    # it; then the backslashes are doubled and the quote is escaped as \".
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.Append('"')
+    $backslashes = 0
+    foreach ($ch in $text.ToCharArray()) {
+        if ($ch -eq '\') { $backslashes++; continue }
+        if ($ch -eq '"') {
+            [void]$sb.Append('\' * (2 * $backslashes + 1)).Append('"')
+        } else {
+            [void]$sb.Append('\' * $backslashes).Append($ch)
+        }
+        $backslashes = 0
+    }
+    [void]$sb.Append('\' * (2 * $backslashes)).Append('"')
+    $sb.ToString()
+}
+
+function Get-ElevatedCommandLine([string]$script) {
+    $first = @('$env:PSModulePath = Join-Path $PSHOME ''Modules''', '$ErrorActionPreference = ''Stop''')
+    $lines = $first + @($script -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $argLine = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ' + (ConvertTo-NativeArgument ($lines -join '; '))
+    # Windows caps a command line at 32,767 characters, program path included.
+    if ($argLine.Length -gt 30000) { throw "The administrator step is too long for one command line ($($argLine.Length) characters)." }
+    $argLine
+}
+
 function Invoke-Elevated([string]$script) {
-    $script = "`$env:PSModulePath = `"`$PSHOME\Modules`"`n`$ErrorActionPreference = 'Stop'`n" + $script
-    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
-    $psArgs = '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded
+    $argLine = Get-ElevatedCommandLine $script
     try {
         $p = if (Test-Elevated) {
-            Start-Process $powershellExe -Wait -PassThru -WindowStyle Hidden -ArgumentList $psArgs
+            Start-Process $powershellExe -Wait -PassThru -WindowStyle Hidden -ArgumentList $argLine
         } else {
-            Start-Process $powershellExe -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList $psArgs
+            Start-Process $powershellExe -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList $argLine
         }
     } catch {
         throw "Administrator rights are needed for Program Files, and the request was declined."
