@@ -38,6 +38,13 @@ public class WidgetSettings
     // couple of minutes) before Keeper nudges a stretch break — 0 means
     // never. Picked from the right-click menu's "Workout reminder" submenu.
     public int WorkoutAfterMinutes { get; set; } = 15;
+    // Keeps the widget (and the clipboard/QR windows it opens) out of
+    // screenshots, recordings and screen sharing — see ScreenCapture.cs.
+    // On by default: it changes nothing on the local display.
+    public bool HideFromScreenCapture { get; set; } = true;
+    // Off = the notification label shows only which app sent it, never the
+    // message text itself (2FA codes, message previews…).
+    public bool ShowNotificationText { get; set; } = true;
 
     private static string FolderPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CloCloWidget");

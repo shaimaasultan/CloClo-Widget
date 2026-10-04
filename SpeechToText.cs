@@ -57,13 +57,31 @@ public static class SpeechToText
         }
     }
 
-    // Next to the exe itself, not Documents — Controlled Folder Access
-    // (Windows' ransomware protection) blocks unrecognized apps from
-    // writing into Documents/Desktop/Pictures/etc. by default, discovered
-    // by hitting exactly that block while testing this. The app's own
-    // install folder isn't one of the protected locations.
-    private static string DictationFolder =>
-        Path.Combine(AppContext.BaseDirectory, "docs");
+    // Per-user and private: %LocalAppData%\CloCloWidget\Dictation. Not
+    // Documents — Controlled Folder Access (Windows' ransomware protection)
+    // blocks unrecognized apps from writing there by default — and not next
+    // to the exe either, which fails under Program Files and can leak
+    // dictated text into whatever synced or shared folder the exe sits in.
+    // LocalAppData is neither protected by CFA nor roamed/synced.
+    public static string DictationFolder =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CloCloWidget", "Dictation");
+
+    // settings.json only ever points dictation inside DictationFolder — a
+    // path anywhere else (an older build's location, or a hand-edited
+    // settings file) gets a fresh file here instead of being appended to.
+    public static bool IsInDictationFolder(string? path)
+    {
+        if (string.IsNullOrEmpty(path)) return false;
+        try
+        {
+            var folder = Path.GetFullPath(DictationFolder) + Path.DirectorySeparatorChar;
+            return Path.GetFullPath(path).StartsWith(folder, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     public static string CreateNewFile()
     {

@@ -130,12 +130,8 @@ public partial class MainWindow : Window
     [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
     [DllImport("user32.dll")] private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
-    [DllImport("user32.dll")] private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern int GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
-    private const byte VK_LWIN = 0x5B;
-    private const byte VK_N = 0x4E;
-    private const uint KEYEVENTF_KEYUP = 0x0002;
 
     // Ordered by actual cloud density (see cloudCoverToSky in widget.html),
     // not alphabetically — "Mostly Cloudy" (a sun peeking through) is
@@ -185,6 +181,7 @@ public partial class MainWindow : Window
         var exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
         exStyle |= WS_EX_TRANSPARENT;
         SetWindowLong(hwnd, GWL_EXSTYLE, exStyle);
+        ScreenCapture.SetExcluded(this, _settings.HideFromScreenCapture);
     }
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -242,7 +239,10 @@ public partial class MainWindow : Window
         Watch(async () =>
         {
             var n = await NotificationWatcher.GetLatestAsync();
-            return n is { } latest ? ($"{latest.AppName}: {latest.Title}", latest.Body, latest.IconPng, latest.AppUserModelId) : ((string, string, byte[]?, string?)?)null;
+            if (n is not { } latest) return null;
+            return _settings.ShowNotificationText
+                ? ($"{latest.AppName}: {latest.Title}", latest.Body, latest.IconPng, latest.AppUserModelId)
+                : (latest.AppName, "New notification", latest.IconPng, latest.AppUserModelId);
         });
     }
 
@@ -320,7 +320,7 @@ public partial class MainWindow : Window
 
         try
         {
-            new QrCodeWindow(text.Trim()) { Owner = this }.Show();
+            ShowSensitive(new QrCodeWindow(text.Trim()) { Owner = this });
         }
         catch
         {
@@ -387,7 +387,15 @@ public partial class MainWindow : Window
             ShowOneShotLabel("Nothing text-based in your clipboard history", "");
             return;
         }
-        new ClipboardHistoryWindow(texts) { Owner = this }.Show();
+        ShowSensitive(new ClipboardHistoryWindow(texts) { Owner = this });
+    }
+
+    // Windows that put the user's own text on screen follow the same
+    // screen-capture setting as the widget itself.
+    private void ShowSensitive(Window window)
+    {
+        ScreenCapture.SetExcluded(window, _settings.HideFromScreenCapture);
+        window.Show();
     }
 
     // Voice dictation, appended to a running text file rather than just
@@ -406,7 +414,7 @@ public partial class MainWindow : Window
 
         var text = dialog.CapturedText;
         var path = _settings.DictationFilePath;
-        if (string.IsNullOrEmpty(path) || !File.Exists(path))
+        if (!SpeechToText.IsInDictationFolder(path) || !File.Exists(path))
         {
             path = SpeechToText.CreateNewFile();
             _settings.DictationFilePath = path;
@@ -550,10 +558,7 @@ public partial class MainWindow : Window
     // than trying to activate the flyout's own host process by AUMID.
     private void OpenNotificationFlyout()
     {
-        keybd_event(VK_LWIN, 0, 0, UIntPtr.Zero);
-        keybd_event(VK_N, 0, 0, UIntPtr.Zero);
-        keybd_event(VK_N, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-        keybd_event(VK_LWIN, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+        KeyboardInput.SendChord(KeyboardInput.VK_LWIN, KeyboardInput.VK_N);
     }
 
     // Two sections: apps that currently hold a media session (▶, same as
@@ -686,6 +691,7 @@ public partial class MainWindow : Window
             Left = _avatarWindow.Left - AvatarOffsetX;
             Top = _avatarWindow.Top - AvatarOffsetY;
         };
+        ScreenCapture.SetExcluded(_avatarWindow, _settings.HideFromScreenCapture);
         _avatarWindow.Show();
     }
 
@@ -1124,6 +1130,8 @@ public partial class MainWindow : Window
         menu.Items.Add(BuildWorkoutMenu());
         menu.Items.Add("Refresh weather", null, (_, _) => _ = RefreshWeatherAsync());
         menu.Items.Add("Start new dictation file", null, (_, _) => StartNewDictationFile());
+        menu.Items.Add("Open dictation folder", null, (_, _) => OpenDictationFolder());
+        menu.Items.Add(BuildPrivacyMenu());
         var topMost = new DrawingForms.ToolStripMenuItem("Always on top", null, (_, _) => ToggleAlwaysOnTop()) { Checked = _settings.AlwaysOnTop };
         menu.Items.Add(topMost);
         var startup = new DrawingForms.ToolStripMenuItem("Start with Windows", null, (_, _) => ToggleStartWithWindows()) { Checked = StartupRegistration.IsEnabled() };
@@ -1279,6 +1287,49 @@ public partial class MainWindow : Window
         }
         _settings.Save();
         ApplyDisplaySettings();
+    }
+
+    private DrawingForms.ToolStripMenuItem BuildPrivacyMenu()
+    {
+        var privacy = new DrawingForms.ToolStripMenuItem("Privacy");
+        privacy.DropDownItems.Add(new DrawingForms.ToolStripMenuItem("Hide from screen sharing", null, (_, _) => ToggleHideFromScreenCapture())
+        {
+            Checked = _settings.HideFromScreenCapture,
+        });
+        privacy.DropDownItems.Add(new DrawingForms.ToolStripMenuItem("Show notification text", null, (_, _) => ToggleNotificationText())
+        {
+            Checked = _settings.ShowNotificationText,
+        });
+        return privacy;
+    }
+
+    private void ToggleHideFromScreenCapture()
+    {
+        _settings.HideFromScreenCapture = !_settings.HideFromScreenCapture;
+        _settings.Save();
+        ScreenCapture.SetExcluded(this, _settings.HideFromScreenCapture);
+        if (_avatarWindow != null) ScreenCapture.SetExcluded(_avatarWindow, _settings.HideFromScreenCapture);
+        foreach (Window owned in OwnedWindows)
+        {
+            if (owned is QrCodeWindow or ClipboardHistoryWindow) ScreenCapture.SetExcluded(owned, _settings.HideFromScreenCapture);
+        }
+    }
+
+    private void ToggleNotificationText()
+    {
+        _settings.ShowNotificationText = !_settings.ShowNotificationText;
+        _settings.Save();
+        if (_watchingNotifications) _ = RefreshWatched();
+    }
+
+    private static void OpenDictationFolder()
+    {
+        Directory.CreateDirectory(SpeechToText.DictationFolder);
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = SpeechToText.DictationFolder,
+            UseShellExecute = true,
+        });
     }
 
     private void SetSky(string sky)
