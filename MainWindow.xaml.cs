@@ -1321,14 +1321,23 @@ public partial class MainWindow : Window
         if (_watchingNotifications) _ = RefreshWatched();
     }
 
-    private static void OpenDictationFolder()
+    // Opened by Explorer's full path with the folder as an argument, not by
+    // shell-executing the folder path: if something other than a folder ever
+    // sat at that path, shell-execute would open or run it.
+    private void OpenDictationFolder()
     {
-        Directory.CreateDirectory(SpeechToText.DictationFolder);
-        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        try
         {
-            FileName = SpeechToText.DictationFolder,
-            UseShellExecute = true,
-        });
+            Directory.CreateDirectory(SpeechToText.DictationFolder);
+            var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+            var start = new System.Diagnostics.ProcessStartInfo(explorer) { UseShellExecute = false };
+            start.ArgumentList.Add(SpeechToText.DictationFolder);
+            System.Diagnostics.Process.Start(start);
+        }
+        catch
+        {
+            ShowOneShotLabel("Couldn't open the dictation folder", "");
+        }
     }
 
     private void SetSky(string sky)

@@ -170,11 +170,15 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         FitLine(NowPlayingSubtitle, width);
     }
 
+    private static readonly byte[] PngSignature = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+
     // Decodes a notification's app logo. Never trusted for anything beyond
-    // pixels: decoded at a fixed small size and frozen.
+    // pixels: PNG only (what Windows app logos are) — WIC would otherwise
+    // hand any other format to whichever image codec claims it, including
+    // third-party ones — decoded at a fixed small size, and frozen.
     public static ImageSource? DecodeIcon(byte[]? bytes)
     {
-        if (bytes is not { Length: > 0 }) return null;
+        if (bytes is not { Length: > 8 } || !bytes.AsSpan(0, 8).SequenceEqual(PngSignature)) return null;
         try
         {
             var image = new BitmapImage();
