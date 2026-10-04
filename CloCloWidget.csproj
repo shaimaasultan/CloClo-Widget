@@ -18,4 +18,29 @@
     <PackageReference Include="System.Management" Version="8.0.0" />
   </ItemGroup>
 
+  <!--
+    Opt-in Authenticode signing of the published exe — runs only when a
+    code-signing certificate's thumbprint is passed in, e.g.
+      dotnet publish ... -p:SignCertThumbprint=<sha1 thumbprint>
+    The certificate must be in the current user's (or machine's) "My"
+    store, which is also where a hardware token or Azure Key Vault/Trusted
+    Signing CSP surfaces it. signtool comes from the newest installed
+    Windows SDK unless SignToolPath says otherwise. The signature is
+    RFC 3161 timestamped so it stays valid after the certificate expires,
+    and verified straight after signing so a bad signature fails the build.
+  -->
+  <Target Name="SignPublishedExe" AfterTargets="Publish" Condition="'$(SignCertThumbprint)' != ''">
+    <ItemGroup>
+      <_SignToolCandidate Include="$(MSBuildProgramFiles32)\Windows Kits\10\bin\*\x64\signtool.exe" />
+    </ItemGroup>
+    <PropertyGroup>
+      <SignToolPath Condition="'$(SignToolPath)' == ''">$([System.Text.RegularExpressions.Regex]::Match('@(_SignToolCandidate)', '[^;]+$'))</SignToolPath>
+      <SignTimestampUrl Condition="'$(SignTimestampUrl)' == ''">http://timestamp.digicert.com</SignTimestampUrl>
+      <_SignTarget>$([System.IO.Path]::GetFullPath('$(PublishDir)$(AssemblyName).exe'))</_SignTarget>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(SignToolPath)')" Text="signtool.exe not found — install the Windows SDK or pass -p:SignToolPath=..." />
+    <Exec Command="&quot;$(SignToolPath)&quot; sign /sha1 $(SignCertThumbprint) /fd SHA256 /tr $(SignTimestampUrl) /td SHA256 &quot;$(_SignTarget)&quot;" />
+    <Exec Command="&quot;$(SignToolPath)&quot; verify /pa &quot;$(_SignTarget)&quot;" />
+  </Target>
+
 </Project>

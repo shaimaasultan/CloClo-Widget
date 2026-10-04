@@ -20,6 +20,11 @@ SmartScreen prompt the first time since the .exe isn't code-signed; choose
   always-on-top, or exit.
 - A tray icon (near the clock, in the hidden-icons area) does the same —
   double-click it to show/hide the widget if you ever lose track of it.
+- **Privacy** (right-click menu): the widget is hidden from screenshots,
+  recordings and screen sharing by default, and notification text can be
+  turned off so only the sending app's name shows.
+- Dictated text is saved under `%LocalAppData%\CloCloWidget\Dictation`
+  (right-click → "Open dictation folder").
 - Weather refreshes automatically every 20 minutes, from
   [Open-Meteo](https://open-meteo.com) (no API key, no account).
 
@@ -35,6 +40,18 @@ To produce another standalone .exe:
 ```bash
 dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o ./publish
 ```
+
+To code-sign it (removes the SmartScreen prompt and lets people verify the
+build), add the thumbprint of a code-signing certificate from your
+certificate store — the exe is then signed, timestamped and verified as part
+of the publish, and the build fails if any of that doesn't succeed:
+
+```bash
+dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o ./publish -p:SignCertThumbprint=<thumbprint>
+```
+
+Any Authenticode certificate works; Azure Trusted Signing is the cheapest
+option for an individual developer.
 
 ## How it's built
 
