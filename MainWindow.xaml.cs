@@ -20,6 +20,10 @@ public partial class MainWindow : Window
     private DispatcherTimer? _topmostTimer;
     private DispatcherTimer? _batteryTimer;
     private DispatcherTimer? _idleTimer;
+    private DispatcherTimer? _weatherTimer;
+    // The last successful reading, re-pushed whenever the page reloads so a
+    // menu change doesn't blank the temperature until the next fetch.
+    private WeatherReading? _weather;
     // "awake", "asleep", or "workout" — see UpdateActivityState.
     private string _activityState = "awake";
     // When the current unbroken stretch of activity began — reset every
@@ -209,9 +213,32 @@ public partial class MainWindow : Window
         // was showing. Push a fresh one once the new page is actually ready,
         // rather than relying on "did it change" — from the host's side
         // nothing changed, but the page lost it regardless.
-        Web.CoreWebView2.NavigationCompleted += (_, _) => { _ = RefreshWatched(); RefreshBattery(); PushActivityState(); };
+        Web.CoreWebView2.NavigationCompleted += (_, _) => { _ = RefreshWatched(); RefreshBattery(); PushActivityState(); PushWeather(); };
 
         NavigateToWidget();
+        SetupWeatherTimer();
+    }
+
+    private void SetupWeatherTimer()
+    {
+        _weatherTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(20) };
+        _weatherTimer.Tick += async (_, _) => await RefreshWeatherAsync();
+        _weatherTimer.Start();
+        _ = RefreshWeatherAsync();
+    }
+
+    private async Task RefreshWeatherAsync()
+    {
+        _weather = await WeatherService.GetCurrentAsync(_settings.Latitude, _settings.Longitude);
+        PushWeather();
+    }
+
+    private void PushWeather()
+    {
+        var json = _weather is { } w
+            ? $"{{\"type\":\"weather\",\"temp\":{w.Temperature},\"sky\":{JsonSerializer.Serialize(w.Sky)},\"isDay\":{(w.IsDay ? "true" : "false")}}}"
+            : "{\"type\":\"weather\",\"temp\":null}";
+        try { Web.CoreWebView2?.PostWebMessageAsJson(json); } catch { /* page not ready yet */ }
     }
 
     // "Current session" (tried first) turned out to be Windows' own guess
@@ -971,9 +998,7 @@ public partial class MainWindow : Window
         var assetsDir = Path.Combine(AppContext.BaseDirectory, "Assets");
         var htmlPath = Path.Combine(assetsDir, "widget.html");
         var query =
-            $"?lat={_settings.Latitude.ToString(System.Globalization.CultureInfo.InvariantCulture)}" +
-            $"&lon={_settings.Longitude.ToString(System.Globalization.CultureInfo.InvariantCulture)}" +
-            $"&city={Uri.EscapeDataString(_settings.City)}" +
+            $"?city={Uri.EscapeDataString(_settings.City)}" +
             $"&sky={Uri.EscapeDataString(_settings.Sky)}" +
             $"&icons={Uri.EscapeDataString(string.Join(",", IconOrder.Where(k => _settings.EnabledIcons.Contains(k))))}";
         Web.CoreWebView2.Navigate(new Uri(htmlPath).AbsoluteUri + query);
@@ -1133,7 +1158,7 @@ public partial class MainWindow : Window
         menu.Items.Add(BuildIconsMenu());
         menu.Items.Add(BuildSleepMenu());
         menu.Items.Add(BuildWorkoutMenu());
-        menu.Items.Add("Refresh weather", null, (_, _) => NavigateToWidget());
+        menu.Items.Add("Refresh weather", null, (_, _) => _ = RefreshWeatherAsync());
         menu.Items.Add("Start new dictation file", null, (_, _) => StartNewDictationFile());
         var topMost = new DrawingForms.ToolStripMenuItem("Always on top", null, (_, _) => ToggleAlwaysOnTop()) { Checked = _settings.AlwaysOnTop };
         menu.Items.Add(topMost);
@@ -1315,6 +1340,7 @@ public partial class MainWindow : Window
             _settings.Longitude = dialog.ResolvedLon;
             _settings.Save();
             NavigateToWidget();
+            _ = RefreshWeatherAsync();
         }
     }
 

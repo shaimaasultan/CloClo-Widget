@@ -2,6 +2,10 @@
 <html>
 <head>
 <meta charset="utf-8" />
+<!-- Purely a renderer: weather arrives from the host (see WeatherService.cs)
+     over PostWebMessageAsJson, so the page itself gets no network at all. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:" />
 <title>CloClo</title>
 <style>
   :root{
@@ -826,10 +830,8 @@
     }
     // cloudy/mostlycloudy/overcast/fog/windy: default torso, no sunglasses (no direct sun)
   }
-  // ---- live weather, from the query string CloClo's WPF host supplies ----
+  // ---- display settings, from the query string CloClo's WPF host supplies ----
   const params = new URLSearchParams(location.search);
-  const lat = params.get('lat');
-  const lon = params.get('lon');
   const place = params.get('city') || '';
   document.getElementById('place').textContent = place;
 
@@ -868,62 +870,25 @@
   if (skyOverride !== 'auto') { applyWeather(skyOverride); showSkyLabel(skyOverride); }
   else applyWeather('clear');
 
-  // Cloud cover is a continuous 0-100% reading from the API, banded here
-  // into four visual steps — clear/partly cloudy/mostly cloudy/overcast —
-  // rather than relying on the weather code's own cloud buckets (0/1/2/3),
-  // which are too coarse to tell "partly cloudy" from "overcast but not
-  // actually raining" apart. The weather code is still what picks
-  // precipitation/fog, since cloud cover alone can't tell "cloudy" from
-  // "cloudy and also raining".
-  function cloudCoverToSky(cloudCover) {
-    if (cloudCover < 20) return 'clear';
-    if (cloudCover < 45) return 'cloudy'; // partly cloudy
-    if (cloudCover < 75) return 'mostlycloudy';
-    return 'overcast';
-  }
-
-  function codeToSky(code, cloudCover) {
-    if ([51, 53, 55, 56, 57].includes(code)) return 'drizzle';
-    if ([61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return 'rain';
-    if ([71, 73, 75, 77, 85, 86].includes(code)) return 'snow';
-    if ([95, 96, 99].includes(code)) return 'storm';
-    if ([45, 48].includes(code)) return 'fog';
-    return cloudCoverToSky(cloudCover);
-  }
-
-  // Wind only gets its own visual when it's the most notable thing
-  // happening — under a plain or overcast sky. Rain/snow/storm/fog already
-  // read as "bad weather" on their own, so a gust on top of them would
-  // just be visual noise without a blended animation to show it properly.
-  const WINDY_THRESHOLD_KMH = 28;
-
-  async function refreshWeather() {
-    if (!lat || !lon) return;
-    try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code,wind_speed_10m,cloud_cover,is_day&timezone=auto`;
-      const res = await fetch(url);
-      const data = await res.json();
-      const temp = Math.round(data.current.temperature_2m);
-      const code = data.current.weather_code;
-      const windSpeed = data.current.wind_speed_10m;
-      const cloudCover = data.current.cloud_cover;
-      document.getElementById('temp').textContent = `${temp}°`;
-      // Applied unconditionally (not just when skyOverride === 'auto') so a
-      // manually-picked sky still shows the right sun/moon for the actual
-      // time of day, rather than day/night only working in auto mode.
-      document.body.classList.toggle('is-night', data.current.is_day === 0);
-      if (skyOverride === 'auto') {
-        let sky = codeToSky(code, cloudCover);
-        if ((sky === 'clear' || sky === 'cloudy' || sky === 'mostlycloudy' || sky === 'overcast') && windSpeed >= WINDY_THRESHOLD_KMH) sky = 'windy';
-        applyWeather(sky);
-        showSkyLabel(sky);
-      }
-    } catch (err) {
+  // ---- live weather: fetched host-side (see WeatherService.cs, which also
+  // maps the WMO code + cloud cover to a sky) and pushed here on a timer ----
+  window.chrome?.webview?.addEventListener('message', (e) => {
+    const msg = e.data;
+    if (!msg || msg.type !== 'weather') return;
+    if (msg.temp == null) {
       document.getElementById('temp').textContent = '—°';
+      return;
     }
-  }
-  refreshWeather();
-  setInterval(refreshWeather, 20 * 60 * 1000);
+    document.getElementById('temp').textContent = `${msg.temp}°`;
+    // Applied unconditionally (not just when skyOverride === 'auto') so a
+    // manually-picked sky still shows the right sun/moon for the actual
+    // time of day.
+    document.body.classList.toggle('is-night', !msg.isDay);
+    if (skyOverride === 'auto') {
+      applyWeather(msg.sky);
+      showSkyLabel(msg.sky);
+    }
+  });
 </script>
 </body>
 </html>
