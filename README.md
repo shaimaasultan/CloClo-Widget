@@ -133,8 +133,8 @@ order from the `cloclo-widget` folder, in one PowerShell window:
    powershell -ExecutionPolicy Bypass -File .\install.ps1 -CertThumbprint $cert.Thumbprint -DesktopShortcut
    ```
 
-Run step 1 only once per replacement: running step 2 twice leaves two CloClo
-certificates, and `$cert` then holds both.
+Run step 2 only once: running it twice leaves two CloClo certificates (if that
+happens, start again from step 1).
 
 ## Rebuilding from source
 
