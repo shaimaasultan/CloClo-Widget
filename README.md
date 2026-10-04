@@ -68,6 +68,38 @@ failure fails the build. A `.pfx` password is passed through the
 Authenticode code-signing certificate works; Azure Trusted Signing is the
 cheapest option for an individual developer.
 
+#### Signing locally with a self-signed certificate (left untrusted)
+
+Run these in PowerShell from the `cloclo-widget` folder, all in the same
+window (step 3 uses the `$cert` variable from step 1 or 2).
+
+1. Create a code-signing certificate named CloClo in your personal
+   certificate store — once only:
+
+   ```powershell
+   $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=CloClo" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(5)
+   ```
+
+2. In any later PowerShell window, load that certificate again instead of
+   creating a new one:
+
+   ```powershell
+   $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Where-Object Subject -eq "CN=CloClo"
+   ```
+
+3. Build, sign, install and create the shortcuts:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\install.ps1 -CertThumbprint $cert.Thumbprint -DesktopShortcut
+   ```
+
+The build prints "signed, but the certificate isn't trusted on this machine"
+for each file, and the last line reads "signed, but this PC doesn't trust the
+certificate yet". That's expected: the files are signed, and the certificate
+is deliberately not added to Windows' trusted roots, so Windows still treats
+the publisher as unverified. Keep the certificate's private key to yourself —
+never export it with the key.
+
 ## Rebuilding from source
 
 ```bash
