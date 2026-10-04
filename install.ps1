@@ -59,6 +59,10 @@ if ($Uninstall) {
 }
 
 # --- 1. build (and sign) ---------------------------------------------------
+# Closed before building, not just before copying: a widget started from
+# publish\ locks the exe the build is about to overwrite.
+Stop-RunningWidget
+
 # $PSScriptRoot is empty when the script's text is pasted into a console
 # rather than run as a file - fall back to the current folder then.
 $root = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
@@ -97,7 +101,7 @@ $builtExe = Join-Path $publishDir $exeName
 if (-not (Test-Path $builtExe)) { throw "Build output not found at $builtExe." }
 
 # --- 2. install ------------------------------------------------------------
-Stop-RunningWidget
+Stop-RunningWidget   # again, in case one was started while building
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 Copy-Item $builtExe $installExe -Force
 Write-Host "Installed to $installExe"
