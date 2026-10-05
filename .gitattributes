@@ -1,3 +1,12 @@
-# Batch files must keep Windows line endings, or cmd.exe can mis-handle
-# labels and goto.
+# Every text file is checked out with Windows (CRLF) line endings, whatever
+# git's core.autocrlf says. That keeps the working files byte-for-byte
+# stable: Check-Source.cmd hashes the files exactly as they are, so a
+# checkout that rewrote line endings would show up as changes nobody made.
+# (In the repository itself text is stored with LF, as before.)
+* text=auto eol=crlf
+# Batch files must have CRLF, or cmd.exe can mis-handle labels and goto.
 *.cmd text eol=crlf
+# Binary files are never converted.
+*.ico binary
+*.png binary
+*.pfx binary
