@@ -315,7 +315,13 @@ $publishArgs = @(
     'publish', (Join-Path $root 'CloCloWidget.csproj'),
     '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true',
     '-p:PublishSingleFile=true', "-p:IncludeNativeLibrariesForSelfExtract=$selfExtract",
-    '-o', $publishDir, '-nologo'
+    '-o', $publishDir, '-nologo',
+    # No build process outlives this install. MSBuild's worker nodes and the
+    # C# compiler server otherwise keep running for minutes afterwards, with
+    # this process's environment - including SIGN_CERT_PASSWORD when signing
+    # with a .pfx, readable by any program running as you for as long as
+    # they live.
+    '--disable-build-servers', '-nodeReuse:false'
 )
 $signing = [bool]($CertThumbprint -or $PfxPath)
 if ($CertThumbprint) {

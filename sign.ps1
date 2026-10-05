@@ -67,23 +67,59 @@ if (-not $SignTool -or -not (Test-Path $SignTool)) {
 # Makes the .pfx's certificate available to signtool by thumbprint for the
 # duration of $action only. A certificate that was already in the store
 # beforehand is left exactly as it was.
+#
+# While it's in the store its private key is unprotected: any program
+# running as this user could sign with it until it's removed again. If the
+# build is killed before the clean-up below, the key would stay there - so a
+# marker file records the thumbprint while the key is in the store, and the
+# next signing with the same .pfx treats a certificate it finds under that
+# thumbprint as such a leftover and removes it too. (Only for the same .pfx:
+# the marker sits in a folder any program can write to, so it must not be
+# able to make this delete any other certificate.)
+$pfxMarker = $PSScriptRoot + '\obj\pfx-signing.pending'
+# Removing a certificate from the store leaves its private key behind in the
+# user's key store - this deletes that too.
+function Remove-PrivateKey($cert) {
+    $key = [Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
+    if ($key -is [Security.Cryptography.RSACng]) { $key.Key.Delete() }
+    elseif ($key -is [Security.Cryptography.RSACryptoServiceProvider]) { $key.PersistKeyInCsp = $false; $key.Clear() }
+}
 function Use-PfxCertificate([scriptblock]$action) {
     $flags = [Security.Cryptography.X509Certificates.X509KeyStorageFlags]'UserKeySet, PersistKeySet'
     $cert = [Security.Cryptography.X509Certificates.X509Certificate2]::new($PfxFile, $env:SIGN_CERT_PASSWORD, $flags)
     $store = [Security.Cryptography.X509Certificates.X509Store]::new('My', 'CurrentUser')
     $store.Open('ReadWrite')
     $alreadyThere = $store.Certificates.Find('FindByThumbprint', $cert.Thumbprint, $false).Count -gt 0
+    if (Test-Path -LiteralPath $pfxMarker) {
+        $leftover = ([IO.File]::ReadAllText($pfxMarker)).Trim()
+        if ($leftover -ieq $cert.Thumbprint) {
+            # Left behind by an earlier signing that didn't finish. Its
+            # private key was imported by that run into a key container of
+            # its own - delete that one now; this run's is deleted below.
+            foreach ($old in $store.Certificates.Find('FindByThumbprint', $leftover, $false)) {
+                $store.Remove($old)
+                Remove-PrivateKey $old
+            }
+            $alreadyThere = $false
+        } elseif ($leftover -match '^[0-9A-F]{40}$' -and
+                  $store.Certificates.Find('FindByThumbprint', $leftover, $false).Count -gt 0) {
+            Write-Warning ("An earlier signing with another .pfx didn't finish, and may have left its certificate (thumbprint $leftover) " +
+                "with an unprotected private key in your personal certificate store. If you didn't put it there yourself, remove it " +
+                "(certmgr.msc -> Personal -> Certificates).")
+        }
+    }
     try {
-        if (-not $alreadyThere) { $store.Add($cert) }
+        if (-not $alreadyThere) {
+            [IO.Directory]::CreateDirectory((Split-Path $pfxMarker)) | Out-Null
+            [IO.File]::WriteAllText($pfxMarker, $cert.Thumbprint)
+            $store.Add($cert)
+        }
         & $action $cert.Thumbprint
     } finally {
         if (-not $alreadyThere) {
             $store.Remove($cert)
-            # Removing the certificate leaves its private key behind in the
-            # user's key store - delete that too.
-            $key = [Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
-            if ($key -is [Security.Cryptography.RSACng]) { $key.Key.Delete() }
-            elseif ($key -is [Security.Cryptography.RSACryptoServiceProvider]) { $key.PersistKeyInCsp = $false; $key.Clear() }
+            Remove-PrivateKey $cert
+            Remove-Item -LiteralPath $pfxMarker -Force -ErrorAction SilentlyContinue
         }
         $store.Close()
     }

@@ -207,8 +207,14 @@ Which certificates can sign:
   could sign its own files as CloClo with it.
 - **From a `.pfx` file** (`-PfxPath`): protected by its password, which is
   passed through the `SIGN_CERT_PASSWORD` environment variable, never on a
-  command line. The certificate is loaded in memory, placed in your personal
-  store only while signing, and removed again afterwards with its private key.
+  command line. The certificate is placed in your personal store only while
+  signing, and removed again afterwards with its private key. This is the
+  weaker option: during the signing that key has no protection, so another
+  program running as you could sign with it unnoticed, and the password sits
+  in the build's environment while it runs (the install turns off the build
+  servers, so no build process keeps it afterwards). If a build is killed
+  mid-signing, the next signing with the same `.pfx` removes the leftover
+  certificate. Prefer a protected certificate from your store.
 
 Any Authenticode code-signing certificate works; Azure Trusted Signing is the
 cheapest option for an individual developer.
