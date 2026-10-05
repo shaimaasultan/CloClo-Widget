@@ -1,9 +1,11 @@
 # place.ps1 - the only part of the CloClo install that runs as administrator.
 #
-# install.ps1 runs this script's text inline (never from a file another
-# program could swap between the UAC prompt and the start), as readable
-# PowerShell so the prompt's "Show more details" shows it, preceded by three
-# data lines it fills in:
+# install.ps1 starts it through a short inline bootstrap - all that the UAC
+# prompt's "Show more details" shows: this file's path and SHA-256, then the
+# data. As administrator the bootstrap reads this file's bytes once, checks
+# them against that SHA-256 and runs exactly those bytes from memory, so a
+# copy swapped after the installer checked it never runs (exit 8). The data
+# it sets first:
 #   $Source            the folder with the built files (the project's publish\)
 #   $Expected          'name=SHA-256;name=SHA-256;...' of every file as built
 #   $AcceptThumbprint  a changed signing certificate (or 'unsigned') that the
@@ -26,10 +28,8 @@
 #   0 done, 2 the exe's signature is broken, 3 signed by another certificate
 #   than the installed copy, 4 a DLL isn't intact and Microsoft-signed,
 #   5 a source file is a link or has an unexpected name, 6 in use / other,
-#   7 a copied file differs from the build or the file set doesn't match.
-#
-# Written one statement per line, with comments only on their own lines:
-# install.ps1 drops the comment lines and joins the rest with "; ".
+#   7 a copied file differs from the build or the file set doesn't match,
+#   8 (from the bootstrap) this file changed after the installer checked it.
 
 $env:PSModulePath = Join-Path $PSHOME 'Modules'
 $ErrorActionPreference = 'Stop'

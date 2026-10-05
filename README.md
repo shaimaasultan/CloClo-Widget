@@ -146,9 +146,14 @@ With `-ProgramFiles`, building, signing and the registry entries all happen
 as you (your certificate is in your own store); only the copy into Program
 Files is elevated. That step is `place.ps1`, a fixed script that receives
 only data — the `publish\` folder, the SHA-256 of every built file, and a
-certificate change you confirmed with `YES` — and the administrator prompt's
-**Show more details** shows it in plain PowerShell. Running as administrator,
-it trusts nothing it's handed:
+certificate change you confirmed with `YES`. What the administrator prompt
+starts is a short bootstrap, and that's all its **Show more details** shows:
+`place.ps1`'s full path and SHA-256 (compare it with
+`Get-FileHash .\place.ps1` if you like), the `publish\` folder and every file
+with its SHA-256. As administrator, the bootstrap reads `place.ps1` once,
+checks it against that SHA-256 and runs exactly those bytes from memory, so a
+`place.ps1` swapped after the installer checked it never runs. Running as
+administrator, `place.ps1` trusts nothing it's handed:
 
 - it works out `C:\Program Files\CloClo` itself, so nothing passed in decides
   what is created or removed;

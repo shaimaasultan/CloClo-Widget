@@ -394,15 +394,28 @@ $version = (Get-Item -LiteralPath $builtExe).VersionInfo.ProductVersion -replace
 $totalBytes = ($files | Measure-Object Length -Sum).Sum
 if ($ProgramFiles) {
     # The SHA-256 of every file as built, taken here as the user who built
-    # them. place.ps1 - a fixed script, run inline as administrator - copies
-    # them into a staging folder in Program Files, checks everything there
-    # and only then swaps it in (see place.ps1). Only data goes in front of
-    # its text: the source folder, these hashes and an accepted certificate.
+    # them. place.ps1 copies them into a staging folder in Program Files,
+    # checks everything there and only then swaps it in (see place.ps1).
     $expected = ($files | ForEach-Object { "$($_.Name)=$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)" }) -join ';'
-    $placeScript = "`$Source = $(Quote $publishDir)`n`$Expected = $(Quote $expected)`n`$AcceptThumbprint = $(Quote $acceptThumbprint)`n" +
-        [IO.File]::ReadAllText((Join-Path $root 'place.ps1'))
-    Write-Host "Copying to $machineDir (Windows asks for administrator rights; 'Show more details' shows every file and hash)..."
-    $code = Invoke-Elevated $placeScript
+    # What runs as administrator is a short bootstrap - which is all the UAC
+    # prompt's "Show more details" shows: place.ps1's path and SHA-256, then
+    # the data. As administrator it reads place.ps1's bytes once, checks them
+    # against that SHA-256 and runs exactly those bytes from memory, so a
+    # place.ps1 swapped at any moment after this point never runs (exit 8).
+    $placeFile = Join-Path $root 'place.ps1'
+    $placeHash = (Get-FileHash -LiteralPath $placeFile -Algorithm SHA256).Hash
+    $bootstrap = @(
+        "`$codeFile = $(Quote $placeFile)"
+        "`$codeHash = '$placeHash'"
+        '$bytes = [IO.File]::ReadAllBytes($codeFile)'
+        'if (([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($bytes)) -replace ''-'', '''') -ne $codeHash) { exit 8 }'
+        "`$Source = $(Quote $publishDir)"
+        "`$Expected = $(Quote $expected)"
+        "`$AcceptThumbprint = $(Quote $acceptThumbprint)"
+        '. ([scriptblock]::Create([Text.Encoding]::UTF8.GetString($bytes).TrimStart([char]0xFEFF)))'
+    ) -join "`n"
+    Write-Host "Copying to $machineDir (Windows asks for administrator rights; 'Show more details' shows the code file, its SHA-256 and every file to copy)..."
+    $code = Invoke-Elevated $bootstrap
     if ($code -ne 0) {
         $why = switch ($code) {
             2 { "the exe's signature is broken - it was changed after it was signed" }
@@ -410,6 +423,7 @@ if ($ProgramFiles) {
             4 { "a DLL isn't intact and signed by Microsoft" }
             5 { "a file in publish\ is a link or has an unexpected name" }
             7 { "a copied file differs from the build (was something changing publish\?)" }
+            8 { "place.ps1 changed after the installer checked it" }
             default { "the files couldn't be copied (is CloClo still running, maybe as administrator or in another account?)" }
         }
         throw "Not installed: $why. The installed copy was left as it was."
