@@ -46,6 +46,13 @@ param(
     [switch]$Uninstall
 )
 
+# Only Windows PowerShell's own modules, from its system folder - set before
+# any command is used. Otherwise commands are looked up in the user's
+# Documents\WindowsPowerShell\Modules first, where another program could
+# plant a look-alike: a fake Start-Process could change what the UAC prompt
+# starts, a fake Get-FileHash could fake the hashes the administrator step
+# and the source check rely on.
+$env:PSModulePath = Join-Path $PSHOME 'Modules'
 $ErrorActionPreference = 'Stop'
 
 $appName    = 'CloClo'
@@ -67,8 +74,9 @@ $startMenu  = Join-Path ([Environment]::GetFolderPath('Programs')) "$appName.lnk
 $desktop    = Join-Path ([Environment]::GetFolderPath('Desktop')) "$appName.lnk"
 $runKey     = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $runValue   = 'CloCloWidget'   # same name StartupRegistration.cs uses
-# The Installed apps entry (Settings > Apps): HKLM for a Program Files
-# install, HKCU for a per-user one.
+# The Installed apps entry (Settings > Apps), in the user's own registry
+# (HKCU) for both install kinds. Earlier versions put a Program Files
+# install's entry in HKLM; place.ps1 and the uninstallers remove that.
 $uninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\CloClo'
 
 function Stop-RunningWidget {
@@ -128,7 +136,7 @@ function ConvertTo-NativeArgument([string]$text) {
 
 function Get-ElevatedCommandLine([string]$script) {
     $first = @('$env:PSModulePath = Join-Path $PSHOME ''Modules''', '$ErrorActionPreference = ''Stop''')
-    $lines = $first + @($script -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $lines = $first + @($script -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith('#') })
     $argLine = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ' + (ConvertTo-NativeArgument ($lines -join '; '))
     # Windows caps a command line at 32,767 characters, program path included.
     if ($argLine.Length -gt 30000) { throw "The administrator step is too long for one command line ($($argLine.Length) characters)." }
@@ -144,17 +152,17 @@ function Invoke-Elevated([string]$script) {
             Start-Process $powershellExe -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList $argLine
         }
     } catch {
-        throw "Administrator rights are needed for Program Files, and the request was declined."
+        throw "Administrator rights are needed for Program Files, and the request was declined. Nothing was changed."
     }
-    if ($p.ExitCode -ne 0) { throw "The administrator step failed (exit code $($p.ExitCode))." }
+    $p.ExitCode
 }
 
 function Quote([string]$text) { "'" + $text.Replace("'", "''") + "'" }
 
-# PowerShell that writes the Installed apps entry under the given hive. Built
-# as text so the Program Files case can run it inside the one elevated step.
-# Its uninstall command is the uninstall.ps1 copied into the install folder,
-# run by PowerShell's full path.
+# PowerShell that writes the Installed apps entry under the given hive - HKCU,
+# the user's own registry, for both install kinds; the administrator step
+# writes no registry keys. Its uninstall command is the uninstall.ps1 copied
+# into the install folder, run by PowerShell's full path.
 function Get-UninstallEntryScript([string]$hive, [string]$version, [long]$bytes) {
     $key = "${hive}:\$uninstallKey"
     $strings = [ordered]@{
@@ -184,7 +192,9 @@ if ($Uninstall) {
     Remove-Item $userDir -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath "HKCU:\$uninstallKey" -Recurse -Force -ErrorAction SilentlyContinue
     if ((Test-Path $machineDir) -or (Test-Path -LiteralPath "HKLM:\$uninstallKey")) {
-        Invoke-Elevated "Remove-Item -LiteralPath $(Quote $machineDir) -Recurse -Force -ErrorAction SilentlyContinue`nRemove-Item -LiteralPath $(Quote "HKLM:\$uninstallKey") -Recurse -Force -ErrorAction SilentlyContinue"
+        # The HKLM entry only exists from earlier versions.
+        $code = Invoke-Elevated "Remove-Item -LiteralPath $(Quote $machineDir) -Recurse -Force -ErrorAction SilentlyContinue`nRemove-Item -LiteralPath $(Quote "HKLM:\$uninstallKey") -Recurse -Force -ErrorAction SilentlyContinue"
+        if ($code -ne 0) { throw "Couldn't remove $machineDir (exit code $code) - is CloClo still running?" }
     }
     Write-Host "Uninstalled. Settings and dictation files in AppData were left in place."
     return
@@ -193,7 +203,10 @@ if ($Uninstall) {
 # Building runs dotnet, NuGet packages and build tasks - none of which
 # should ever run as administrator. The Program Files copy asks for those
 # rights itself, for that one step only.
-if (Test-Elevated) {
+# (With User Account Control switched off every window is an administrator
+# one, so there's no other way to run it then.)
+$uacOn = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -ErrorAction SilentlyContinue).EnableLUA -ne 0
+if ((Test-Elevated) -and $uacOn) {
     throw "Run this from a normal PowerShell window, not one opened as administrator. With -ProgramFiles it asks for administrator rights itself, only for copying into Program Files."
 }
 
@@ -341,6 +354,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # --- 2. install ------------------------------------------------------------
+$acceptThumbprint = ''
 # An update must come from the same signer as what's installed. A different
 # certificate (or none, replacing a signed copy) is exactly what a swapped
 # build would look like, so it needs an explicit YES - with both thumbprints
@@ -365,41 +379,41 @@ if ($installed) {
         Write-Host "Type YES and press Enter to replace it (anything else cancels): " -NoNewline -ForegroundColor Yellow
         $answer = try { Read-Host } catch { '' }
         if ($answer -cne 'YES') { throw "Not installed - the installed copy was left as it was." }
+        # Handed to place.ps1, which checks the signer again as administrator.
+        $acceptThumbprint = if ($newSigner) { $newSigner.Thumbprint } else { 'unsigned' }
     }
 }
 
 Stop-RunningWidget   # again, in case one was started while building
-$files = @(Get-ChildItem $publishDir -File | Where-Object Extension -in '.exe', '.dll')
-# The uninstaller goes along, so Settings > Apps can remove CloClo without
-# this project folder. In Program Files it's as protected as the exe.
-$files += Get-Item -LiteralPath (Join-Path $root 'uninstall.ps1')
-# The source record and its checker, for Check-Source.cmd.
-$files += Get-Item -LiteralPath $checkSource
-$files += Get-Item -LiteralPath $sourceRecord
+# Everything that gets installed is gathered in publish\ first: the build,
+# the uninstaller (so Settings > Apps can remove CloClo without this project
+# folder), and the source record with its checker (for Check-Source.cmd).
+Copy-Item -LiteralPath (Join-Path $root 'uninstall.ps1'), $checkSource, $sourceRecord -Destination $publishDir -Force
+$files = @(Get-ChildItem -LiteralPath $publishDir -File | Where-Object Extension -in '.exe', '.dll', '.ps1', '.json')
 $version = (Get-Item -LiteralPath $builtExe).VersionInfo.ProductVersion -replace '\+.*$', ''
 $totalBytes = ($files | Measure-Object Length -Sum).Sum
 if ($ProgramFiles) {
-    # Hashed here, as the user who built them, and re-checked by the
-    # elevated copy - so what lands in Program Files is exactly the build.
-    $entries = foreach ($f in $files) {
-        "@{ Src = $(Quote $f.FullName); Hash = '$((Get-FileHash $f.FullName -Algorithm SHA256).Hash)' }"
+    # The SHA-256 of every file as built, taken here as the user who built
+    # them. place.ps1 - a fixed script, run inline as administrator - copies
+    # them into a staging folder in Program Files, checks everything there
+    # and only then swaps it in (see place.ps1). Only data goes in front of
+    # its text: the source folder, these hashes and an accepted certificate.
+    $expected = ($files | ForEach-Object { "$($_.Name)=$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)" }) -join ';'
+    $placeScript = "`$Source = $(Quote $publishDir)`n`$Expected = $(Quote $expected)`n`$AcceptThumbprint = $(Quote $acceptThumbprint)`n" +
+        [IO.File]::ReadAllText((Join-Path $root 'place.ps1'))
+    Write-Host "Copying to $machineDir (Windows asks for administrator rights; 'Show more details' shows every file and hash)..."
+    $code = Invoke-Elevated $placeScript
+    if ($code -ne 0) {
+        $why = switch ($code) {
+            2 { "the exe's signature is broken - it was changed after it was signed" }
+            3 { "the build is signed by a different certificate than the installed copy" }
+            4 { "a DLL isn't intact and signed by Microsoft" }
+            5 { "a file in publish\ is a link or has an unexpected name" }
+            7 { "a copied file differs from the build (was something changing publish\?)" }
+            default { "the files couldn't be copied (is CloClo still running, maybe as administrator or in another account?)" }
+        }
+        throw "Not installed: $why. The installed copy was left as it was."
     }
-    Invoke-Elevated @"
-`$dest = $(Quote $machineDir)
-New-Item -ItemType Directory -Force -Path `$dest | Out-Null
-Get-ChildItem `$dest -File | Remove-Item -Force
-foreach (`$f in @($($entries -join ', '))) {
-    `$target = Join-Path `$dest (Split-Path `$f.Src -Leaf)
-    Copy-Item -LiteralPath `$f.Src -Destination `$target -Force
-    if ((Get-FileHash -LiteralPath `$target -Algorithm SHA256).Hash -ne `$f.Hash) {
-        Remove-Item -LiteralPath `$target -Force
-        throw "`$target changed between build and install - not installed."
-    }
-}
-$(Get-UninstallEntryScript 'HKLM' $version $totalBytes)
-"@
-    # A per-user Installed apps entry would now point at a removed copy.
-    Remove-Item -LiteralPath "HKCU:\$uninstallKey" -Recurse -Force -ErrorAction SilentlyContinue
     # A per-user copy left behind would still be the one anything else
     # (old shortcuts, "Start with Windows") points at.
     if (Test-Path $userDir) {
@@ -409,11 +423,24 @@ $(Get-UninstallEntryScript 'HKLM' $version $totalBytes)
 } else {
     New-Item -ItemType Directory -Force -Path $installDir | Out-Null
     foreach ($f in $files) { Copy-Item $f.FullName (Join-Path $installDir $f.Name) -Force }
-    & ([scriptblock]::Create((Get-UninstallEntryScript 'HKCU' $version $totalBytes)))
     if (Test-Path $machineDir) {
         Write-Warning "A Program Files copy also exists in $machineDir. Remove it with: .\install.ps1 -Uninstall"
     }
 }
+
+# Check from this (normal) side too that the install folder now holds
+# exactly the files that were built - nothing missing, changed or extra.
+$present = @(Get-ChildItem -LiteralPath $installDir -Force)
+$differs = @($files | Where-Object {
+    $inst = Join-Path $installDir $_.Name
+    -not (Test-Path -LiteralPath $inst) -or (Get-FileHash -LiteralPath $inst -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+} | ForEach-Object Name) + @($present | Where-Object { $files.Name -notcontains $_.Name } | ForEach-Object Name)
+if ($differs.Count) { Write-Warning "In $installDir these don't match what was built: $($differs -join ', ')" }
+else { Write-Host "Checked: $installDir holds exactly the $($files.Count) files that were built." }
+
+# The Installed apps entry, in the user's own registry for both install
+# kinds (an older all-users entry is removed by place.ps1).
+& ([scriptblock]::Create((Get-UninstallEntryScript 'HKCU' $version $totalBytes)))
 Write-Host "Installed to $installExe"
 Write-Host "Listed in Settings > Apps > Installed apps as '$appName' (uninstall it from there)."
 

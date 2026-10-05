@@ -110,19 +110,24 @@ options:
 ```
 
 The options combine. If Windows says running scripts is disabled, start it as
-`powershell -ExecutionPolicy Bypass -File .\install.ps1` (plus any options) —
-that allows this one run without changing any system setting.
+`powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1` (plus any options) —
+that allows this one run without changing any system setting. Keep
+`-NoProfile` in it: your PowerShell profile is a script any program running
+as you can edit, and without it that script would run first, inside the
+installer.
 
 Run it from a regular PowerShell window: it refuses an administrator window
 (building should never run as admin; it asks for administrator rights itself
-when it needs them), and PowerShell ISE can't pass your typing to it, so it
+when it needs them — unless User Account Control is switched off, when every
+window is an administrator one), and PowerShell ISE can't pass your typing to it, so it
 stops with a message there rather than waiting for an answer it can't get.
 
 Every install closes a running CloClo first, so the exe can be replaced, and
 moves "Start with Windows" to the installed copy if it was on.
 
-CloClo then appears in **Settings → Apps → Installed apps**, and can be
-uninstalled from there. That runs the `uninstall.ps1` installed next to the
+CloClo then appears in **Settings → Apps → Installed apps** (an entry in your
+own account's registry, for both kinds of install), and can be uninstalled
+from there. That runs the `uninstall.ps1` installed next to the
 exe, which removes the program, its shortcuts and its "Start with Windows"
 entry (asking for administrator rights for a Program Files copy) but leaves
 your settings and dictation files in AppData. `.\install.ps1 -Uninstall`
@@ -137,15 +142,30 @@ from the project folder does the same.
 | Who can change the installed files | any program running as you | administrators only |
 | WPF's native DLLs | inside the exe, unpacked to `%TEMP%` at runtime and checked at startup | next to the exe, in Program Files |
 
-With `-ProgramFiles`, building and signing still run as you (your certificate
-is in your own store); only the copy into Program Files is elevated. The
-administrator prompt's **Show more details** shows exactly what that step
-will do, in plain PowerShell: every file's source path, its SHA-256, the
-destination folder and the Installed apps entry being written. Each
-file's SHA-256 is taken from the build and re-checked inside Program Files —
-a file that changed in between is removed and the install stops — and the
-per-user copy, if any, is removed. CloClo itself always starts as your normal
-user.
+With `-ProgramFiles`, building, signing and the registry entries all happen
+as you (your certificate is in your own store); only the copy into Program
+Files is elevated. That step is `place.ps1`, a fixed script that receives
+only data — the `publish\` folder, the SHA-256 of every built file, and a
+certificate change you confirmed with `YES` — and the administrator prompt's
+**Show more details** shows it in plain PowerShell. Running as administrator,
+it trusts nothing it's handed:
+
+- it works out `C:\Program Files\CloClo` itself, so nothing passed in decides
+  what is created or removed;
+- it refuses files with unexpected names and files that are links;
+- it copies everything into a staging folder (`CloClo.new`) inside Program
+  Files, where only administrators can change it, and checks there that it
+  holds exactly the expected files, each with exactly its built SHA-256, the
+  exe signed by the same certificate as the installed copy (or the one you
+  accepted), and every DLL intact and signed by Microsoft;
+- only then does it swap the folders. A swap fails as a whole while the old
+  copy is in use, and on any failure the previous copy is put back — CloClo
+  is never left half-installed.
+
+If it refuses, the installer says why ("Not installed: …"). Afterwards it
+checks, as you, that Program Files holds exactly the files that were built,
+and removes the per-user copy, if any. CloClo itself always starts as your
+normal user.
 
 To switch back to a per-user install, run `.\install.ps1 -Uninstall` first
 (it asks for administrator rights to remove the Program Files copy), then
@@ -227,7 +247,7 @@ $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Where-Object Subje
 Then build, sign and install:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -ProgramFiles -CertThumbprint $cert.Thumbprint -DesktopShortcut
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -ProgramFiles -CertThumbprint $cert.Thumbprint -DesktopShortcut
 ```
 
 Windows asks you to confirm the signing twice — once for the DLLs, once for
@@ -251,7 +271,7 @@ $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=CloClo" -Ce
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -ProgramFiles -CertThumbprint $cert.Thumbprint -DesktopShortcut
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -ProgramFiles -CertThumbprint $cert.Thumbprint -DesktopShortcut
 ```
 
 Deleting the key is permanent, and already-signed copies keep their
@@ -286,11 +306,12 @@ folder you can write to, so the check is weaker; the script says so.)
 
 | What you see | What to do |
 |---|---|
-| "running scripts is disabled on this system" | Start it as `powershell -ExecutionPolicy Bypass -File .\install.ps1 …` |
+| "running scripts is disabled on this system" | Start it as `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 …` |
 | "Run this from a normal PowerShell window" | You're in an administrator window — open a regular one |
 | It stops with "Can't ask for YES here" | You're in PowerShell ISE — use Windows PowerShell or Windows Terminal |
 | "has an unprotected software key" | Replace the certificate (see [Replacing the certificate](#signing-with-your-own-certificate-left-untrusted)) |
 | "This build isn't signed by the same certificate" | Expected once after you change certificates — type `YES`; otherwise stop and find out why |
+| "Not installed: …" after the administrator prompt | The reason is in the message (a broken signature, another certificate, a non-Microsoft DLL, a changed or unexpected file, or the copy in use). Nothing was changed; fix that and run the install again |
 | "Couldn't close the running CloClo" | A copy was started as administrator — right-click it → Exit, then run the installer again |
 | "The .NET SDK wasn't found" | Install the .NET 10 SDK from dotnet.microsoft.com (it installs under Program Files) |
 | CloClo says it "won't start while these files are next to it" or "found native files it can't verify" | Something placed files beside or into CloClo — delete the files it names, consider a malware scan, and reinstall |
@@ -426,10 +447,17 @@ loads anything)
 - **Administrator rights only where needed.** `install.ps1` refuses to run
   from an administrator window, so building never runs as admin and the
   widget always starts as your normal user. With `-ProgramFiles` it asks for
-  administrator rights for the copy alone, runs that step in a fresh
-  PowerShell started by its full System32 path, and lets it load modules only
-  from PowerShell's own system folder — a look-alike module planted in your
-  Documents folder can't run as administrator. The uninstaller works the
+  administrator rights for the copy alone: `place.ps1`, run inline as
+  readable PowerShell in a fresh PowerShell started by its full System32
+  path. It stages and checks everything inside Program Files, re-checks the
+  signatures itself, swaps folders atomically with rollback, and writes no
+  registry keys — those are made as you, in your own account.
+- **No look-alike PowerShell modules.** Every script (installer, signer,
+  source checker, uninstaller and the administrator step) loads modules only
+  from PowerShell's own system folder, so a fake `Start-Process` or
+  `Get-FileHash` planted in your Documents folder can't change what the UAC
+  prompt starts, fake a hash, or run as administrator; the documented
+  commands use `-NoProfile` so your PowerShell profile doesn't run first. The uninstaller works the
   same way: it elevates only to remove the Program Files copy, and runs from
   Program Files itself.
 - **No programs found by name.** The build and installer run `dotnet`,

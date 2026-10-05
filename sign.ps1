@@ -40,6 +40,11 @@ param(
     [string]$TimestampUrl = 'http://timestamp.digicert.com'
 )
 
+# Only Windows PowerShell's own modules, from its system folder - set before
+# any command is used, so a look-alike module planted in the user's
+# Documents\WindowsPowerShell\Modules can't stand in for Get-FileHash and the
+# other commands this relies on.
+$env:PSModulePath = Join-Path $PSHOME 'Modules'
 $ErrorActionPreference = 'Stop'
 
 if (-not $Thumbprint -and -not $PfxFile) { throw 'Pass -Thumbprint or -PfxFile.' }

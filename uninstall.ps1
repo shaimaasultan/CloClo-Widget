@@ -38,6 +38,7 @@ function Stop-ThisCopy {
 
 if ($Elevated) {
     Stop-ThisCopy   # also a copy that was started as administrator
+    # Only from earlier versions, which wrote the entry for all users.
     Remove-Item -LiteralPath "HKLM:\$uninstallKey" -Recurse -Force -ErrorAction SilentlyContinue
     Set-Location -LiteralPath $system32   # never sit inside the folder being removed
     Remove-Item -LiteralPath $dir -Recurse -Force
@@ -61,6 +62,13 @@ if ($run -and $run.Trim().Trim('"') -ieq $exe) {
     Remove-ItemProperty -Path $runKey -Name CloCloWidget
 }
 
+# The Installed apps entry lives in the user's own registry - removed here,
+# as the user, if it belongs to this copy.
+$entry = Get-ItemProperty -LiteralPath "HKCU:\$uninstallKey" -ErrorAction SilentlyContinue
+if ($entry -and $entry.InstallLocation.TrimEnd('\') -ieq $dir.TrimEnd('\')) {
+    Remove-Item -LiteralPath "HKCU:\$uninstallKey" -Recurse -Force
+}
+
 if ($isMachine) {
     # Full path, never a bare "powershell.exe" (which PATH or the per-user
     # App Paths key could redirect), and the script from Program Files.
@@ -75,7 +83,6 @@ if ($isMachine) {
     exit $p.ExitCode
 }
 
-Remove-Item -LiteralPath "HKCU:\$uninstallKey" -Recurse -Force -ErrorAction SilentlyContinue
 Set-Location -LiteralPath $system32
 Remove-Item -LiteralPath $dir -Recurse -Force
 exit 0
