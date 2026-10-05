@@ -619,3 +619,39 @@ a planted junk DLL still triggers re-extract + restart and one copy runs.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
+027e4ea Add CloClo's security checklist and hardening history
+
+- SECURITY-CHECKLIST.md: CloClo's own checklist - what it shows, reads
+  and sends; start-up checks; builds and signing; the Program Files
+  install; script hygiene; uninstall; checking the project folder; known
+  limits.
+- hardening-history.txt: the hardening commits from 65ffb7a through
+  88a660f (43), as "git log --reverse --format='%h %s%n%n%b'" prints them;
+  regenerate with that command when it falls behind.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+8631357 Remove leftover .pfx signing keys; no build server keeps the password
+
+sign.ps1: while a .pfx certificate is in the personal store for signing,
+a marker in obj\ records its thumbprint. If the build is killed before
+the clean-up, the next signing with the same .pfx removes the leftover
+certificate together with its own private key (the killed run imported
+it into a key container of its own). Only the same .pfx is cleaned up -
+any program can write the marker, so it can't make this delete another
+certificate; another .pfx's leftover only gets a warning.
+
+install.ps1: dotnet publish runs with --disable-build-servers and
+-nodeReuse:false, so no MSBuild node or compiler server outlives the
+install with SIGN_CERT_PASSWORD in its environment.
+
+README: -PfxPath is the weaker option - the key is unprotected while
+signing and the password is in the build's environment meanwhile.
+
+Tested in Windows PowerShell 5.1 with a throwaway .pfx: a simulated
+killed build (certificate imported from the .pfx, marker present) left
+no certificate, key file or marker after the next signing; a normal
+signing left none either. dotnet accepts the new options.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+

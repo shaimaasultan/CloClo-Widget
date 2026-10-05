@@ -52,6 +52,7 @@ prompt). Commit ids show where each point was added.
 - [x] **Tampered files are never signed over:** only DLLs with no signature are signed; a broken signature stops the build before anything is copied or signed (`00b0d61`) — tested with a one-byte-altered runtime DLL
 - [x] **Only a protected key can sign:** store certificates need strong key protection (confirmation or password each use) or a smart card; an unprotected key is refused (`975d534`)
 - [x] `.pfx` password passed through the environment, never on a command line; the certificate is in the store only while signing (`b537a9c`)
+- [x] **No `.pfx` key left behind:** a killed build's leftover certificate and its private key are removed at the next signing with the same `.pfx` (marker in `obj\`; another `.pfx`'s leftover only gets a warning); no build server outlives the install with the password in its environment (`--disable-build-servers -nodeReuse:false`) (`8631357`) — tested with a throwaway `.pfx` and a simulated killed build: certificate, key and marker all gone
 - [x] `Install-CloClo.cmd` picks the newest protected `CN=CloClo…` certificate or offers to create one with `-KeyProtection Protect` (`2335cf4`)
 - [x] **Pinned DLLs come from verified packages:** `verify-pins.ps1` checks each pinned native DLL against its signed `.nupkg` - signatures, author Microsoft Corporation, repository nuget.org, id/version, byte-for-byte match (`9b99169`) — tested: 19 DLLs pass, a one-byte change fails the build
 - [x] **Only signed nuget.org packages** (`nuget.config`: single source, package mapping, `signatureValidationMode=require`) (`22ee3b9`) — tested: unsigned package refused (NU3004)
@@ -117,5 +118,8 @@ prompt). Commit ids show where each point was added.
   memory directly anyway.
 - Minor: the extension-point policy can stop very old, non-TSF input methods from working in CloClo's text
   boxes (modern Windows input methods are not affected).
+- **`.pfx` signing (`-PfxPath`):** while signing, the key sits unprotected in your personal store (signtool can only
+  use a key from the store) and the password is in the build's environment; any program running as you could use
+  either in that time. A protected store certificate (the default) doesn't have this window.
 - Minor: a program running as you could hold the single-instance mutex and keep CloClo from starting - it could
   just as well close CloClo.
