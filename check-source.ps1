@@ -21,7 +21,10 @@
 param(
     [string]$Create,
     [string]$Root,
-    [string]$Manifest = (Join-Path $PSScriptRoot 'source-manifest.json'),
+    # Plain concatenation: a parameter default is evaluated before the first
+    # line below, so a command here would be looked up before the module
+    # path is restricted.
+    [string]$Manifest = ($PSScriptRoot + '\source-manifest.json'),
     [switch]$Quiet
 )
 
@@ -29,7 +32,10 @@ param(
 # any command is used, so a look-alike module planted in the user's
 # Documents\WindowsPowerShell\Modules can't stand in for Get-FileHash and the
 # other commands this relies on.
-$env:PSModulePath = Join-Path $PSHOME 'Modules'
+# (Plain string concatenation, not Join-Path: Join-Path is itself a command
+# that would be looked up - in the user's module folder - before this line
+# takes effect. Reproduced with a look-alike Join-Path.)
+$env:PSModulePath = $PSHOME + '\Modules'
 $ErrorActionPreference = 'Stop'
 $excludedDirs = 'bin', 'obj', 'publish', '.vs', 'TestResults'
 
@@ -62,17 +68,43 @@ function Get-SourceHashes([string]$root) {
     $hashes
 }
 
+# Informational only: the commit the project folder is on, read straight from
+# the .git folder's files (HEAD, then the branch's ref file or packed-refs).
+# git itself is never run: it reads settings from .git\config and the user's
+# .gitconfig - files any program running as this user can edit - and some
+# of those settings (core.fsmonitor, for one) name a program for git to
+# start, which would then run on every install and every check.
 function Get-Commit([string]$root) {
-    # Informational only. git is run only from where its installer puts it
-    # (Program Files, which only administrators can change) - never looked up
-    # through PATH, where another program could put its own git.exe and have
-    # it run every time the source is recorded or checked.
     try {
-        $git = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Git\cmd\git.exe'
-        if (-not (Test-Path -LiteralPath $git)) { return 'unknown (git not found in Program Files)' }
-        $c = & $git -C $root rev-parse HEAD 2>$null
-        $dirty = & $git -C $root status --porcelain -- . 2>$null
-        if ($c) { return $c.Trim() + $(if ($dirty) { ' (plus uncommitted changes)' } else { '' }) }
+        $dir = (Resolve-Path -LiteralPath $root).Path
+        $gitDir = $null
+        while ($dir) {
+            $candidate = Join-Path $dir '.git'
+            if (Test-Path -LiteralPath $candidate -PathType Container) { $gitDir = $candidate; break }
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                # A worktree or submodule: .git is a file naming the real folder.
+                $line = (Get-Content -LiteralPath $candidate -TotalCount 1)
+                if ($line -match '^gitdir:\s*(.+)$') { $gitDir = [IO.Path]::GetFullPath((Join-Path $dir $Matches[1].Trim())) }
+                break
+            }
+            $dir = Split-Path $dir -Parent
+        }
+        if (-not $gitDir) { return 'unknown (not a git repository)' }
+        $head = (Get-Content -LiteralPath (Join-Path $gitDir 'HEAD') -TotalCount 1).Trim()
+        if ($head -match '^[0-9a-f]{40}$') { return $head }
+        if ($head -notmatch '^ref:\s*(refs/\S+)$') { return 'unknown' }
+        $ref = $Matches[1]
+        $loose = Join-Path $gitDir ($ref -replace '/', '\')
+        if (Test-Path -LiteralPath $loose) {
+            $c = (Get-Content -LiteralPath $loose -TotalCount 1).Trim()
+            if ($c -match '^[0-9a-f]{40}$') { return "$c ($($ref -replace '^refs/heads/', ''))" }
+        }
+        $packed = Join-Path $gitDir 'packed-refs'
+        if (Test-Path -LiteralPath $packed) {
+            foreach ($l in Get-Content -LiteralPath $packed) {
+                if ($l -match '^([0-9a-f]{40}) (\S+)$' -and $Matches[2] -eq $ref) { return "$($Matches[1]) ($($ref -replace '^refs/heads/', ''))" }
+            }
+        }
     } catch { }
     'unknown'
 }

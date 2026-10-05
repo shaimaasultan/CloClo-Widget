@@ -30,7 +30,10 @@ param(
 # Only Windows PowerShell's own modules, from its system folder - set before
 # any command is used, so a look-alike module planted in the user's
 # Documents\WindowsPowerShell\Modules can't stand in for Get-FileHash.
-$env:PSModulePath = Join-Path $PSHOME 'Modules'
+# (Plain string concatenation, not Join-Path: Join-Path is itself a command
+# that would be looked up - in the user's module folder - before this line
+# takes effect. Reproduced with a look-alike Join-Path.)
+$env:PSModulePath = $PSHOME + '\Modules'
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
 

@@ -52,7 +52,10 @@ param(
 # plant a look-alike: a fake Start-Process could change what the UAC prompt
 # starts, a fake Get-FileHash could fake the hashes the administrator step
 # and the source check rely on.
-$env:PSModulePath = Join-Path $PSHOME 'Modules'
+# (Plain string concatenation, not Join-Path: Join-Path is itself a command
+# that would be looked up - in the user's module folder - before this line
+# takes effect. Reproduced with a look-alike Join-Path.)
+$env:PSModulePath = $PSHOME + '\Modules'
 $ErrorActionPreference = 'Stop'
 
 $appName    = 'CloClo'
@@ -135,7 +138,8 @@ function ConvertTo-NativeArgument([string]$text) {
 }
 
 function Get-ElevatedCommandLine([string]$script) {
-    $first = @('$env:PSModulePath = Join-Path $PSHOME ''Modules''', '$ErrorActionPreference = ''Stop''')
+    # Plain concatenation, not Join-Path - see the note at the top of this file.
+    $first = @('$env:PSModulePath = $PSHOME + ''\Modules''', '$ErrorActionPreference = ''Stop''')
     $lines = $first + @($script -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith('#') })
     $argLine = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ' + (ConvertTo-NativeArgument ($lines -join '; '))
     # Windows caps a command line at 32,767 characters, program path included.

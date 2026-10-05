@@ -31,7 +31,10 @@
 #   7 a copied file differs from the build or the file set doesn't match,
 #   8 (from the bootstrap) this file changed after the installer checked it.
 
-$env:PSModulePath = Join-Path $PSHOME 'Modules'
+# (Plain string concatenation, not Join-Path: Join-Path is itself a command
+# that would be looked up - in the user's module folder - before this line
+# takes effect. Reproduced with a look-alike Join-Path.)
+$env:PSModulePath = $PSHOME + '\Modules'
 $ErrorActionPreference = 'Stop'
 $exeName = 'CloCloWidget.exe'
 $dest = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'CloClo'

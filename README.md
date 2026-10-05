@@ -478,8 +478,10 @@ loads anything)
   the build, and the record is kept where only administrators can change it
   (Program Files), so `Check-Source.cmd` can tell whether the code changed
   since. The checker never follows folder links (a link is recorded as a
-  link, so adding or retargeting one shows up), runs git only from Program
-  Files, and `Check-Source.cmd` finds the installed checker through Windows'
+  link, so adding or retargeting one shows up), never runs git - it reads
+  the commit straight from the `.git` folder, because git would read
+  settings from files any program running as you can edit, some of which
+  name a program for git to start - and `Check-Source.cmd` finds the installed checker through Windows'
   known-folder API rather than environment variables. `.gitattributes` fixes
   every text file's line endings, so a checkout never changes file bytes and
   shows up as changes nobody made.
@@ -496,7 +498,11 @@ loads anything)
   from PowerShell's own system folder, so a fake `Start-Process` or
   `Get-FileHash` planted in your Documents folder can't change what the UAC
   prompt starts, fake a hash, or run as administrator; the documented
-  commands use `-NoProfile` so your PowerShell profile doesn't run first. The uninstaller works the
+  commands use `-NoProfile` so your PowerShell profile doesn't run first.
+  The restriction is set with plain text (`$PSHOME + '\Modules'`), never
+  with a command such as `Join-Path` - looking that command up would itself
+  happen before the restriction applies (reproduced with a look-alike
+  `Join-Path`). The uninstaller works the
   same way: it elevates only to remove the Program Files copy, and runs from
   Program Files itself.
 - **No programs found by name.** The build and installer run `dotnet`,
