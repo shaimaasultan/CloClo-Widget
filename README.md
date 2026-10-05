@@ -54,6 +54,10 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
 ## Using it
 
 - **Drag** anywhere on the widget to move it. It remembers where you leave it.
+- **One at a time.** Only one CloClo runs per Windows sign-in. Starting it
+  again (shortcut, Start Menu, the exe) doesn't open a second copy - it shows
+  the running one, even if it was hidden from the tray, with "CloClo is
+  already running".
 - **Icon bar** under the temperature — up to 7 of these at a time, picked in
   right-click → **Icons**:
 

@@ -8,12 +8,31 @@ namespace CloCloWidget;
 // NativeLibraryCheck.cs) before anything in WPF gets a chance to load them.
 public static class Program
 {
+    // This copy's hold on "the one running CloClo" (see SingleInstance.cs).
+    internal static SingleInstance? Instance { get; private set; }
+
     [STAThread]
     public static int Main()
     {
         ProcessHardening.Apply(NativeLibraryCheck.ExtractionDirectories());
         if (!NativeLibraryCheck.EnsureTrusted()) return 1;
-        return Run();
+
+        // Taken only after the checks: their "re-extract and restart once"
+        // path starts a fresh copy, which then needs to be the one that runs.
+        Instance = SingleInstance.TryAcquire();
+        if (Instance == null)
+        {
+            SingleInstance.SignalRunningCopy();
+            return 0;
+        }
+        try
+        {
+            return Run();
+        }
+        finally
+        {
+            Instance.Dispose();
+        }
     }
 
     // Kept out of Main — and never inlined into it — so that compiling Main

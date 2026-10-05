@@ -187,6 +187,8 @@ public partial class MainWindow : Window
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         StartupRegistration.RepairIfStale();
+        // Starting CloClo again while it runs just brings this copy back.
+        Program.Instance?.ListenForShowRequests(() => Dispatcher.BeginInvoke(new Action(ShowBecauseStartedAgain)));
         PlaceWindow();
         SetupTrayIcon();
         CreateAvatarHitWindow();
@@ -1379,6 +1381,15 @@ public partial class MainWindow : Window
     private void ToggleStartWithWindows()
     {
         StartupRegistration.SetEnabled(!StartupRegistration.IsEnabled());
+    }
+
+    // A second copy was started (see SingleInstance.cs): show this one -
+    // it may have been hidden from the tray - and say so.
+    private void ShowBecauseStartedAgain()
+    {
+        Visibility = Visibility.Visible;
+        if (_avatarWindow != null) _avatarWindow.Visibility = Visibility.Visible;
+        ShowOneShotLabel("CloClo is already running", "This is it.");
     }
 
     private void ToggleVisible()
