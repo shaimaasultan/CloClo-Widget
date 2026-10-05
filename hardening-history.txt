@@ -1,0 +1,621 @@
+65ffb7a Fetch weather on the host so the page needs no network
+
+The Open-Meteo request and the WMO/cloud-cover -> sky mapping move to
+WeatherService.cs; the page now only receives a "weather" message and
+gets a CSP that forbids any outbound connection. Coordinates are rounded
+to two decimals (~1 km) before they leave the machine.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+f4c3068 Draw Keeper natively in WPF instead of a WebView2 page
+
+KeeperView ports widget.html's SVG art, layout and CSS/JS animations to
+WPF, and the host calls it directly where it used to post JSON messages.
+That removes the embedded Chromium entirely: no browser attack surface,
+no WebView2 runtime dependency, and one process instead of seven
+(private memory ~233 MB -> ~77 MB in a Release build).
+
+WPF can't draw color emoji, so the icon bar glyphs now use the labels'
+cream color and shadow. Notification icons are passed as bytes and
+decoded at a fixed small size instead of travelling as data: URIs.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+5236a1d Harden selection reading, screen capture and dictation storage
+
+Selection: ask the app through UI Automation (TextPattern) first, so most
+reads never touch the clipboard or send keys. The Ctrl+C fallback now
+refuses terminals (where Ctrl+C interrupts the running command) and any
+window that's no longer foreground, sends the chord atomically with
+SendInput instead of keybd_event, and restores the previous clipboard
+marked to stay out of clipboard history and cloud sync.
+
+Capture: the widget, and the clipboard-history and QR windows, are
+excluded from screenshots/recordings/screen sharing by default
+(WDA_EXCLUDEFROMCAPTURE), with a Privacy menu toggle. Another toggle
+shows only the sending app for notifications, never their text.
+
+Dictation: files move to %LocalAppData%\CloCloWidget\Dictation instead of
+next to the exe, and a dictation path outside that folder is no longer
+appended to. New "Open dictation folder" menu item.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+50adfda Add opt-in Authenticode signing to publish
+
+Passing -p:SignCertThumbprint=<thumbprint> signs, RFC 3161-timestamps and
+verifies the published exe with the newest installed SDK's signtool;
+without it, publish is unchanged. README documents it alongside the new
+privacy options.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+63f66d2 Add a one-command per-user installer
+
+install.ps1 publishes (signing when given a certificate thumbprint),
+installs to %LocalAppData%\Programs\CloCloWidget, creates a Start Menu
+shortcut (optionally a desktop one), repoints "Start with Windows" at the
+installed copy, and can uninstall.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+bda620f Sign the bundled DLLs as well as the exe
+
+sign.ps1 now does all signing, driven by two build targets: just before
+the single-file bundle is made, every DLL going into it that isn't
+already validly signed (CloCloWidget.dll, QRCoder.dll) is signed as a
+copy under obj\ and bundled in place of the original, leaving the NuGet
+cache untouched; then the finished exe is signed. The bundle's host stub
+is deliberately left for the final exe signature, since bundling appends
+to it. Certificates can come from the store (thumbprint) or a .pfx whose
+password travels via SIGN_CERT_PASSWORD; install.ps1 takes -PfxPath.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+8ce4632 Let install.ps1 run when pasted, and document running it under a restricted policy
+
+$PSScriptRoot is empty when the script's text is pasted into a console;
+fall back to the current folder and fail clearly if it isn't the project.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+668795b Close a running widget before building, not only before installing
+
+A widget started from publish\ locks the exe the build overwrites, which
+made a signed publish fail with access denied.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+73e975c Explain the installed exe's signature status in plain words
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+0369f23 Document signing locally with an untrusted self-signed certificate
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+b537a9c Keep a .pfx password off signtool's command line
+
+signtool only takes a .pfx password via /p, where any other process can
+read it. sign.ps1 now loads the .pfx itself, adds it to the CurrentUser
+"My" store only while signing, signs by thumbprint, and then removes the
+certificate and deletes its private key. A certificate that was already
+in the store is left as it was.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+90e33d8 Harden the color picker, location privacy, settings and dictation
+
+- Color picker: the fullscreen click-capturing overlay now cancels itself
+  when it loses focus or after a minute, so it can never trap the screen.
+- Location: coordinates are rounded to ~1 km when saved, when loaded from
+  older settings, and before reverse geocoding — a GPS fix is no longer
+  stored or sent at full precision.
+- Settings: saved via a temp file and an atomic replace, so a crash can't
+  corrupt settings.json and silently reset privacy choices.
+- Dictation: Win+H goes through SendInput, and the input language it
+  switches is restored when the window closes.
+- HTTP clients get a 15 s timeout and a 1 MB response cap; notification
+  app logos over 512 KB are ignored.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+2f3b7f9 Never leave the installed widget running as administrator
+
+Run from an admin window, install.ps1 started the widget elevated, and a
+normal window then couldn't close it on the next install. It now launches
+it through Explorer (always non-elevated) and explains how to close a
+copy it can't stop.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+600d815 Document replacing the CloClo signing certificate
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+0837b14 Fix the note on creating the certificate only once
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+00cbe66 Rewrite the self-signed signing section so every step is correct
+
+Create, load and replace are now separate cases instead of one numbered
+list mixing alternatives; loading picks the newest CloClo certificate so
+duplicates no longer break the install; the manual Stop-Process step is
+gone since install.ps1 closes the widget itself. All commands were run
+against a throwaway certificate to confirm them.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+80f3a9a Verify the extracted native DLLs before WPF loads them
+
+The single-file exe unpacks WPF's native DLLs into %TEMP%\.net and the
+.NET host reuses that folder without checking it: a planted DLL there was
+loaded by the signed exe as-is (reproduced). A hand-written Program.Main
+now checks every DLL in the extraction folder first - intact Authenticode
+signature (WinVerifyTrust, timestamp-aware, offline), issued to Microsoft
+Corporation under a Microsoft root. On a mismatch it deletes the folder
+and restarts once so the host re-extracts clean copies; if tampering
+persists it refuses to run. All three cases were tested end to end.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+486804f Survive a busy clipboard, skip password fields, cap read-aloud
+
+- Clipboard writes retry briefly and report "Clipboard busy" instead of
+  throwing from a click handler, which crashed the widget whenever
+  another program held the clipboard open.
+- "Read selection" refuses when the focused control is a password field,
+  so neither UI Automation nor Ctrl+C is ever pointed at one.
+- Read-aloud is capped at 5,000 characters.
+- System.Management 8.0.0 -> 10.0.0, matching the .NET 10 target.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+ef53574 Pin the exact native DLLs, refuse loader side files, ignore startup hooks
+
+Follow-ups to the extracted-DLL check, each reproduced against a real
+single-file build before fixing:
+
+- Any intact Microsoft-signed DLL passed, so a different Microsoft file
+  renamed (or an older build of the same one) was accepted. The build now
+  compiles the name and SHA-256 of every native runtime DLL it ships into
+  the exe (NativeLibraryPins.g.cs), and only those exact files pass.
+- CloCloWidget.exe.config and CloCloWidget.exe.local next to the exe are
+  read by Windows' loader before any app code runs (a junk .config even
+  stopped Windows from starting the exe). CloClo now refuses to start
+  while either, or a .manifest, is present.
+- DOTNET_STARTUP_HOOKS made .NET run another DLL's code before Main;
+  StartupHookSupport=false makes the runtime ignore it.
+- WPF startup moved into a non-inlined Run() so compiling Main can't
+  touch WPF types before the check, and the Microsoft root is matched by
+  exact name.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+d831c09 Add a Security section to the README
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+c311209 Add a Program Files install option
+
+install.ps1 -ProgramFiles installs to C:\Program Files\CloClo, which only
+administrators can change, closing the gap where another program running
+as the user could replace the exe or its files.
+
+- Build and signing still run as the user; only the copy is elevated, with
+  one UAC prompt. The elevated script travels inline (-EncodedCommand),
+  never as a file another program could swap before it runs.
+- Each file's SHA-256 is taken from the build and re-checked after the
+  copy; a mismatch removes the file and stops the install.
+- WPF's native DLLs are installed beside the exe instead of being unpacked
+  to %TEMP%. The publish folder is emptied first so the two layouts never
+  mix, and a per-user copy is removed.
+- -Uninstall removes either kind of install.
+
+The README's Security limits now say exactly which gap Program Files closes
+(replacing the app) and which it doesn't (profiler environment variables,
+shortcuts and the Run entry, all owned by the user).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+fc03142 Bring the README up to date
+
+- "Running it" told people to double-click publish\CloCloWidget.exe and
+  called it unsigned; it's now "Getting started" via install.ps1, with a
+  note not to run from publish\ (every install empties it), and a short
+  Requirements list (Windows 10 2004+, .NET 10 SDK, Windows SDK to sign).
+- "Using it" now covers the whole icon bar and right-click menu.
+- The Program Files example says where $cert comes from, and the signing
+  section notes that the commands must use your certificate's own name.
+- Security: the unpacked-DLL check is described as the per-user install's
+  case; Rebuilding notes that a plain dotnet build isn't the shipped layout.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+3f70ae5 Harden the installer's administrator step
+
+- The elevated PowerShell resolved commands like Get-FileHash through the
+  user's module folder first, so a planted look-alike module would have
+  run as administrator (reproduced). The elevated script now starts by
+  limiting module loading to $PSHOME\Modules, and always runs in a fresh
+  process, also when already elevated.
+- powershell.exe and explorer.exe were started by bare name, which
+  Windows resolves through the per-user App Paths key and PATH; the
+  elevated PowerShell is now launched by its full System32 path.
+- Building from an administrator window ran dotnet, NuGet packages and
+  build tasks as admin. install.ps1 now refuses to build elevated (it asks
+  for admin rights itself, for the Program Files copy only), which also
+  retires the Explorer-based de-elevation launch.
+- Program Files, LocalAppData and the Windows Kits folder come from
+  known-folder lookups instead of environment variables.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+35b2e84 Log instead of crash, PNG-only logos, safer dictation folder
+
+- Unhandled UI-thread and task exceptions are logged to
+  %LocalAppData%\CloCloWidget\errors.log (type and stack only, never the
+  message) and the widget keeps running; a crash would also have handed
+  Windows Error Reporting a dump that can hold clipboard or notification
+  text.
+- Notification app logos are decoded only when they're PNG, so other
+  formats never reach whatever third-party image codecs are installed.
+- "Open dictation folder" starts Explorer by full path with the folder as
+  an argument instead of shell-executing the path, and reports a failure
+  instead of throwing.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+d2a0f85 README: describe the installer's admin handling and error logging accurately
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+5db713b Refuse look-alike DLLs next to the exe
+
+Windows searches the exe's folder first for several system DLLs it loads
+by name. Planting a file named version.dll, dwmapi.dll, winmm.dll,
+cryptbase.dll or profapi.dll beside a per-user install got it loaded into
+CloClo (reproduced with junk files, which stopped the launch).
+
+The startup check now also scans the exe's own folder: every DLL there
+must be one of the pinned native files with an intact Microsoft signature
+(the Program Files layout keeps WPF's five there), otherwise CloClo
+refuses to start. All five names above now hit that refusal before they
+load. Separately, the app's own P/Invokes are restricted to System32 via
+DefaultDllImportSearchPaths.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+975d534 Require a protected signing key, keep the signer on updates, refuse profilers
+
+Brought over from the Markdown Viewer review, each tested here:
+
+- sign.ps1 only signs with a store certificate whose private key Windows
+  guards (strong key protection, so every signing is confirmed, or a smart
+  card); an unprotected software key - which any program running as the
+  user could sign with silently - is refused with the command to make a
+  protected one. A .pfx stays allowed, guarded by its password. Tested:
+  the current unprotected CloClo_shaimaa certificate is refused and the
+  file is left unsigned.
+- install.ps1 replaces an installed CloClo only with a build from the same
+  signer; a different certificate, or an unsigned build over a signed one,
+  shows both thumbprints and needs a typed YES. Tested all six cases
+  (same signer, different with no answer / "yes" / "YES", unsigned over
+  signed, signed over unsigned).
+- The startup check refuses to run with .NET profiler variables set
+  (CORECLR_*, or DOTNET_/COMPlus_ names mentioning profiling). The
+  profiler has loaded by then, so this limits rather than prevents it;
+  the README says so. Tested with startup and notification profilers.
+
+README: certificate commands now use -KeyProtection Protect, explain the
+signing confirmations and the YES prompt, and list all three in Security.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+af063d3 Show the YES question for a certificate change explicitly
+
+Read-Host's prompt text didn't appear when install.ps1 runs via
+powershell -File, so the window looked hung while it was waiting.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+5dfed53 Stop instead of hanging when the installer can't read the keyboard
+
+Run from PowerShell ISE, install.ps1's child process has no console
+input, so the certificate YES question waited forever. It now detects
+redirected input and stops with a message pointing to a regular
+PowerShell window; nothing is installed. README says the same.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+00b0d61 Don't sign over tampered files; keep "Start with Windows" on the installed copy
+
+- sign.ps1 signed every bundled DLL that wasn't validly signed, so a
+  Microsoft runtime DLL tampered with in the NuGet cache (HashMismatch)
+  would have been re-signed as CloClo. It now signs only DLLs with no
+  signature and stops the build on a broken one, checking every file
+  before copying or signing any. Tested with a one-byte-altered
+  System.Text.Json.dll from the cache.
+- The build runs powershell.exe and dotnet by full System32 / Program
+  Files paths instead of bare names resolved through PATH.
+- After the Program Files install, "Start with Windows" still pointed at
+  the removed per-user copy (the installer's update hadn't taken; the key
+  wasn't written). An installed CloClo now repairs the entry at startup
+  when its target is gone, or when it's the Program Files copy and the
+  entry points elsewhere; dev builds and other copies never touch it
+  (decision tested across nine cases). install.ps1 now also reads the
+  entry back and warns if the update didn't stick.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+42d7e9e Rewrite the README to match the current state
+
+- Getting started now uses a regular PowerShell window and recommends the
+  Program Files install; Requirements notes the SDK must be in its
+  standard Program Files location.
+- Installing: all options in one list (incl. -NoLaunch), a per-user vs
+  Program Files comparison table, and why admin windows and ISE are refused.
+- Signing: describes the current rules - only unsigned DLLs are signed and
+  a broken signature stops the build; which certificates may sign
+  (protected store keys, .pfx); updates keep the certificate.
+- Self-signed steps: what the creation dialog's Medium/High choice means,
+  examples use -ProgramFiles, replacing explains the one-time YES.
+- New Troubleshooting table, each entry quoting the actual message.
+- Security regrouped into what CloClo shows and sends, what it checks at
+  startup, and how builds/installs are protected; DLL-planting results
+  updated (47 names refused, incl. cryptsp.dll); Limits now name the
+  pre-start DLL case that only Program Files closes.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+a171fbe List CloClo in Settings > Apps > Installed apps
+
+install.ps1 never registered CloClo with Windows, so it didn't appear in
+Installed apps. It now writes the standard Uninstall entry (name, version,
+icon, size, install date, uninstall command): under HKLM for a Program
+Files install, inside the existing elevated step so there is still only
+one UAC prompt, and under HKCU for a per-user install. -Uninstall removes
+the entry as well.
+
+The uninstall command is a new uninstall.ps1, copied (hash-checked, like
+the program files) into the install folder, so Settings can remove CloClo
+without the project folder. It removes only what points at its own copy -
+the running widget, shortcuts, "Start with Windows", the entry and the
+folder - and for Program Files re-runs itself elevated from Program Files
+with module loading limited to PowerShell's system folder.
+
+Tested: the entry's values written to a throwaway key; a per-user
+uninstall from a scratch folder removed that folder and left the real
+shortcuts, Run entry and Program Files copy untouched.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+2335cf4 Add Install-CloClo.cmd / Uninstall-CloClo.cmd
+
+Double-click installers for the current secure setup. Install-CloClo.cmd
+runs install.ps1 -ProgramFiles -UseCloCloCertificate -DesktopShortcut via
+PowerShell's full path, passes any extra options on, reports whether the
+install worked and keeps the window open. Uninstall-CloClo.cmd runs
+install.ps1 -Uninstall.
+
+New install.ps1 -UseCloCloCertificate: signs with the newest valid
+"CN=CloClo..." code-signing certificate whose private key Windows protects
+(the same rule sign.ps1 enforces); unprotected ones are named and skipped;
+with none it asks to create a protected CN=CloClo certificate, refusing
+when it can't ask.
+
+Tested: discovery on the real store picks the protected CloClo_shaimaa
+certificate and skips Markdown Viewer's; the .cmd with a stand-in
+installer passes the right options, reports success and failure, works
+from a folder with a space and explains a missing install.ps1.
+.gitattributes keeps *.cmd at CRLF.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+e2ebb63 Record the source at install time and add Check-Source.cmd
+
+install.ps1 now writes source-manifest.json - the SHA-256 of every file in
+the project folder except build output, plus the git commit - just before
+the build, refuses to install if the sources changed during the build,
+and installs the record with check-source.ps1 next to the program (in
+Program Files only administrators can change either).
+
+Check-Source.cmd runs the installed checker against the project folder
+and lists files changed, added or removed since the last install, or
+confirms they all match (exit 0 / 1, 2 when there's no record).
+
+Tested on a scratch copy: identical folder -> no changes; one file
+changed, one added, one removed -> each listed, a file under bin ignored;
+quiet mode and missing-record exit codes; the real folder records 57
+files and no build output; the .cmd explains when nothing is installed
+with a record yet.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+03283b3 README: put the one-click flow first and cover the source record
+
+- Self-signed signing now leads with Install-CloClo.cmd (finds the newest
+  protected CN=CloClo... certificate or offers to create one), with the
+  manual commands as the alternative; replacing a certificate can also go
+  through it.
+- Getting started, How it's built and Security mention the source
+  fingerprint; Checking the source says what a fresh install reports.
+- Troubleshooting covers Check-Source.cmd's "no record yet" and
+  unexpected-changes cases.
+- Tidier Installing intro; aligned options list.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+22ee3b9 Check the source before every build; accept only signed nuget.org packages
+
+- install.ps1 now runs the installed checker (Program Files record +
+  check-source.ps1, admin-only) against the project folder before
+  building. Unchanged: proceeds. Changed since the last install: lists the
+  files and builds only after a typed YES; stops if it can't ask. No
+  record yet: notes it and continues. Tested all three non-interactive
+  paths against a scratch project and a stand-in installed record.
+- New nuget.config: nuget.org is the only source, every package is mapped
+  to it, and signatureValidationMode=require with nuget.org's repository
+  certificate fingerprints (added by "dotnet nuget trust source").
+  Tested: a fresh restore of the full Program Files build graph (7
+  packages incl. runtime packs and ILLink) passes; an unsigned local
+  package is rejected with NU3004 and not extracted; the project builds.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+037d7be Show the administrator step as readable PowerShell in the UAC prompt
+
+The elevated step travelled as -EncodedCommand, so the UAC prompt's
+details showed only base64. It now travels as plain PowerShell via
+-Command - still inline on the command line, never as a file - so "Show
+more details" lists every source path, SHA-256, the destination and the
+registry entry. Lines are joined with "; " and the text is quoted with
+ConvertTo-NativeArgument (Windows' CommandLineToArgvW rules for quotes
+and backslashes); the module-path restriction is still the first
+statement, and the length is checked against Windows' limit.
+
+Tested with the real functions and copy template (elevation simulated):
+paths with spaces and apostrophes copy correctly, the registry value with
+embedded double quotes round-trips exactly, a file swapped after hashing
+still fails the step; the command line is ~3.4 KB.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+090a145 Move the elevated step into a fixed place.ps1; registry entries per user
+
+Brought over from Markdown Viewer's installer review, each tested:
+
+- place.ps1 is now the only code that runs as administrator: a fixed
+  script that receives only data ($Source, $Expected name=SHA-256 list,
+  $AcceptThumbprint), still passed inline as readable PowerShell. It works
+  out C:\Program Files\CloClo itself, refuses unexpected names and links,
+  copies into CloClo.new inside Program Files and checks there the exact
+  file set, every hash, the exe signer against the installed copy (or the
+  accepted change) and every DLL as intact Microsoft-signed, then swaps the
+  folders atomically with rollback. Exit codes map to "Not installed: ..."
+  reasons. Tested ten cases against a scratch destination (fresh, update,
+  other signer refused/accepted, unsigned refused/accepted, swapped file,
+  bad name, non-Microsoft DLL, copy in use with rollback) - all correct, no
+  staging folders left behind.
+- The Installed apps entry is written as the user, in HKCU, for both
+  install kinds; the admin step writes no registry keys and only removes
+  the old HKLM entry. uninstall.ps1 removes the HKCU entry when it belongs
+  to its copy.
+- install.ps1, sign.ps1 and check-source.ps1 now restrict module loading to
+  $PSHOME\Modules at the top, so a planted Start-Process / Get-FileHash in
+  the user's module folder can't change what UAC starts or fake hashes; the
+  README's commands use -NoProfile.
+- After installing, install.ps1 checks as the user that the install folder
+  holds exactly the built files (tested: identical, changed + extra).
+- With UAC switched off, an administrator window is allowed.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+72c19ec UAC shows place.ps1's path and hash, not its whole text
+
+The elevated step pasted all of place.ps1 into the command line, so the
+UAC details showed the full script. It is now a short bootstrap: the code
+file's path and SHA-256, then the data (publish folder, every file's
+SHA-256, accepted certificate). Elevated, it reads place.ps1's bytes once,
+checks them against the SHA-256 and runs exactly those bytes from memory,
+so a place.ps1 swapped after the installer hashed it never runs (exit 8,
+"place.ps1 changed after the installer checked it").
+
+Tested with the installer's own bootstrap code against a scratch
+destination: normal install works; place.ps1 swapped after hashing -> 8,
+nothing installed; a byte-order mark is handled; a refusal inside
+place.ps1 (another certificate, 3) comes back through the bootstrap with
+the installed copy untouched.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+3540fc7 Pin working-tree line endings so checkouts don't change file bytes
+
+core.autocrlf is on and 9 tracked files (incl. place.ps1 and install.ps1)
+had LF in the working tree, so the next checkout would rewrite them as
+CRLF - changing their bytes and making Check-Source report changes nobody
+made. .gitattributes now fixes every text file at CRLF in the working tree
+(the repository keeps LF) and marks images and .pfx as binary; the 9 files
+were converted, and git shows no content change for them.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+9b99169 Close the remaining 10 review gaps (line endings were committed separately)
+
+Each reproduced or exercised before/after:
+
+1. DLL-loading protections at start (ProcessHardening, first in Main):
+   SetDefaultDllDirectories(DEFAULT_DIRS) plus the unpack folder; image-
+   load policy NoRemoteImages | NoLowMandatoryLabelImages |
+   PreferSystem32Images; extension points (AppInit_DLLs, global hooks,
+   legacy IMEs, LSPs) disabled. Verified on the running process: 0x7 / 0x1,
+   in both the single-file and Program Files layouts.
+2. Checked DLLs locked until loaded: each verified DLL is held open
+   (FileShare.Read) for the process lifetime and hashed through that
+   handle. Verified: while running, write/delete/rename are all blocked.
+3. The app refuses to run elevated (unless UAC is off).
+4. Background-thread crash: the UnhandledException handler logs, then
+   TerminateProcess - no WER. Verified in a test program: without it
+   WerFault starts; with it, exit 1 and no WerFault.
+5. Check-Source.cmd finds the installed checker via the known-folder API
+   (project path passed through the environment); verified it runs.
+6. check-source.ps1 runs git only from Program Files\Git.
+8. verify-pins.ps1 (run by GenerateNativeLibraryPins) checks every pinned
+   native DLL against its signed .nupkg: signatures verify, author
+   Microsoft Corporation, repository nuget.org, id/version match the
+   folder, bytes match the package entry. Verified: 19 DLLs pass; a copy
+   with one altered byte fails the build.
+9. Allow-list for both folders: beside the exe only CloClo's own files,
+   in the unpack folder only pinned DLLs; any other file or subfolder is
+   refused (or re-extracted). Verified: extra file, extra folder and a
+   planted version.dll refused; extra file in the unpack folder
+   re-extracted cleanly.
+10. check-source.ps1 walks the tree itself and never follows links; a link
+    is recorded as LINK:<target>.
+11. settings.json is written via a random-named temp file created with
+    FileMode.CreateNew.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+9a0853f Set the module restriction without a command; never run git
+
+Gap A (reproduced): "$env:PSModulePath = Join-Path $PSHOME 'Modules'"
+has to look up Join-Path first - while the user's module folder still
+comes first - so a look-alike Join-Path planted there ran, including in
+the first statement of the elevated install command. All seven places
+(install.ps1 x2, place.ps1, sign.ps1, verify-pins.ps1, check-source.ps1,
+Check-Source.cmd) now use plain concatenation, $PSHOME + '\Modules'.
+check-source.ps1's -Manifest default (evaluated before the first line)
+no longer calls Join-Path either.
+Tested: a look-alike Join-Path ran with the old line, not with the new;
+with look-alikes of 31 common commands planted first on the module path,
+none ran in check-source (record/compare), sign, verify-pins, or the
+elevated command's first line.
+
+Gap B: check-source.ps1 no longer runs git at all. git reads .git\config
+and the user's .gitconfig, which any program running as the user can
+edit, and settings like core.fsmonitor name a program for git to start.
+The commit is now read from .git\HEAD and the branch's ref / packed-refs
+(worktree .git files handled); verified it matches git rev-parse HEAD.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+88a660f Run only one CloClo at a time
+
+A named mutex in the session's Local\ namespace (SingleInstance.cs) is
+taken in Program.Main after the startup checks - so their
+"re-extract and restart once" path still works. A second copy signals the
+running one through a named event and exits; the running copy shows
+itself (also if hidden from the tray) with "CloClo is already running".
+If a copy crashes, Windows releases the mutex and the next start takes it
+over.
+
+Tested (debug build, the installed copy left running and untouched):
+second copy exits with 0 and the first shows the message (read via UI
+Automation); after killing the first copy a new start runs; two copies
+started at the same moment leave exactly one; with a single-file build,
+a planted junk DLL still triggers re-extract + restart and one copy runs.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
