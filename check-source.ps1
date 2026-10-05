@@ -33,29 +33,45 @@ $env:PSModulePath = Join-Path $PSHOME 'Modules'
 $ErrorActionPreference = 'Stop'
 $excludedDirs = 'bin', 'obj', 'publish', '.vs', 'TestResults'
 
+# Walks the folder itself instead of Get-ChildItem -Recurse, so links are
+# never followed: a folder link (junction or symbolic link) could pull files
+# from elsewhere into the record, hide where they really live, or loop. A
+# link - to a folder or a file - is recorded as 'LINK:<target>' instead of
+# being hashed, so adding, removing or retargeting one shows up as a change.
 function Get-SourceHashes([string]$root) {
     $root = (Resolve-Path -LiteralPath $root).Path.TrimEnd('\')
     $hashes = [ordered]@{}
-    Get-ChildItem -LiteralPath $root -Recurse -File -Force |
-        Where-Object {
-            $rel = $_.FullName.Substring($root.Length + 1)
-            $top = $rel.Split('\')[0]
-            -not ($excludedDirs -contains $top) -and $_.Extension -ne '.user'
-        } |
-        Sort-Object FullName |
-        ForEach-Object {
-            $rel = $_.FullName.Substring($root.Length + 1)
-            $hashes[$rel] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+    $entries = New-Object System.Collections.Generic.List[object]
+    $pending = New-Object System.Collections.Generic.Stack[string]
+    $pending.Push($root)
+    while ($pending.Count) {
+        foreach ($item in Get-ChildItem -LiteralPath $pending.Pop() -Force) {
+            $rel = $item.FullName.Substring($root.Length + 1)
+            if ($rel.IndexOf('\') -lt 0 -and $item.PSIsContainer -and ($excludedDirs -contains $item.Name)) { continue }
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                $target = @($item.Target) -join ';'
+                $entries.Add([pscustomobject]@{ Rel = $rel; Value = "LINK:$target" })
+            } elseif ($item.PSIsContainer) {
+                $pending.Push($item.FullName)
+            } elseif ($item.Extension -ne '.user') {
+                $entries.Add([pscustomobject]@{ Rel = $rel; Value = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash })
+            }
         }
+    }
+    foreach ($e in ($entries | Sort-Object Rel)) { $hashes[$e.Rel] = $e.Value }
     $hashes
 }
 
 function Get-Commit([string]$root) {
-    # Informational only - git comes from PATH, so its answer isn't relied on.
+    # Informational only. git is run only from where its installer puts it
+    # (Program Files, which only administrators can change) - never looked up
+    # through PATH, where another program could put its own git.exe and have
+    # it run every time the source is recorded or checked.
     try {
-        $git = Get-Command git -ErrorAction Stop
-        $c = & $git.Source -C $root rev-parse HEAD 2>$null
-        $dirty = & $git.Source -C $root status --porcelain -- . 2>$null
+        $git = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Git\cmd\git.exe'
+        if (-not (Test-Path -LiteralPath $git)) { return 'unknown (git not found in Program Files)' }
+        $c = & $git -C $root rev-parse HEAD 2>$null
+        $dirty = & $git -C $root status --porcelain -- . 2>$null
         if ($c) { return $c.Trim() + $(if ($dirty) { ' (plus uncommitted changes)' } else { '' }) }
     } catch { }
     'unknown'

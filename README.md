@@ -394,7 +394,12 @@ files are double-click launchers for those scripts.
 - **Doesn't crash on errors.** Unexpected errors are logged to
   `errors.log` (error type and code location only, never any text) and the
   widget keeps running — a crash would also hand Windows Error Reporting a
-  memory dump that could contain clipboard or notification text.
+  memory dump that could contain clipboard or notification text. An error on
+  a background thread, which can't be survived, ends the process right after
+  logging, before Windows collects a dump.
+- **Settings written safely.** `settings.json` is written to a new file with
+  a random name (which must not exist yet) and then swapped in, so a crash
+  can't corrupt it and nothing can pre-place a file to redirect the write.
 
 **What CloClo checks before it runs** (in `NativeLibraryCheck`, before WPF
 loads anything)
@@ -407,14 +412,30 @@ loads anything)
   re-extract clean copies; if that doesn't fix it, it refuses to run. (A
   Program Files install keeps these DLLs next to the exe instead, where only
   administrators can change them.)
-- **No look-alike DLLs beside the exe.** Windows looks in the exe's own
-  folder first for many system DLLs it loads by name. Every DLL beside the
-  exe must be one of CloClo's pinned files; anything else makes it refuse to
-  start. In testing, every DLL name that could be confirmed — 47 of the names
+- **Nothing unexpected beside the exe or in the unpack folder.** Windows
+  looks in the exe's own folder first for many system DLLs it loads by name.
+  Both folders are checked against an allow-list: beside the exe only
+  CloClo's own files (the exe, its pinned DLLs, the uninstaller, the source
+  checker and its record), in the unpack folder only the pinned DLLs. Any
+  other file or any subfolder makes CloClo refuse to start (or, in the unpack
+  folder, re-extract). In testing, every DLL name that could be confirmed — 47 of the names
   CloClo loads, including `version.dll`, `dwmapi.dll`, `winmm.dll`,
   `cryptbase.dll`, `cryptsp.dll` and `profapi.dll` — was refused before it
   loaded. CloClo's own calls into Windows DLLs only ever load them from
   System32.
+- **Checked DLLs stay locked.** Every DLL that passes is held open, shared
+  for reading only, for as long as CloClo runs: Windows can load it, but
+  nothing can change, rename or delete it between the check and WPF loading
+  it — and its hash is read through that same handle.
+- **Process protections from the first line.** Before anything else,
+  CloClo takes the current folder and `PATH` out of its DLL search, refuses
+  DLLs from network shares and low-integrity locations, prefers System32's
+  copy of any system DLL, and turns off the legacy ways other programs push
+  DLLs into every process (AppInit_DLLs, global window hooks, legacy IMEs,
+  Winsock layered providers).
+- **Never as administrator.** CloClo refuses to run elevated (unless User
+  Account Control is off) — a widget that reads other apps' text and sends
+  keystrokes has no business holding those rights.
 - **No loader tricks.** It won't start while `CloCloWidget.exe.config`,
   `CloCloWidget.exe.local` or `CloCloWidget.exe.manifest` sits next to it —
   Windows reads those before any app code runs, and CloClo never creates
@@ -434,6 +455,14 @@ loads anything)
   itself, timestamped (see [Signing](#signing)).
 - **Only a protected key can sign**, and **tampered files are never signed
   over** — a DLL whose signature no longer verifies stops the build.
+- **Pinned DLLs come from verified packages.** Before the build records the
+  SHA-256 of the native runtime DLLs it ships, `verify-pins.ps1` checks each
+  one against its NuGet package file: the package's signatures must verify
+  (author Microsoft Corporation, repository nuget.org), its own id and
+  version must match its cache folder, and every DLL must be byte-for-byte
+  its entry inside the package. The unpacked NuGet cache is writable by any
+  program running as you, so a changed DLL there would otherwise be pinned
+  as genuine.
 - **Updates keep the signer** unless you type `YES` after seeing both
   thumbprints.
 - **Only signed packages from nuget.org.** `nuget.config` allows nuget.org as
@@ -448,7 +477,12 @@ loads anything)
 - **The source is fingerprinted** at every install, checked unchanged across
   the build, and the record is kept where only administrators can change it
   (Program Files), so `Check-Source.cmd` can tell whether the code changed
-  since.
+  since. The checker never follows folder links (a link is recorded as a
+  link, so adding or retargeting one shows up), runs git only from Program
+  Files, and `Check-Source.cmd` finds the installed checker through Windows'
+  known-folder API rather than environment variables. `.gitattributes` fixes
+  every text file's line endings, so a checkout never changes file bytes and
+  shows up as changes nobody made.
 - **Administrator rights only where needed.** `install.ps1` refuses to run
   from an administrator window, so building never runs as admin and the
   widget always starts as your normal user. With `-ProgramFiles` it asks for

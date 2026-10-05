@@ -89,9 +89,23 @@ public class WidgetSettings
             // Written beside and then swapped in, so a crash mid-write can
             // never leave a half-written file — which Load would discard,
             // silently resetting privacy choices like ShowNotificationText.
-            var temp = FilePath + ".tmp";
-            File.WriteAllText(temp, json);
-            File.Move(temp, FilePath, overwrite: true);
+            // The temporary file gets a random name and must not exist yet
+            // (CreateNew): a fixed name could be pre-created by something
+            // else - as a link, say - to redirect this write.
+            var temp = Path.Combine(FolderPath, "settings." + Path.GetRandomFileName() + ".tmp");
+            try
+            {
+                using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                using (var writer = new StreamWriter(stream))
+                {
+                    writer.Write(json);
+                }
+                File.Move(temp, FilePath, overwrite: true);
+            }
+            finally
+            {
+                if (File.Exists(temp)) File.Delete(temp);
+            }
         }
         catch
         {

@@ -36,6 +36,17 @@
     <ItemGroup>
       <_NativePinCandidate Include="@(RuntimePackAsset)" Condition="'%(RuntimePackAsset.AssetType)' == 'native' and '%(RuntimePackAsset.Extension)' == '.dll'" />
     </ItemGroup>
+    <!-- First prove each of them is byte-for-byte the file inside its signed
+         NuGet package (verify-pins.ps1): the unpacked cache is writable by
+         any program running as this user, and whatever is there now gets
+         pinned as genuine. dotnet is run from Program Files, not via PATH. -->
+    <PropertyGroup>
+      <_PinListFile>$(MSBuildProjectDirectory)\$(IntermediateOutputPath)native-pin-candidates.txt</_PinListFile>
+      <_PinDotnet>$([System.IO.Path]::Combine($([System.Environment]::GetFolderPath(SpecialFolder.ProgramFiles)), 'dotnet', 'dotnet.exe'))</_PinDotnet>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_PinListFile)" Lines="@(_NativePinCandidate->'%(FullPath)')" Overwrite="true" Condition="'@(_NativePinCandidate)' != ''" />
+    <Exec Condition="'@(_NativePinCandidate)' != ''"
+          Command="&quot;$(_SignPowerShell)&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\verify-pins.ps1&quot; -ListFile &quot;$(_PinListFile)&quot; -Dotnet &quot;$(_PinDotnet)&quot;" />
     <GetFileHash Files="@(_NativePinCandidate)" Algorithm="SHA256" Condition="'@(_NativePinCandidate)' != ''">
       <Output TaskParameter="Items" ItemName="_NativePin" />
     </GetFileHash>

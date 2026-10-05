@@ -11,6 +11,7 @@ public static class Program
     [STAThread]
     public static int Main()
     {
+        ProcessHardening.Apply(NativeLibraryCheck.ExtractionDirectories());
         if (!NativeLibraryCheck.EnsureTrusted()) return 1;
         return Run();
     }

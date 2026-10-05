@@ -25,11 +25,21 @@ public partial class App : System.Windows.Application
             LogError(e.Exception);
             e.SetObserved();
         };
+        // An exception on a background thread can't be caught - the runtime
+        // ends the process. Ending it here first, after logging, means no
+        // Windows Error Reporting crash dump gets written.
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
             if (e.ExceptionObject is Exception ex) LogError(ex);
+            if (e.IsTerminating) TerminateProcess(GetCurrentProcess(), 1);
         };
     }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern IntPtr GetCurrentProcess();
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern bool TerminateProcess(IntPtr process, uint exitCode);
 
     private static readonly object LogLock = new();
     private const long MaxLogBytes = 256 * 1024;

@@ -36,9 +36,33 @@ namespace CloCloWidget;
 // Program Files layout keeps WPF's native DLLs there); anything else makes
 // CloClo refuse to start. Re-extracting can't fix that folder, so there's
 // no retry for it.
+//
+// Both folders are checked against an allow-list, not just for DLLs: beside
+// the exe only CloClo's own files may be there (the exe, its pinned DLLs, the
+// uninstaller, the source checker and its record), and in the unpack folder
+// only the pinned DLLs - any other file or any subfolder counts as tampering.
+//
+// Every DLL that passes is kept open for as long as CloClo runs, shared for
+// reading only: Windows can still load it, but nothing can change, rename or
+// delete it between this check and the moment WPF loads it - and the hash is
+// computed through that same open handle, so what was checked is what loads.
+//
+// Finally, CloClo doesn't run as administrator (unless User Account Control
+// is off, when everything does): a widget that reads other apps' text and
+// sends keystrokes has no business holding those rights.
 public static partial class NativeLibraryCheck
 {
     private const string RetriedVariable = "CLOCLO_NATIVE_REEXTRACTED";
+
+    // Files that may sit beside the exe besides the exe itself and the pinned
+    // DLLs. (The .pdb is only there when running from the build output.)
+    private static readonly HashSet<string> AllowedAppFiles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "uninstall.ps1", "check-source.ps1", "source-manifest.json", "CloCloWidget.pdb",
+    };
+
+    // The verified DLLs, held open (read-share only) for the process's lifetime.
+    private static readonly List<FileStream> HeldOpen = new();
 
     // Microsoft's code-signing roots, matched by exact name.
     private static readonly HashSet<string> MicrosoftRoots = new(StringComparer.Ordinal)
@@ -55,6 +79,13 @@ public static partial class NativeLibraryCheck
         // Only a bundled single-file build extracts anything; in a normal
         // build the assembly has a real path and there's nothing to check.
         if (!string.IsNullOrEmpty(typeof(NativeLibraryCheck).Assembly.Location)) return true;
+
+        if (IsElevated() && IsUacOn())
+        {
+            Refuse("CloClo doesn't run as administrator. Close it and start it normally - from the Start Menu or " +
+                "desktop shortcut, not with \"Run as administrator\" or from an administrator window.");
+            return false;
+        }
 
         // A .NET profiler named in the environment is loaded by the runtime
         // before any code here exists, so this can't stop it from loading —
@@ -87,29 +118,43 @@ public static partial class NativeLibraryCheck
         }
 
         var appDir = Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
-        var strangers = Directory.EnumerateFiles(appDir, "*.dll")
-            .Where(f => !IsPinned(f) || !IsMicrosoftSigned(f))
-            .ToList();
+        var exeName = Path.GetFileName(Environment.ProcessPath!);
+        var strangers = new List<string>();
+        foreach (var entry in Directory.EnumerateFileSystemEntries(appDir))
+        {
+            var name = Path.GetFileName(entry);
+            if (Directory.Exists(entry)) strangers.Add(name + "\\");
+            else if (name.Equals(exeName, StringComparison.OrdinalIgnoreCase) || AllowedAppFiles.Contains(name)) continue;
+            else if (!name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || !HoldIfVerified(entry)) strangers.Add(name);
+        }
         if (strangers.Count > 0)
         {
-            Refuse("CloClo won't start while these files are next to it:\n\n" +
-                string.Join("\n", strangers.Select(Path.GetFileName)) +
+            ReleaseAll();
+            Refuse("CloClo won't start while these are next to it:\n\n" +
+                string.Join("\n", strangers) +
                 "\n\nThey aren't part of CloClo, and Windows could load them into it. " +
                 "Delete them (and consider a malware scan), then start CloClo again.");
             return false;
         }
 
         var extractDirs = ExtractionDirectories().ToList();
-        var bad = extractDirs
-            .SelectMany(d => Directory.EnumerateFiles(d, "*.dll"))
-            .Where(f => !IsPinned(f) || !IsMicrosoftSigned(f))
-            .ToList();
+        var bad = new List<string>();
+        foreach (var dir in extractDirs)
+        {
+            foreach (var entry in Directory.EnumerateFileSystemEntries(dir))
+            {
+                var name = Path.GetFileName(entry);
+                if (Directory.Exists(entry)) bad.Add(name + "\\");
+                else if (!name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || !HoldIfVerified(entry)) bad.Add(name);
+            }
+        }
         if (bad.Count == 0) return true;
+        ReleaseAll();
 
         if (Environment.GetEnvironmentVariable(RetriedVariable) == "1")
         {
             Refuse("CloClo found native files it can't verify and won't run with them:\n\n" +
-                string.Join("\n", bad.Select(Path.GetFileName)) +
+                string.Join("\n", bad) +
                 "\n\nReinstall CloClo, and consider a malware scan.");
             return false;
         }
@@ -122,6 +167,48 @@ public static partial class NativeLibraryCheck
         restart.Environment[RetriedVariable] = "1";
         Process.Start(restart);
         return false;
+    }
+
+    // Opens the DLL shared for reading only and keeps it open: Windows can still
+    // load it, but nothing can change, rename or delete it from now on. The hash
+    // is read through this same handle, so the checked bytes are the loaded ones.
+    private static bool HoldIfVerified(string path)
+    {
+        FileStream? stream = null;
+        try
+        {
+            stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var hash = Convert.ToHexString(SHA256.HashData(stream));
+            if (PinnedLibraries.Contains($"{Path.GetFileName(path)}|{hash}") && IsMicrosoftSigned(path))
+            {
+                HeldOpen.Add(stream);
+                return true;
+            }
+        }
+        catch
+        {
+            // unreadable or locked by someone else: not verified
+        }
+        stream?.Dispose();
+        return false;
+    }
+
+    private static void ReleaseAll()
+    {
+        foreach (var s in HeldOpen) s.Dispose();
+        HeldOpen.Clear();
+    }
+
+    private static bool IsElevated()
+    {
+        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        return new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+    }
+
+    private static bool IsUacOn()
+    {
+        using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System");
+        return key?.GetValue("EnableLUA") is not int value || value != 0;
     }
 
     private static void Refuse(string message) =>
@@ -154,24 +241,9 @@ public static partial class NativeLibraryCheck
         }
     }
 
-    // Exactly one of the files this build shipped: same name, same SHA-256.
-    private static bool IsPinned(string path)
-    {
-        try
-        {
-            using var stream = File.OpenRead(path);
-            var hash = Convert.ToHexString(SHA256.HashData(stream));
-            return PinnedLibraries.Contains($"{Path.GetFileName(path)}|{hash}");
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
     // The runtime's native probing directories, minus the exe's own folder —
     // for a single-file build that leaves exactly the extraction folder.
-    private static IEnumerable<string> ExtractionDirectories()
+    internal static IEnumerable<string> ExtractionDirectories()
     {
         var appDir = Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
         var dirs = (AppContext.GetData("NATIVE_DLL_SEARCH_DIRECTORIES") as string ?? "")
