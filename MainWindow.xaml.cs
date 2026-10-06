@@ -422,7 +422,7 @@ public partial class MainWindow : Window
 
         var text = dialog.CapturedText;
         var path = _settings.DictationFilePath;
-        if (!SpeechToText.IsInDictationFolder(path) || !SpeechToText.IsPlainFile(path!))
+        if (!SpeechToText.IsInDictationFolder(path) || !SpeechToText.IsPlainFile(path))
         {
             path = SpeechToText.CreateNewFile();
             _settings.DictationFilePath = path;

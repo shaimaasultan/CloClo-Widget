@@ -78,7 +78,11 @@ public static partial class NativeLibraryCheck
     {
         // Only a bundled single-file build extracts anything; in a normal
         // build the assembly has a real path and there's nothing to check.
+        // (IL3000 warns that Location is empty inside a single-file app -
+        // which is exactly what this tests for.)
+#pragma warning disable IL3000
         if (!string.IsNullOrEmpty(typeof(NativeLibraryCheck).Assembly.Location)) return true;
+#pragma warning restore IL3000
 
         if (IsElevated() && IsUacOn())
         {

@@ -69,7 +69,7 @@ public static class SpeechToText
     // settings.json only ever points dictation inside DictationFolder — a
     // path anywhere else (an older build's location, or a hand-edited
     // settings file) gets a fresh file here instead of being appended to.
-    public static bool IsInDictationFolder(string? path)
+    public static bool IsInDictationFolder([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? path)
     {
         if (string.IsNullOrEmpty(path)) return false;
         try

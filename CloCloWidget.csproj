@@ -17,6 +17,11 @@
     <!-- Ignore DOTNET_STARTUP_HOOKS: that variable otherwise makes .NET run
          any DLL's code before Main, ahead of every check in it. -->
     <StartupHookSupport>false</StartupHookSupport>
+    <!-- WFO0003 asks Windows Forms apps to move DPI awareness out of
+         app.manifest. CloClo is a WPF app (Windows Forms only supplies the
+         menus and tray icon), and WPF reads it only from the manifest:
+         without it there, windows turn blurry on high-DPI screens. -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
