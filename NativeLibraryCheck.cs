@@ -215,9 +215,13 @@ public static partial class NativeLibraryCheck
         return key?.GetValue("EnableLUA") is not int value || value != 0;
     }
 
+    // Windows' own message box: this runs before WPF may load (its native
+    // DLLs aren't verified yet), so a WPF MessageBox can't be used here.
     private static void Refuse(string message) =>
-        System.Windows.Forms.MessageBox.Show(message, "CloClo",
-            System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
+        MessageBoxW(IntPtr.Zero, message, "CloClo", 0x30 /* MB_ICONWARNING */ | 0x10000 /* MB_SETFOREGROUND */);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int MessageBoxW(IntPtr hwnd, string text, string caption, uint type);
 
     // CORECLR_ENABLE_PROFILING / CORECLR_PROFILER(_PATH)(_32/_64) attach a
     // startup profiler, CORECLR_ENABLE_NOTIFICATION_PROFILERS more of them;

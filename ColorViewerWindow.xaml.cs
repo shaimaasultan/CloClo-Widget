@@ -1,7 +1,6 @@
 using System.Windows;
 using System.Windows.Media;
 using Controls = System.Windows.Controls;
-using DrawingColor = System.Drawing.Color;
 using MediaColor = System.Windows.Media.Color;
 
 namespace CloCloWidget;
@@ -13,7 +12,7 @@ namespace CloCloWidget;
 // check of the color is what's actually needed.
 public partial class ColorViewerWindow : Window
 {
-    public ColorViewerWindow(DrawingColor color)
+    public ColorViewerWindow(MediaColor color)
     {
         InitializeComponent();
         Swatch.Background = new SolidColorBrush(MediaColor.FromRgb(color.R, color.G, color.B));

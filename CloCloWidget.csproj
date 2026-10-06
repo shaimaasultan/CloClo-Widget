@@ -6,7 +6,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <UseWindowsForms>true</UseWindowsForms>
+    <!-- No Windows Forms: the tray icon, menus, screen and power queries are
+         WPF or plain Windows calls (TrayIcon.cs, NativeScreen.cs), which
+         keeps Windows Forms' ~22 MB out of the build. -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>CloCloWidget</AssemblyName>
     <RootNamespace>CloCloWidget</RootNamespace>
@@ -17,12 +19,7 @@
     <!-- Ignore DOTNET_STARTUP_HOOKS: that variable otherwise makes .NET run
          any DLL's code before Main, ahead of every check in it. -->
     <StartupHookSupport>false</StartupHookSupport>
-    <!-- WFO0003 asks Windows Forms apps to move DPI awareness out of
-         app.manifest. CloClo is a WPF app (Windows Forms only supplies the
-         menus and tray icon), and WPF reads it only from the manifest:
-         without it there, windows turn blurry on high-DPI screens. -->
-    <NoWarn>$(NoWarn);WFO0003</NoWarn>
-    <!-- Size: only the English resources of WPF and Windows Forms (CloClo's
+    <!-- Size: only the English resources of WPF (CloClo's
          own text is English) - the 13 other languages added ~17 MB. -->
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <!-- Memory: no background (concurrent) garbage collector. A widget's

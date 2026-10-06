@@ -1,5 +1,5 @@
 using System;
-using System.Drawing;
+using Color = System.Windows.Media.Color;
 
 namespace CloCloWidget;
 
@@ -9,13 +9,7 @@ namespace CloCloWidget;
 // "what color is at this point, and how do I write it down" primitives.
 public static class ColorPicker
 {
-    public static Color GetColorAt(System.Drawing.Point screenPoint)
-    {
-        using var bitmap = new Bitmap(1, 1);
-        using var g = Graphics.FromImage(bitmap);
-        g.CopyFromScreen(screenPoint, System.Drawing.Point.Empty, new Size(1, 1));
-        return bitmap.GetPixel(0, 0);
-    }
+    public static Color GetColorAt(int x, int y) => NativeScreen.ColorAt(x, y);
 
     public static string ToHex(Color c) => $"#{c.R:X2}{c.G:X2}{c.B:X2}";
 

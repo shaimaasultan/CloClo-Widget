@@ -9,14 +9,18 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Threading;
-using DrawingForms = System.Windows.Forms;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using ContextMenu = System.Windows.Controls.ContextMenu;
+using MenuItem = System.Windows.Controls.MenuItem;
+using Separator = System.Windows.Controls.Separator;
 
 namespace CloCloWidget;
 
 public partial class MainWindow : Window
 {
     private WidgetSettings _settings = WidgetSettings.Load();
-    private DrawingForms.NotifyIcon? _trayIcon;
+    private TrayIcon? _trayIcon;
     private DispatcherTimer? _topmostTimer;
     private DispatcherTimer? _batteryTimer;
     private DispatcherTimer? _idleTimer;
@@ -601,9 +605,9 @@ public partial class MainWindow : Window
     // media at all — picking one still watches it, and also brings it to
     // the foreground right away so clicking it always does *something*
     // visible even if it never reports a track.
-    private async void ShowAppPicker(double screenX, double screenY)
+    private async void ShowAppPicker()
     {
-        var menu = new DrawingForms.ContextMenuStrip();
+        var menu = new ContextMenu();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
@@ -625,7 +629,7 @@ public partial class MainWindow : Window
                     == Windows.Media.Control.GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
                 var itemText = playing ? $"▶ {label}" : label;
                 var match = aumid; // capture for the closure below
-                menu.Items.Add(itemText, null, (_, _) => WatchApp(new[] { match }));
+                menu.Items.Add(Item(itemText, () => WatchApp(new[] { match })));
             }
         }
         catch { /* leave the "playing" section empty/fallback below */ }
@@ -635,7 +639,7 @@ public partial class MainWindow : Window
             var running = RunningApps.List();
             if (running.Count > 0 && menu.Items.Count > 0)
             {
-                menu.Items.Add(new DrawingForms.ToolStripSeparator());
+                menu.Items.Add(new Separator());
             }
             foreach (var app in running)
             {
@@ -646,7 +650,7 @@ public partial class MainWindow : Window
                 if (app.AppUserModelId != null && !seen.Add(app.AppUserModelId)) continue;
                 var aumid = app.AppUserModelId;
                 var hwnd = app.WindowHandle;
-                menu.Items.Add(app.Title, null, (_, _) =>
+                menu.Items.Add(Item(app.Title, () =>
                 {
                     if (aumid != null)
                     {
@@ -659,16 +663,16 @@ public partial class MainWindow : Window
                         // to the foreground directly via its window handle.
                         RunningApps.Activate(hwnd);
                     }
-                });
+                }));
             }
         }
         catch { /* leave the "running" section empty */ }
 
         if (menu.Items.Count == 0)
         {
-            menu.Items.Add("Nothing found to watch", null, (_, _) => { }).Enabled = false;
+            menu.Items.Add(Item("Nothing found to watch", null, enabled: false));
         }
-        menu.Show(new System.Drawing.Point((int)Math.Round(screenX), (int)Math.Round(screenY)));
+        OpenMenu(menu);
     }
 
     private DispatcherTimer CreateNowPlayingTimer()
@@ -771,15 +775,7 @@ public partial class MainWindow : Window
         }
         if (icons.TryGetValue("search", out var searchRect) && searchRect.Contains(p))
         {
-            // Plain arithmetic rather than _avatarWindow.PointToScreen(p) or
-            // a separate DrawingForms.Cursor.Position read — both of those
-            // returned distorted/stale values during testing (confirmed via
-            // logging: Left/Top and p were individually correct, but
-            // PointToScreen's result was nowhere near their sum), while
-            // Left/Top and GetPosition share the same DIU coordinate space
-            // for this plain, untransformed window, so adding them directly
-            // is both simpler and the one that's actually been verified.
-            ShowAppPicker(_avatarWindow!.Left + p.X, _avatarWindow.Top + p.Y);
+            ShowAppPicker();
             return;
         }
         if (icons.TryGetValue("gpu", out var gpuRect) && gpuRect.Contains(p))
@@ -937,11 +933,7 @@ public partial class MainWindow : Window
         GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
     }
 
-    private void ShowContextMenuAtCursor()
-    {
-        var p = DrawingForms.Cursor.Position;
-        ShowContextMenu(p.X, p.Y);
-    }
+    private void ShowContextMenuAtCursor() => OpenMenu(BuildMenu(includeShowHide: false));
 
     // A window being marked "topmost" does not always mean it stays visually
     // and interactively above every other app — when another app's window
@@ -1165,7 +1157,7 @@ public partial class MainWindow : Window
         // screen, logical x runs out at 1536, yet comparing it raw against the
         // physical bounds accepted anything below 1920.
         var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this);
-        var rect = new System.Drawing.Rectangle(
+        var rect = new Int32Rect(
             (int)Math.Round(left * dpi.DpiScaleX),
             (int)Math.Round(top * dpi.DpiScaleY),
             (int)Math.Round(Width * dpi.DpiScaleX),
@@ -1173,10 +1165,11 @@ public partial class MainWindow : Window
         // One corner grazing a screen doesn't make the widget usable, so ask
         // for a real patch of it to be visible, and against the working area
         // so a spot buried under the taskbar doesn't count either.
-        return DrawingForms.Screen.AllScreens.Any(s =>
+        return NativeScreen.WorkingAreas().Any(area =>
         {
-            var overlap = System.Drawing.Rectangle.Intersect(s.WorkingArea, rect);
-            return overlap.Width >= MinVisiblePixels && overlap.Height >= MinVisiblePixels;
+            var width = Math.Min(area.X + area.Width, rect.X + rect.Width) - Math.Max(area.X, rect.X);
+            var height = Math.Min(area.Y + area.Height, rect.Y + rect.Height) - Math.Max(area.Y, rect.Y);
+            return width >= MinVisiblePixels && height >= MinVisiblePixels;
         });
     }
 
@@ -1189,102 +1182,71 @@ public partial class MainWindow : Window
 
     private void SetupTrayIcon()
     {
-        // Extracted from the exe's own embedded icon (set via ApplicationIcon
-        // in the csproj) rather than loaded from a loose Assets/icon.ico —
-        // that file mysteriously vanished from `dotnet publish`'s output
-        // (present in plain `dotnet build` output, absent after publish)
-        // once ApplicationIcon also pointed at it, so File.Exists() was
-        // silently failing and falling back to the generic system icon.
-        // The exe's own resource doesn't have that problem: it's always
-        // there, in exactly the build that's actually running.
-        System.Drawing.Icon trayIcon;
-        try
+        // The exe's own embedded icon (ApplicationIcon in the csproj) - always
+        // there, in exactly the build that's running.
+        _trayIcon = new TrayIcon("CloClo weather");
+        _trayIcon.DoubleClick += ToggleVisible;
+        _trayIcon.RightClick += () =>
         {
-            trayIcon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath!)
-                ?? System.Drawing.SystemIcons.Application;
-        }
-        catch
-        {
-            trayIcon = System.Drawing.SystemIcons.Application;
-        }
-        _trayIcon = new DrawingForms.NotifyIcon
-        {
-            Icon = trayIcon,
-            Visible = true,
-            Text = "CloClo weather",
+            // Our window has to be in front for the menu to close when you
+            // click anywhere else (Windows lets the icon's owner do this).
+            SetForegroundWindow(_trayIcon.Handle);
+            OpenMenu(BuildMenu(includeShowHide: true));
         };
-        _trayIcon.DoubleClick += (_, _) => ToggleVisible();
-
-        // Unlike ShowContextMenu below, the tray's menu isn't rebuilt per
-        // click — Windows owns the right-click-to-show wiring for
-        // NotifyIcon.ContextMenuStrip internally, so there's no call site
-        // here to rebuild from. Refresh the checkbox states via Opening
-        // instead, which fires right before every display.
-        var trayMenu = new DrawingForms.ContextMenuStrip();
-        trayMenu.Opening += (_, _) =>
-        {
-            trayMenu.Items.Clear();
-            PopulateMenu(trayMenu, includeShowHide: true);
-        };
-        _trayIcon.ContextMenuStrip = trayMenu;
+        System.Windows.Application.Current.Exit += (_, _) => _trayIcon?.Dispose();
     }
 
-    // Shown two ways: as the tray icon's menu (Windows positions it near the
-    // tray automatically), and via .Show(Point) at the cursor for a
-    // right-click on the widget itself — a WPF ContextMenu popup turned out
-    // to be unreliable on this window (AllowsTransparency + what was then a WebView2's own
-    // native child window both interfered with WPF's popup placement), so
-    // both paths share this one WinForms menu instead.
-    private DrawingForms.ContextMenuStrip BuildMenu(bool includeShowHide)
-    {
-        var menu = new DrawingForms.ContextMenuStrip();
-        PopulateMenu(menu, includeShowHide);
-        return menu;
-    }
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hwnd);
 
-    private void PopulateMenu(DrawingForms.ContextMenuStrip menu, bool includeShowHide)
+    // The right-click menu, for both the widget and the tray icon - rebuilt
+    // each time it opens, so every tick shows the current setting. It opens
+    // at the mouse pointer.
+    private ContextMenu BuildMenu(bool includeShowHide)
     {
-        if (includeShowHide)
-        {
-            menu.Items.Add("Show / hide", null, (_, _) => ToggleVisible());
-        }
-        menu.Items.Add("Set location…", null, (_, _) => OpenLocationDialog());
+        var menu = new ContextMenu();
+        if (includeShowHide) menu.Items.Add(Item("Show / hide", ToggleVisible));
+        menu.Items.Add(Item("Set location…", OpenLocationDialog));
         menu.Items.Add(BuildAvatarMenu());
         menu.Items.Add(BuildSkyMenu());
         menu.Items.Add(BuildIconsMenu());
         menu.Items.Add(BuildSleepMenu());
         menu.Items.Add(BuildWorkoutMenu());
-        menu.Items.Add("Refresh weather", null, (_, _) => _ = RefreshWeatherAsync());
-        menu.Items.Add("Start new dictation file", null, (_, _) => StartNewDictationFile());
-        menu.Items.Add("Open dictation folder", null, (_, _) => OpenDictationFolder());
+        menu.Items.Add(Item("Refresh weather", () => _ = RefreshWeatherAsync()));
+        menu.Items.Add(Item("Start new dictation file", StartNewDictationFile));
+        menu.Items.Add(Item("Open dictation folder", OpenDictationFolder));
         menu.Items.Add(BuildPrivacyMenu());
-        var topMost = new DrawingForms.ToolStripMenuItem("Always on top", null, (_, _) => ToggleAlwaysOnTop()) { Checked = _settings.AlwaysOnTop };
-        menu.Items.Add(topMost);
-        var startup = new DrawingForms.ToolStripMenuItem("Start with Windows", null, (_, _) => ToggleStartWithWindows()) { Checked = StartupRegistration.IsEnabled() };
-        menu.Items.Add(startup);
-        menu.Items.Add(new DrawingForms.ToolStripSeparator());
-        menu.Items.Add("Exit", null, (_, _) => System.Windows.Application.Current.Shutdown());
+        menu.Items.Add(Item("Always on top", ToggleAlwaysOnTop, isChecked: _settings.AlwaysOnTop));
+        menu.Items.Add(Item("Start with Windows", ToggleStartWithWindows, isChecked: StartupRegistration.IsEnabled()));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(Item("Exit", () => System.Windows.Application.Current.Shutdown()));
+        return menu;
     }
 
-    private DrawingForms.ToolStripMenuItem BuildSkyMenu()
+    private static void OpenMenu(ContextMenu menu)
     {
-        var weather = new DrawingForms.ToolStripMenuItem("Weather");
-        var items = SkyOptions
-            .Select(opt => new DrawingForms.ToolStripMenuItem(opt.Label) { Checked = _settings.Sky == opt.Value })
-            .ToArray();
-        for (int i = 0; i < items.Length; i++)
-        {
-            var value = SkyOptions[i].Value;
-            items[i].Click += (_, _) =>
-            {
-                SetSky(value);
-                foreach (var it in items) it.Checked = false;
-                items[Array.FindIndex(SkyOptions, o => o.Value == value)].Checked = true;
-            };
-            weather.DropDownItems.Add(items[i]);
-        }
-        return weather;
+        menu.Placement = PlacementMode.MousePoint;
+        menu.IsOpen = true;
     }
+
+    // A menu entry. Underscores are doubled so WPF shows them instead of
+    // taking them as keyboard-shortcut markers (app titles can have them).
+    private static MenuItem Item(string header, Action? onClick, bool isChecked = false, bool enabled = true, UIElement? icon = null)
+    {
+        var item = new MenuItem { Header = header.Replace("_", "__"), IsChecked = isChecked, IsEnabled = enabled, Icon = icon };
+        if (onClick != null) item.Click += (_, _) => onClick();
+        return item;
+    }
+
+    private static MenuItem SubMenu(string header, IEnumerable<object> items)
+    {
+        var menu = new MenuItem { Header = header };
+        foreach (var item in items) menu.Items.Add(item);
+        return menu;
+    }
+
+    private MenuItem BuildSkyMenu() =>
+        SubMenu("Weather", SkyOptions.Select(opt => Item(opt.Label, () => SetSky(opt.Value), isChecked: _settings.Sky == opt.Value)));
 
     private static readonly (string Value, string Label)[] AvatarOptions =
     {
@@ -1292,44 +1254,30 @@ public partial class MainWindow : Window
         ("lady", "Lady Keeper"),
     };
 
-    private DrawingForms.ToolStripMenuItem BuildAvatarMenu()
+    private MenuItem BuildAvatarMenu()
     {
-        var avatarMenu = new DrawingForms.ToolStripMenuItem("Avatar");
-        var items = AvatarOptions
-            .Select(opt => new DrawingForms.ToolStripMenuItem(opt.Label) { Checked = _settings.Avatar == opt.Value })
-            .ToArray();
-        for (int i = 0; i < items.Length; i++)
+        var items = new List<object>();
+        foreach (var opt in AvatarOptions)
         {
-            var value = AvatarOptions[i].Value;
-            items[i].Click += (_, _) =>
+            items.Add(Item(opt.Label, () =>
             {
-                _settings.Avatar = value;
+                _settings.Avatar = opt.Value;
                 _settings.Save();
-                foreach (var it in items) it.Checked = false;
-                items[Array.FindIndex(AvatarOptions, o => o.Value == value)].Checked = true;
-                Keeper.SetAvatar(value);
+                Keeper.SetAvatar(opt.Value);
                 Keeper.SetOutfit(CurrentOutfit);
-            };
-            avatarMenu.DropDownItems.Add(items[i]);
+            }, isChecked: _settings.Avatar == opt.Value));
         }
 
         // The colours of the avatar shown now; each avatar keeps its own.
         var name = AvatarOptions.First(o => o.Value == (_settings.Avatar == "lady" ? "lady" : "keeper")).Label;
-        var outfitMenu = new DrawingForms.ToolStripMenuItem($"Outfit colour ({name})");
-        foreach (var outfit in KeeperView.Outfits)
+        items.Add(new Separator());
+        items.Add(SubMenu($"Outfit colour ({name})", KeeperView.Outfits.Select(outfit => Item(outfit.Label, () =>
         {
-            var key = outfit.Key;
-            outfitMenu.DropDownItems.Add(new DrawingForms.ToolStripMenuItem(outfit.Label, SwatchImage(outfit.Top), (_, _) =>
-            {
-                CurrentOutfit = key;
-                _settings.Save();
-                Keeper.SetOutfit(key);
-            })
-            { Checked = CurrentOutfit == key });
-        }
-        avatarMenu.DropDownItems.Add(new DrawingForms.ToolStripSeparator());
-        avatarMenu.DropDownItems.Add(outfitMenu);
-        return avatarMenu;
+            CurrentOutfit = outfit.Key;
+            _settings.Save();
+            Keeper.SetOutfit(outfit.Key);
+        }, isChecked: CurrentOutfit == outfit.Key, icon: Swatch(outfit.Top)))));
+        return SubMenu("Avatar", items);
     }
 
     private string CurrentOutfit
@@ -1343,15 +1291,12 @@ public partial class MainWindow : Window
     }
 
     // A small colour square for a menu item.
-    private static System.Drawing.Bitmap SwatchImage(System.Windows.Media.Color c)
+    private static UIElement Swatch(System.Windows.Media.Color c) => new System.Windows.Shapes.Rectangle
     {
-        var bmp = new System.Drawing.Bitmap(16, 16);
-        using var g = System.Drawing.Graphics.FromImage(bmp);
-        using var fill = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(c.R, c.G, c.B));
-        g.FillRectangle(fill, 2, 2, 12, 12);
-        g.DrawRectangle(System.Drawing.Pens.DimGray, 2, 2, 11, 11);
-        return bmp;
-    }
+        Width = 12, Height = 12,
+        Fill = new System.Windows.Media.SolidColorBrush(c),
+        Stroke = System.Windows.Media.Brushes.DimGray, StrokeThickness = 1,
+    };
 
     private static readonly (int Minutes, string Label)[] SleepOptions =
     {
@@ -1361,27 +1306,13 @@ public partial class MainWindow : Window
         (0, "Never"),
     };
 
-    private DrawingForms.ToolStripMenuItem BuildSleepMenu()
-    {
-        var sleepMenu = new DrawingForms.ToolStripMenuItem("Sleep after");
-        var items = SleepOptions
-            .Select(opt => new DrawingForms.ToolStripMenuItem(opt.Label) { Checked = _settings.SleepAfterMinutes == opt.Minutes })
-            .ToArray();
-        for (int i = 0; i < items.Length; i++)
+    private MenuItem BuildSleepMenu() =>
+        SubMenu("Sleep after", SleepOptions.Select(opt => Item(opt.Label, () =>
         {
-            var minutes = SleepOptions[i].Minutes;
-            items[i].Click += (_, _) =>
-            {
-                _settings.SleepAfterMinutes = minutes;
-                _settings.Save();
-                foreach (var it in items) it.Checked = false;
-                items[Array.FindIndex(SleepOptions, o => o.Minutes == minutes)].Checked = true;
-                UpdateActivityState(); // e.g. picking "Never" wakes it right away
-            };
-            sleepMenu.DropDownItems.Add(items[i]);
-        }
-        return sleepMenu;
-    }
+            _settings.SleepAfterMinutes = opt.Minutes;
+            _settings.Save();
+            UpdateActivityState(); // e.g. picking "Never" wakes it right away
+        }, isChecked: _settings.SleepAfterMinutes == opt.Minutes)));
 
     private static readonly (int Minutes, string Label)[] WorkoutOptions =
     {
@@ -1392,28 +1323,14 @@ public partial class MainWindow : Window
         (60, "1 hour"),
     };
 
-    private DrawingForms.ToolStripMenuItem BuildWorkoutMenu()
-    {
-        var workoutMenu = new DrawingForms.ToolStripMenuItem("Workout reminder");
-        var items = WorkoutOptions
-            .Select(opt => new DrawingForms.ToolStripMenuItem(opt.Label) { Checked = _settings.WorkoutAfterMinutes == opt.Minutes })
-            .ToArray();
-        for (int i = 0; i < items.Length; i++)
+    private MenuItem BuildWorkoutMenu() =>
+        SubMenu("Workout reminder", WorkoutOptions.Select(opt => Item(opt.Label, () =>
         {
-            var minutes = WorkoutOptions[i].Minutes;
-            items[i].Click += (_, _) =>
-            {
-                _settings.WorkoutAfterMinutes = minutes;
-                _settings.Save();
-                foreach (var it in items) it.Checked = false;
-                items[Array.FindIndex(WorkoutOptions, o => o.Minutes == minutes)].Checked = true;
-                _activeStreakStart = DateTime.Now; // start the new threshold's countdown fresh, not mid-streak
-                UpdateActivityState();
-            };
-            workoutMenu.DropDownItems.Add(items[i]);
-        }
-        return workoutMenu;
-    }
+            _settings.WorkoutAfterMinutes = opt.Minutes;
+            _settings.Save();
+            _activeStreakStart = DateTime.Now; // start the new threshold's countdown fresh, not mid-streak
+            UpdateActivityState();
+        }, isChecked: _settings.WorkoutAfterMinutes == opt.Minutes)));
 
     // Display names for the same keys ComputeIconRects/IconOrder use —
     // separate from that array since menu labels need to be human-readable
@@ -1437,39 +1354,19 @@ public partial class MainWindow : Window
         ("sudoku", "Layer Sudoku (daily game)"),
     };
 
-    private DrawingForms.ToolStripMenuItem BuildIconsMenu()
-    {
-        var iconsMenu = new DrawingForms.ToolStripMenuItem("Icons");
-        var items = IconOptions
-            .Select(opt => new DrawingForms.ToolStripMenuItem(opt.Label) { Checked = _settings.EnabledIcons.Contains(opt.Key) })
-            .ToArray();
-        for (int i = 0; i < items.Length; i++)
-        {
-            var key = IconOptions[i].Key;
-            var item = items[i];
-            // Capturing `item` (fresh per iteration) rather than indexing
-            // items[i] inside the closure — i is shared across every
-            // iteration, so by the time any of these actually fire (well
-            // after the loop finishes), it already equals items.Length,
-            // one past the end. Confirmed via a live IndexOutOfRangeException
-            // report before this fix.
-            item.Click += (_, _) => ToggleIcon(key, item);
-            iconsMenu.DropDownItems.Add(item);
-        }
-        return iconsMenu;
-    }
+    private MenuItem BuildIconsMenu() =>
+        SubMenu("Icons", IconOptions.Select(opt => Item(opt.Label, () => ToggleIcon(opt.Key), isChecked: _settings.EnabledIcons.Contains(opt.Key))));
 
     // The media bar only fits about MaxVisibleIcons at once (see
     // ComputeIconRects) — enabling one more than that would silently
     // overflow past the window's edge, the same clipping bug class hit
     // (and fixed) repeatedly earlier for the fixed 6/7-icon layouts, so
     // this refuses instead of letting the count grow unbounded.
-    private void ToggleIcon(string key, DrawingForms.ToolStripMenuItem item)
+    private void ToggleIcon(string key)
     {
         if (_settings.EnabledIcons.Contains(key))
         {
             _settings.EnabledIcons.Remove(key);
-            item.Checked = false;
         }
         else
         {
@@ -1479,25 +1376,17 @@ public partial class MainWindow : Window
                 return;
             }
             _settings.EnabledIcons.Add(key);
-            item.Checked = true;
         }
         _settings.Save();
         ApplyDisplaySettings();
     }
 
-    private DrawingForms.ToolStripMenuItem BuildPrivacyMenu()
-    {
-        var privacy = new DrawingForms.ToolStripMenuItem("Privacy");
-        privacy.DropDownItems.Add(new DrawingForms.ToolStripMenuItem("Hide from screen sharing", null, (_, _) => ToggleHideFromScreenCapture())
+    private MenuItem BuildPrivacyMenu() =>
+        SubMenu("Privacy", new object[]
         {
-            Checked = _settings.HideFromScreenCapture,
+            Item("Hide from screen sharing", ToggleHideFromScreenCapture, isChecked: _settings.HideFromScreenCapture),
+            Item("Show notification text", ToggleNotificationText, isChecked: _settings.ShowNotificationText),
         });
-        privacy.DropDownItems.Add(new DrawingForms.ToolStripMenuItem("Show notification text", null, (_, _) => ToggleNotificationText())
-        {
-            Checked = _settings.ShowNotificationText,
-        });
-        return privacy;
-    }
 
     private void ToggleHideFromScreenCapture()
     {
@@ -1542,12 +1431,6 @@ public partial class MainWindow : Window
         _settings.Sky = sky;
         _settings.Save();
         ApplyDisplaySettings();
-    }
-
-    private void ShowContextMenu(double screenX, double screenY)
-    {
-        var menu = BuildMenu(includeShowHide: false);
-        menu.Show(new System.Drawing.Point((int)Math.Round(screenX), (int)Math.Round(screenY)));
     }
 
     private void OpenLocationDialog()

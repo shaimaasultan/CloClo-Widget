@@ -1,5 +1,5 @@
 using System;
-using System.Windows.Forms;
+using System.Runtime.InteropServices;
 
 namespace CloCloWidget;
 
@@ -13,17 +13,28 @@ public static class BatteryInfo
 
     public static Status? Read()
     {
-        var power = SystemInformation.PowerStatus;
-        if (power.BatteryChargeStatus.HasFlag(BatteryChargeStatus.NoSystemBattery)) return null;
+        if (!GetSystemPowerStatus(out var power)) return null;
+        // 128: no system battery; 255: unknown status.
+        if ((power.BatteryFlag & 128) != 0 || power.BatteryFlag == 255 || power.BatteryLifePercent > 100) return null;
 
-        var charging = power.BatteryChargeStatus.HasFlag(BatteryChargeStatus.Charging);
+        var charging = (power.BatteryFlag & 8) != 0;
         // Windows only exposes an estimate for time-until-empty, not
         // time-until-full, so charging simply shows no time at all rather
         // than a made-up number.
-        var timeRemaining = !charging ? FormatTimeRemaining(power.BatteryLifeRemaining) : null;
+        var timeRemaining = !charging ? FormatTimeRemaining(power.BatteryLifeTime) : null;
 
-        return new Status(Math.Round(power.BatteryLifePercent * 100), charging, timeRemaining);
+        return new Status(power.BatteryLifePercent, charging, timeRemaining);
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SYSTEM_POWER_STATUS
+    {
+        public byte ACLineStatus, BatteryFlag, BatteryLifePercent, SystemStatusFlag;
+        public int BatteryLifeTime, BatteryFullLifeTime;
+    }
+
+    [DllImport("kernel32.dll")]
+    private static extern bool GetSystemPowerStatus(out SYSTEM_POWER_STATUS status);
 
     private static string? FormatTimeRemaining(int seconds)
     {

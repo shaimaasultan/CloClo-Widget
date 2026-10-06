@@ -20,8 +20,8 @@ namespace CloCloWidget;
 // same trick _avatarWindow already relies on elsewhere in this app.
 public partial class ColorPickerOverlay : Window
 {
-    public event Action<System.Drawing.Color>? Previewed;
-    public event Action<System.Drawing.Color>? Picked;
+    public event Action<System.Windows.Media.Color>? Previewed;
+    public event Action<System.Windows.Media.Color>? Picked;
     public event Action? Cancelled;
 
     // A fullscreen topmost window that swallows every click is a trap if
@@ -69,6 +69,9 @@ public partial class ColorPickerOverlay : Window
         Close();
     }
 
-    private static System.Drawing.Color SampleAtCursor() =>
-        ColorPicker.GetColorAt(System.Windows.Forms.Cursor.Position);
+    private static System.Windows.Media.Color SampleAtCursor()
+    {
+        var (x, y) = NativeScreen.CursorPosition();
+        return ColorPicker.GetColorAt(x, y);
+    }
 }
