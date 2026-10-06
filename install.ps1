@@ -156,7 +156,15 @@ function Invoke-Elevated([string]$script) {
             Start-Process $powershellExe -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList $argLine
         }
     } catch {
-        throw "Administrator rights are needed for Program Files, and the request was declined. Nothing was changed."
+        # Only Windows' "cancelled by the user" (1223) means No was clicked
+        # on the prompt; anything else is a real failure to start it, and
+        # its own message says why.
+        $e = $_.Exception
+        while ($e -and -not ($e -is [System.ComponentModel.Win32Exception])) { $e = $e.InnerException }
+        if ($e -and $e.NativeErrorCode -eq 1223) {
+            throw "Administrator rights are needed for Program Files, and the request was declined. Nothing was changed."
+        }
+        throw "The administrator prompt couldn't be started: $($_.Exception.Message) Nothing was changed."
     }
     $p.ExitCode
 }
