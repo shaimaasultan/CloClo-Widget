@@ -78,6 +78,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   | Volume/mute toggle | Mutes or unmutes the system sound |
   | Clipboard history | Lists Windows' clipboard history (Win+V); click one to copy it again |
   | Stopwatch | One click starts it, the next stops it, the next resets it; the time shows top-left, under the battery |
+  | Daily quote, word, joke & fact | A speech bubble with today's quote, an English → Arabic word (with an example), a joke and a "did you know" fact; click it for the next one, × or Esc to close. All built in - nothing is fetched |
 
   Clicking the label that appears under the icons opens the app it's showing;
   its pause button stops it.

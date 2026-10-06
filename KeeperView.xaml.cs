@@ -78,7 +78,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
             ["youtube"] = IconYoutube, ["spotify"] = IconSpotify, ["bell"] = IconBell, ["search"] = IconSearch,
             ["gpu"] = IconGpu, ["read"] = IconRead, ["mic"] = IconMic, ["convert"] = IconConvert,
             ["color"] = IconColor, ["qr"] = IconQr, ["volume"] = IconVolume, ["clipboard"] = IconClipboard,
-            ["stopwatch"] = IconStopwatch,
+            ["stopwatch"] = IconStopwatch, ["daily"] = IconDaily,
         };
 
         BuildSunRays();

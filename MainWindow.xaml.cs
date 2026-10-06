@@ -74,7 +74,7 @@ public partial class MainWindow : Window
     // currently enabled.
     private static readonly string[] IconOrder =
     {
-        "youtube", "spotify", "bell", "search", "gpu", "read", "mic", "convert", "color", "qr", "volume", "clipboard", "stopwatch",
+        "youtube", "spotify", "bell", "search", "gpu", "read", "mic", "convert", "color", "qr", "volume", "clipboard", "stopwatch", "daily",
     };
     private const double IconWidth = 18, IconGap = 2, IconTop = 187, IconHeight = 20;
     // Matches #mediaBar's own left:10px anchor (stage x=10, i.e. relative
@@ -130,6 +130,12 @@ public partial class MainWindow : Window
     // The stopwatch icon: one click starts it, the next stops it, the next
     // resets it. Its time shows under the sky/time line at the top.
     private readonly System.Diagnostics.Stopwatch _stopwatch = new();
+
+    // The 💡 icon's speech bubble (today's quote, word, joke and fact), or
+    // null while it's closed.
+    private DailyBubbleWindow? _dailyBubble;
+    // The avatar's head, in this window's units: where the bubble's tail points.
+    private const double HeadY = 52 * Scale;
     private DispatcherTimer? _stopwatchTimer;
 
     [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
@@ -697,6 +703,7 @@ public partial class MainWindow : Window
         {
             Left = _avatarWindow.Left - AvatarOffsetX;
             Top = _avatarWindow.Top - AvatarOffsetY;
+            _dailyBubble?.PlaceBeside(this, HeadY);
         };
         ScreenCapture.SetExcluded(_avatarWindow, _settings.HideFromScreenCapture);
         _avatarWindow.Show();
@@ -796,6 +803,11 @@ public partial class MainWindow : Window
             ShowClipboardHistory();
             return;
         }
+        if (icons.TryGetValue("daily", out var dailyRect) && dailyRect.Contains(p))
+        {
+            ToggleDailyBubble();
+            return;
+        }
         if (icons.TryGetValue("stopwatch", out var stopwatchRect) && stopwatchRect.Contains(p))
         {
             ToggleStopwatch();
@@ -853,6 +865,21 @@ public partial class MainWindow : Window
             Keeper.SetStopwatch(TimeSpan.Zero);
             ShowOneShotLabel("Stopwatch started", "Click the stopwatch again to stop it.");
         }
+    }
+
+    private void ToggleDailyBubble()
+    {
+        if (_dailyBubble != null)
+        {
+            _dailyBubble.Close();
+            return;
+        }
+        var bubble = new DailyBubbleWindow { Owner = this, Topmost = _settings.AlwaysOnTop };
+        bubble.SizeChanged += (_, _) => bubble.PlaceBeside(this, HeadY);
+        bubble.Closed += (_, _) => _dailyBubble = null;
+        _dailyBubble = bubble;
+        bubble.PlaceBeside(this, HeadY);
+        ShowSensitive(bubble);
     }
 
     private void ShowContextMenuAtCursor()
@@ -1351,6 +1378,7 @@ public partial class MainWindow : Window
         ("volume", "Volume/mute toggle"),
         ("clipboard", "Clipboard history"),
         ("stopwatch", "Stopwatch"),
+        ("daily", "Daily quote, word, joke & fact"),
     };
 
     private DrawingForms.ToolStripMenuItem BuildIconsMenu()
@@ -1423,7 +1451,7 @@ public partial class MainWindow : Window
         if (_avatarWindow != null) ScreenCapture.SetExcluded(_avatarWindow, _settings.HideFromScreenCapture);
         foreach (Window owned in OwnedWindows)
         {
-            if (owned is QrCodeWindow or ClipboardHistoryWindow) ScreenCapture.SetExcluded(owned, _settings.HideFromScreenCapture);
+            if (owned is QrCodeWindow or ClipboardHistoryWindow or DailyBubbleWindow) ScreenCapture.SetExcluded(owned, _settings.HideFromScreenCapture);
         }
     }
 
@@ -1485,6 +1513,7 @@ public partial class MainWindow : Window
         _settings.AlwaysOnTop = !_settings.AlwaysOnTop;
         Topmost = _settings.AlwaysOnTop;
         if (_avatarWindow != null) _avatarWindow.Topmost = _settings.AlwaysOnTop;
+        if (_dailyBubble != null) _dailyBubble.Topmost = _settings.AlwaysOnTop;
         _settings.Save();
     }
 
@@ -1506,5 +1535,6 @@ public partial class MainWindow : Window
     {
         Visibility = Visibility == Visibility.Visible ? Visibility.Hidden : Visibility.Visible;
         if (_avatarWindow != null) _avatarWindow.Visibility = Visibility;
+        if (Visibility != Visibility.Visible) _dailyBubble?.Close();
     }
 }
