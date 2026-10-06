@@ -82,7 +82,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   Clicking the label that appears under the icons opens the app it's showing;
   its pause button stops it.
 - **Right-click** (or double-click) for the menu: **Set location…**,
-  **Avatar** (Keeper or Lady Keeper), **Weather** (follow the live forecast, or pick a sky by hand), **Icons**,
+  **Avatar** (Keeper or Lady Keeper, and each one's outfit colour), **Weather** (follow the live forecast, or pick a sky by hand), **Icons**,
   **Sleep after** (Keeper dozes off when you're away), **Workout reminder**
   (a stretch-break nudge after a long stretch at the keyboard), **Refresh
   weather**, **Start new dictation file**, **Open dictation folder**,

@@ -48,6 +48,10 @@ public class WidgetSettings
     // Which figure the widget shows: "keeper" or "lady" - picked from the
     // right-click menu's "Avatar" submenu.
     public string Avatar { get; set; } = "keeper";
+    // Each avatar's everyday outfit colours - a key of KeeperView.Outfits,
+    // picked from "Avatar" -> "Outfit colour".
+    public string KeeperOutfit { get; set; } = "classic";
+    public string LadyOutfit { get; set; } = "classic";
 
     // Two decimals is ~1 km: plenty for weather and a city name, without
     // keeping or sending a precise position.

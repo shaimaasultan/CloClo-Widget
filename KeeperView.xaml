@@ -189,7 +189,7 @@
                     <!-- Workout break (Keeper): gym shorts over bare legs. -->
                     <Path x:Name="GymShorts" Data="M38.5 102 L61.5 102 L61 115 L51.5 115 L50 109 L48.5 115 L39 115 Z" Fill="{StaticResource GymShorts}" Visibility="Collapsed" />
                     <Canvas x:Name="TorsoDefault">
-                        <Path Data="M31 106 Q29 78 50 73 Q71 78 69 106 Z" Fill="{StaticResource Sweater}" />
+                        <Path x:Name="SweaterBody" Data="M31 106 Q29 78 50 73 Q71 78 69 106 Z" Fill="{StaticResource Sweater}" />
                         <Path Data="M43 74 q7 6 14 0" Stroke="{StaticResource Metal3}" StrokeThickness="1.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
                     </Canvas>
                     <Canvas x:Name="TorsoRain" Visibility="Collapsed">

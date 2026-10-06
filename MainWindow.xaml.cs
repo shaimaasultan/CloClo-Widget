@@ -1012,6 +1012,7 @@ public partial class MainWindow : Window
     {
         Keeper.SetPlace(_settings.City);
         Keeper.SetAvatar(_settings.Avatar);
+        Keeper.SetOutfit(CurrentOutfit);
         Keeper.SetSkyOverride(_settings.Sky);
         Keeper.SetEnabledIcons(IconOrder.Where(k => _settings.EnabledIcons.Contains(k)));
     }
@@ -1225,10 +1226,49 @@ public partial class MainWindow : Window
                 foreach (var it in items) it.Checked = false;
                 items[Array.FindIndex(AvatarOptions, o => o.Value == value)].Checked = true;
                 Keeper.SetAvatar(value);
+                Keeper.SetOutfit(CurrentOutfit);
             };
             avatarMenu.DropDownItems.Add(items[i]);
         }
+
+        // The colours of the avatar shown now; each avatar keeps its own.
+        var name = AvatarOptions.First(o => o.Value == (_settings.Avatar == "lady" ? "lady" : "keeper")).Label;
+        var outfitMenu = new DrawingForms.ToolStripMenuItem($"Outfit colour ({name})");
+        foreach (var outfit in KeeperView.Outfits)
+        {
+            var key = outfit.Key;
+            outfitMenu.DropDownItems.Add(new DrawingForms.ToolStripMenuItem(outfit.Label, SwatchImage(outfit.Top), (_, _) =>
+            {
+                CurrentOutfit = key;
+                _settings.Save();
+                Keeper.SetOutfit(key);
+            })
+            { Checked = CurrentOutfit == key });
+        }
+        avatarMenu.DropDownItems.Add(new DrawingForms.ToolStripSeparator());
+        avatarMenu.DropDownItems.Add(outfitMenu);
         return avatarMenu;
+    }
+
+    private string CurrentOutfit
+    {
+        get => _settings.Avatar == "lady" ? _settings.LadyOutfit : _settings.KeeperOutfit;
+        set
+        {
+            if (_settings.Avatar == "lady") _settings.LadyOutfit = value;
+            else _settings.KeeperOutfit = value;
+        }
+    }
+
+    // A small colour square for a menu item.
+    private static System.Drawing.Bitmap SwatchImage(System.Windows.Media.Color c)
+    {
+        var bmp = new System.Drawing.Bitmap(16, 16);
+        using var g = System.Drawing.Graphics.FromImage(bmp);
+        using var fill = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(c.R, c.G, c.B));
+        g.FillRectangle(fill, 2, 2, 12, 12);
+        g.DrawRectangle(System.Drawing.Pens.DimGray, 2, 2, 11, 11);
+        return bmp;
     }
 
     private static readonly (int Minutes, string Label)[] SleepOptions =

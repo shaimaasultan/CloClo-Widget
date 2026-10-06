@@ -48,6 +48,21 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     private bool _isNight;
     private string _activityState = "awake";
     private string _avatar = "keeper";
+    private string _outfit = "classic";
+
+    // Colour sets for the everyday outfit: the sweater, Keeper's trousers and
+    // Lady Keeper's skirt. Weather, gym and night clothes keep their own.
+    public static readonly (string Key, string Label, Color Top, Color Trousers, Color Skirt)[] Outfits =
+    {
+        ("classic", "Classic red", Rgb(0xb0483d), Rgb(0x46506a), Rgb(0x4b3f72)),
+        ("ocean", "Ocean blue", Rgb(0x3d7cc0), Rgb(0x34405a), Rgb(0x27496d)),
+        ("forest", "Forest green", Rgb(0x3f8a5a), Rgb(0x4a4436), Rgb(0x2f5a3e)),
+        ("plum", "Plum", Rgb(0x8a4f9e), Rgb(0x3d3550), Rgb(0x3d3550)),
+        ("mustard", "Mustard", Rgb(0xd09a2c), Rgb(0x4a3f35), Rgb(0x6b4a2f)),
+        ("charcoal", "Charcoal", Rgb(0x4a4f58), Rgb(0x2a2d33), Rgb(0x7a2f3a)),
+    };
+
+    private static Color Rgb(int rgb) => Color.FromRgb((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
     // Set while a one-shot (perk, or a fidget that moves the whole body)
     // owns KeeperWrap's transform, so two never stomp each other.
     private bool _wrapBusy;
@@ -84,6 +99,13 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     // ---------------------------------------------------------------- host API
 
     public void SetPlace(string city) => Place.Text = city;
+
+    // One of Outfits' keys; anything else falls back to "classic".
+    public void SetOutfit(string key)
+    {
+        _outfit = Array.Exists(Outfits, o => o.Key == key) ? key : "classic";
+        ApplyOutfit();
+    }
 
     // null hides the stopwatch line; otherwise shows that elapsed time.
     public void SetStopwatch(TimeSpan? elapsed)
@@ -356,9 +378,20 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         // In the rain the umbrella waits, leaning beside them, during a break or a nap.
         UmbrellaLeaning.Visibility = Show(!weather && _sky == "rain");
 
-        var armBrush = (Brush)FindResource(arms);
+        // The everyday outfit's colours come from the chosen set.
+        var set = Array.Find(Outfits, o => o.Key == _outfit);
+        Brush Paint(string key) => key switch
+        {
+            "Sweater" => new SolidColorBrush(set.Top),
+            "Trousers" => new SolidColorBrush(set.Trousers),
+            _ => (Brush)FindResource(key),
+        };
+        SweaterBody.Fill = Paint("Sweater");
+        LadySkirt.Fill = new SolidColorBrush(set.Skirt);
+
+        var armBrush = Paint(arms);
         ArmL.Stroke = ArmR.Stroke = WorkoutArmL.Stroke = WorkoutArmR.Stroke = armBrush;
-        LegL.Fill = LegR.Fill = (Brush)FindResource(legs);
+        LegL.Fill = LegR.Fill = Paint(legs);
         ShoeL.Fill = ShoeR.Fill = (Brush)FindResource(shoes);
     }
 
