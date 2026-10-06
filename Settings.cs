@@ -45,6 +45,9 @@ public class WidgetSettings
     // Off = the notification label shows only which app sent it, never the
     // message text itself (2FA codes, message previews…).
     public bool ShowNotificationText { get; set; } = true;
+    // Which figure the widget shows: "keeper" or "lady" - picked from the
+    // right-click menu's "Avatar" submenu.
+    public string Avatar { get; set; } = "keeper";
 
     // Two decimals is ~1 km: plenty for weather and a city name, without
     // keeping or sending a precise position.

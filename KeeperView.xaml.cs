@@ -47,6 +47,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     private string _sky = "clear";
     private bool _isNight;
     private string _activityState = "awake";
+    private string _avatar = "keeper";
     // Set while a one-shot (perk, or a fidget that moves the whole body)
     // owns KeeperWrap's transform, so two never stomp each other.
     private bool _wrapBusy;
@@ -77,6 +78,19 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     // ---------------------------------------------------------------- host API
 
     public void SetPlace(string city) => Place.Text = city;
+
+    // "keeper" (the original) or "lady": the same figure, poses and weather
+    // outfits, with long hair, lashes, rose lips and a skirt for "lady".
+    public void SetAvatar(string avatar)
+    {
+        _avatar = avatar == "lady" ? "lady" : "keeper";
+        var lady = _avatar == "lady";
+        HairDefault.Visibility = Show(!lady);
+        LadyHairBack.Visibility = LadyHairFront.Visibility = LadyLashes.Visibility = Show(lady);
+        var mouth = (Brush)FindResource(lady ? "Lips" : "Hair");
+        MouthAwake.Stroke = MouthSleep.Stroke = MouthWorkout.Fill = mouth;
+        ApplyOutfit();
+    }
 
     public void SetEnabledIcons(IEnumerable<string> keys)
     {
@@ -215,6 +229,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
             HangingArms.Visibility = Show(!working);
             WorkoutArms.Visibility = Show(working);
             WorkoutCountdown.Visibility = Show(working);
+            ApplyOutfit();
 
             SetLoops("zzz", sleeping);
             // Dims a touch once asleep — a resting cue that reads even out
@@ -243,6 +258,79 @@ public partial class KeeperView : System.Windows.Controls.UserControl
             (WrapScale, ScaleTransform.ScaleYProperty, new[] { (0.0, 1.0), (0.3, 1.04), (0.6, 1.01), (1, 1) }));
     }
 
+    // ---------------------------------------------------------------- outfit
+
+    // What Keeper wears: the weather's outfit while awake, gym clothes during
+    // a workout break and night clothes while asleep - for either avatar.
+    // The sky itself keeps showing the weather either way.
+    private void ApplyOutfit()
+    {
+        var lady = _avatar == "lady";
+        var gym = _activityState == "workout";
+        var sleep = _activityState == "asleep";
+        var weather = !gym && !sleep;
+
+        foreach (var el in new UIElement[]
+        {
+            TorsoRain, TorsoSnowExtra, TorsoStorm, RaincoatHoodBack, RaincoatHood, SnowHat, Sunglasses, UmbrellaHeld, UmbrellaLeaning,
+            GymTop, GymShorts, Headband, PajamaTop, Nightgown, Nightcap,
+        })
+        {
+            el.Visibility = Visibility.Collapsed;
+        }
+        TorsoDefault.Visibility = Show(weather);
+        LadySkirt.Visibility = Show(lady && weather);
+
+        string arms, legs, shoes;
+        if (gym)
+        {
+            GymTop.Visibility = Headband.Visibility = Visibility.Visible;
+            GymTopBody.Fill = (Brush)FindResource(lady ? "GymTopLady" : "GymTop");
+            GymShorts.Visibility = Show(!lady);
+            (arms, legs, shoes) = ("Skin", lady ? "Leggings" : "Skin", "Sneakers");
+        }
+        else if (sleep)
+        {
+            Nightcap.Visibility = Visibility.Visible;
+            NightcapBody.Fill = (Brush)FindResource(lady ? "Nightgown" : "Pajama");
+            (lady ? Nightgown : PajamaTop).Visibility = Visibility.Visible;
+            (arms, legs, shoes) = (lady ? "Nightgown" : "Pajama", lady ? "Skin" : "Pajama", "Slippers");
+        }
+        else
+        {
+            switch (_sky)
+            {
+                case "rain":
+                    TorsoRain.Visibility = RaincoatHoodBack.Visibility = RaincoatHood.Visibility = UmbrellaHeld.Visibility = Visibility.Visible;
+                    break;
+                case "drizzle":
+                    // Light enough that the hood alone is enough — no full
+                    // raincoat, no umbrella, unlike proper rain.
+                    RaincoatHoodBack.Visibility = RaincoatHood.Visibility = Visibility.Visible;
+                    break;
+                case "snow":
+                    TorsoSnowExtra.Visibility = SnowHat.Visibility = Visibility.Visible;
+                    break;
+                case "storm":
+                    TorsoStorm.Visibility = Visibility.Visible;
+                    break;
+                case "clear":
+                    Sunglasses.Visibility = Visibility.Visible;
+                    break;
+                // cloudy/mostlycloudy/overcast/fog/windy: default torso, no sunglasses
+            }
+            arms = _sky switch { "rain" => "Raincoat", "storm" => "Body1", _ => "Sweater" };
+            (legs, shoes) = ("Trousers", "Shoes");
+        }
+        // In the rain the umbrella waits, leaning beside them, during a break or a nap.
+        UmbrellaLeaning.Visibility = Show(!weather && _sky == "rain");
+
+        var armBrush = (Brush)FindResource(arms);
+        ArmL.Stroke = ArmR.Stroke = WorkoutArmL.Stroke = WorkoutArmR.Stroke = armBrush;
+        LegL.Fill = LegR.Fill = (Brush)FindResource(legs);
+        ShoeL.Fill = ShoeR.Fill = (Brush)FindResource(shoes);
+    }
+
     // ---------------------------------------------------------------- sky
 
     private void ShowSkyLabel(string? sky)
@@ -255,41 +343,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     private void ApplySky()
     {
         var kind = _sky;
-
-        foreach (var el in new UIElement[] { TorsoRain, TorsoSnowExtra, TorsoStorm, RaincoatHoodBack, RaincoatHood, SnowHat, Sunglasses, UmbrellaHeld, UmbrellaLeaning })
-        {
-            el.Visibility = Visibility.Collapsed;
-        }
-        var armBrush = kind switch
-        {
-            "rain" => (Brush)FindResource("Raincoat"),
-            "storm" => (Brush)FindResource("Body1"),
-            _ => (Brush)FindResource("Sweater"),
-        };
-        ArmL.Stroke = armBrush;
-        ArmR.Stroke = armBrush;
-
-        switch (kind)
-        {
-            case "rain":
-                TorsoRain.Visibility = RaincoatHoodBack.Visibility = RaincoatHood.Visibility = UmbrellaHeld.Visibility = Visibility.Visible;
-                break;
-            case "drizzle":
-                // Light enough that the hood alone is enough — no full
-                // raincoat, no umbrella, unlike proper rain.
-                RaincoatHoodBack.Visibility = RaincoatHood.Visibility = Visibility.Visible;
-                break;
-            case "snow":
-                TorsoSnowExtra.Visibility = SnowHat.Visibility = Visibility.Visible;
-                break;
-            case "storm":
-                TorsoStorm.Visibility = Visibility.Visible;
-                break;
-            case "clear":
-                Sunglasses.Visibility = Visibility.Visible;
-                break;
-            // cloudy/mostlycloudy/overcast/fog/windy: default torso, no sunglasses
-        }
+        ApplyOutfit();
 
         Sun.Visibility = Show(kind == "clear" && !_isNight);
         Moon.Visibility = Show(kind == "clear" && _isNight);

@@ -972,6 +972,7 @@ public partial class MainWindow : Window
     private void ApplyDisplaySettings()
     {
         Keeper.SetPlace(_settings.City);
+        Keeper.SetAvatar(_settings.Avatar);
         Keeper.SetSkyOverride(_settings.Sky);
         Keeper.SetEnabledIcons(IconOrder.Where(k => _settings.EnabledIcons.Contains(k)));
     }
@@ -1126,6 +1127,7 @@ public partial class MainWindow : Window
             menu.Items.Add("Show / hide", null, (_, _) => ToggleVisible());
         }
         menu.Items.Add("Set location…", null, (_, _) => OpenLocationDialog());
+        menu.Items.Add(BuildAvatarMenu());
         menu.Items.Add(BuildSkyMenu());
         menu.Items.Add(BuildIconsMenu());
         menu.Items.Add(BuildSleepMenu());
@@ -1160,6 +1162,34 @@ public partial class MainWindow : Window
             weather.DropDownItems.Add(items[i]);
         }
         return weather;
+    }
+
+    private static readonly (string Value, string Label)[] AvatarOptions =
+    {
+        ("keeper", "Keeper"),
+        ("lady", "Lady Keeper"),
+    };
+
+    private DrawingForms.ToolStripMenuItem BuildAvatarMenu()
+    {
+        var avatarMenu = new DrawingForms.ToolStripMenuItem("Avatar");
+        var items = AvatarOptions
+            .Select(opt => new DrawingForms.ToolStripMenuItem(opt.Label) { Checked = _settings.Avatar == opt.Value })
+            .ToArray();
+        for (int i = 0; i < items.Length; i++)
+        {
+            var value = AvatarOptions[i].Value;
+            items[i].Click += (_, _) =>
+            {
+                _settings.Avatar = value;
+                _settings.Save();
+                foreach (var it in items) it.Checked = false;
+                items[Array.FindIndex(AvatarOptions, o => o.Value == value)].Checked = true;
+                Keeper.SetAvatar(value);
+            };
+            avatarMenu.DropDownItems.Add(items[i]);
+        }
+        return avatarMenu;
     }
 
     private static readonly (int Minutes, string Label)[] SleepOptions =
