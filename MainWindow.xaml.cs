@@ -74,7 +74,7 @@ public partial class MainWindow : Window
     // currently enabled.
     private static readonly string[] IconOrder =
     {
-        "youtube", "spotify", "bell", "search", "gpu", "read", "mic", "convert", "color", "qr", "volume", "clipboard", "stopwatch", "daily",
+        "youtube", "spotify", "bell", "search", "gpu", "read", "mic", "convert", "color", "qr", "volume", "clipboard", "stopwatch", "daily", "sudoku",
     };
     private const double IconWidth = 18, IconGap = 2, IconTop = 187, IconHeight = 20;
     // Matches #mediaBar's own left:10px anchor (stage x=10, i.e. relative
@@ -134,6 +134,8 @@ public partial class MainWindow : Window
     // The 💡 icon's speech bubble (today's quote, word, joke and fact), or
     // null while it's closed.
     private DailyBubbleWindow? _dailyBubble;
+    // The Layer Sudoku window, while it's open (one at a time).
+    private SudokuWindow? _sudoku;
     // The avatar's head, in this window's units: where the bubble's tail points.
     private const double HeadY = 52 * Scale;
     private DispatcherTimer? _stopwatchTimer;
@@ -803,6 +805,11 @@ public partial class MainWindow : Window
             ShowClipboardHistory();
             return;
         }
+        if (icons.TryGetValue("sudoku", out var sudokuRect) && sudokuRect.Contains(p))
+        {
+            OpenSudoku();
+            return;
+        }
         if (icons.TryGetValue("daily", out var dailyRect) && dailyRect.Contains(p))
         {
             ToggleDailyBubble();
@@ -880,6 +887,22 @@ public partial class MainWindow : Window
         _dailyBubble = bubble;
         bubble.PlaceBeside(this, HeadY);
         ShowSensitive(bubble);
+    }
+
+    // Opens the game where it was left - or today's daily puzzle the first
+    // time - or brings an open game to the front.
+    private void OpenSudoku()
+    {
+        if (_sudoku != null)
+        {
+            if (_sudoku.WindowState == WindowState.Minimized) _sudoku.WindowState = WindowState.Normal;
+            _sudoku.Activate();
+            return;
+        }
+        _sudoku = new SudokuWindow();
+        _sudoku.Closed += (_, _) => _sudoku = null;
+        _sudoku.Show();
+        _sudoku.Activate();
     }
 
     private void ShowContextMenuAtCursor()
@@ -1379,6 +1402,7 @@ public partial class MainWindow : Window
         ("clipboard", "Clipboard history"),
         ("stopwatch", "Stopwatch"),
         ("daily", "Daily quote, word, joke & fact"),
+        ("sudoku", "Layer Sudoku (daily game)"),
     };
 
     private DrawingForms.ToolStripMenuItem BuildIconsMenu()

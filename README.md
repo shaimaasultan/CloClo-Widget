@@ -79,6 +79,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   | Clipboard history | Lists Windows' clipboard history (Win+V); click one to copy it again |
   | Stopwatch | One click starts it, the next stops it, the next resets it; the time shows top-left, under the battery |
   | Daily quote, word, joke & fact | A speech bubble with today's quote, an English → Arabic word (with an example), a joke and a "did you know" fact; click it for the next one, × or Esc to close. All built in - nothing is fetched |
+  | Layer Sudoku (daily game) | Opens the Layer Sudoku game - today's daily puzzle (the same one the HTML version gives, with a streak), or 6×6 to 16×16 at four levels; layer view, method-following hints, notes, undo, timer and pause. Progress is saved |
 
   Clicking the label that appears under the icons opens the app it's showing;
   its pause button stops it.

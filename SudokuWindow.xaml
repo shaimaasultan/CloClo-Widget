@@ -1,0 +1,224 @@
+<Window x:Class="CloCloWidget.SudokuWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="CloClo — Layer Sudoku"
+        SizeToContent="WidthAndHeight" ResizeMode="CanMinimize"
+        WindowStartupLocation="CenterScreen"
+        Background="#131519" Foreground="#e7e8eb"
+        FontFamily="Segoe UI" FontSize="14"
+        TextOptions.TextFormattingMode="Ideal" UseLayoutRounding="True">
+    <!--
+      A native port of LayerSudoku.html (see SudokuEngine.cs for the method
+      and the generator): the board, the layer view, hints that follow the
+      method, notes, undo, the timer, and the daily puzzle with its streak.
+    -->
+    <Window.Resources>
+        <SolidColorBrush x:Key="Surface" Color="#1c1f25" />
+        <SolidColorBrush x:Key="Muted" Color="#9aa0aa" />
+        <SolidColorBrush x:Key="Btn" Color="#2a2e36" />
+        <SolidColorBrush x:Key="Accent" Color="#6f98ff" />
+        <SolidColorBrush x:Key="AccentInk" Color="#0d1117" />
+        <SolidColorBrush x:Key="Forced" Color="#e0c21e" />
+        <SolidColorBrush x:Key="Blocked" Color="#4a4d55" />
+        <SolidColorBrush x:Key="LayerDigit" Color="#c9782a" />
+
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource Btn}" />
+            <Setter Property="Foreground" Value="#e7e8eb" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.85" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Accent}" />
+                                <Setter TargetName="Bd" Property="BorderThickness" Value="2" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="Primary" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="{StaticResource Accent}" />
+            <Setter Property="Foreground" Value="{StaticResource AccentInk}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="MinWidth" Value="84" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="16,12,16,14">
+        <StackPanel x:Name="Main">
+            <!-- title -->
+            <StackPanel Margin="0,0,0,10">
+                <TextBlock Text="Layer Sudoku" FontSize="20" FontWeight="Bold" />
+                <TextBlock Text="Layer–propagation method · S. S. Soltan" FontSize="12" Foreground="{StaticResource Muted}" />
+            </StackPanel>
+
+            <!-- size, level, new, daily -->
+            <Grid Margin="0,0,0,10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <ComboBox x:Name="SizeBox" Grid.Column="0" Margin="0,0,6,0" AutomationProperties.Name="Grid size">
+                    <ComboBoxItem Content="6×6" Tag="6" />
+                    <ComboBoxItem Content="9×9" Tag="9" />
+                    <ComboBoxItem Content="12×12" Tag="12" />
+                    <ComboBoxItem Content="16×16" Tag="16" />
+                </ComboBox>
+                <ComboBox x:Name="LevelBox" Grid.Column="1" Margin="0,0,6,0" AutomationProperties.Name="Difficulty">
+                    <ComboBoxItem Content="Easy" Tag="easy" />
+                    <ComboBoxItem Content="Medium" Tag="medium" />
+                    <ComboBoxItem Content="Hard" Tag="hard" />
+                    <ComboBoxItem Content="Expert" Tag="expert" />
+                </ComboBox>
+                <Button x:Name="NewButton" Grid.Column="2" Content="New" Style="{StaticResource Primary}" HorizontalAlignment="Left" MinWidth="70" Click="New_Click" />
+                <Button x:Name="DailyButton" Grid.Column="3" Click="Daily_Click" Padding="12,3" AutomationProperties.Name="Daily puzzle">
+                    <StackPanel>
+                        <TextBlock Text="📅 Daily" FontWeight="SemiBold" FontSize="13" HorizontalAlignment="Center" />
+                        <TextBlock x:Name="DailyStreak" Text="🔥 0" FontSize="11" HorizontalAlignment="Center" Opacity="0.85" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+
+            <!-- status -->
+            <Grid Margin="2,0,2,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="StatusLevel" Foreground="{StaticResource Muted}" FontSize="13" VerticalAlignment="Center" />
+                <TextBlock x:Name="StatusHints" Grid.Column="1" Foreground="{StaticResource Muted}" FontSize="13" VerticalAlignment="Center" />
+                <Button x:Name="PauseButton" Grid.Column="2" HorizontalAlignment="Right" Padding="10,3" Click="Pause_Click" AutomationProperties.Name="Pause">
+                    <TextBlock x:Name="PauseText" Text="⏸ 0:00" FontSize="13" />
+                </Button>
+            </Grid>
+
+            <!-- board -->
+            <Grid x:Name="BoardHost" Width="468" Height="468" HorizontalAlignment="Center">
+                <Border BorderBrush="#c9cdd4" BorderThickness="2" CornerRadius="4" Background="{StaticResource Surface}">
+                    <Grid>
+                        <UniformGrid x:Name="Board" />
+                        <!-- The thick box lines, drawn over the cells' thin ones. -->
+                        <UniformGrid x:Name="BoxLines" IsHitTestVisible="False" />
+                    </Grid>
+                </Border>
+                <Border x:Name="PauseCover" Background="#ee1c1f25" CornerRadius="4" Visibility="Collapsed" Cursor="Hand"
+                        MouseLeftButtonUp="PauseCover_Click">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock Text="⏸" FontSize="40" HorizontalAlignment="Center" />
+                        <TextBlock Text="Paused" FontWeight="Bold" FontSize="16" HorizontalAlignment="Center" />
+                        <TextBlock Text="Click to resume" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+                <Border x:Name="BusyCover" Background="#ee1c1f25" CornerRadius="4" Visibility="Collapsed">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock Text="Generating…" FontWeight="Bold" FontSize="16" HorizontalAlignment="Center" />
+                        <TextBlock Text="Building a puzzle your layer method can solve." Foreground="{StaticResource Muted}" HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- tools -->
+            <UniformGrid Columns="5" Margin="0,12,0,8">
+                <Button x:Name="UndoButton" Margin="0,0,6,0" Click="Undo_Click" ToolTip="Undo (Z)">
+                    <StackPanel><TextBlock Text="↶" FontSize="18" HorizontalAlignment="Center" /><TextBlock Text="Undo" FontSize="12.5" /></StackPanel>
+                </Button>
+                <Button x:Name="EraseButton" Margin="0,0,6,0" Click="Erase_Click" ToolTip="Erase (Delete)">
+                    <StackPanel><TextBlock Text="⌫" FontSize="18" HorizontalAlignment="Center" /><TextBlock Text="Erase" FontSize="12.5" HorizontalAlignment="Center" /></StackPanel>
+                </Button>
+                <Button x:Name="NotesButton" Margin="0,0,6,0" Click="Notes_Click" ToolTip="Notes (N)">
+                    <StackPanel><TextBlock Text="✎" FontSize="18" HorizontalAlignment="Center" /><TextBlock Text="Notes" FontSize="12.5" HorizontalAlignment="Center" /></StackPanel>
+                </Button>
+                <Button x:Name="HintButton" Margin="0,0,6,0" Click="Hint_Click" ToolTip="A hint that follows the layer method">
+                    <StackPanel><TextBlock Text="?" FontSize="18" HorizontalAlignment="Center" /><TextBlock x:Name="HintLabel" Text="Hint" FontSize="12.5" HorizontalAlignment="Center" /></StackPanel>
+                </Button>
+                <Button x:Name="LayerButton" Click="Layer_Click" ToolTip="Show a digit's layer">
+                    <StackPanel><TextBlock Text="▦" FontSize="18" HorizontalAlignment="Center" /><TextBlock Text="Layer" FontSize="12.5" HorizontalAlignment="Center" /></StackPanel>
+                </Button>
+            </UniformGrid>
+
+            <!-- number pad -->
+            <UniformGrid x:Name="Pad" />
+
+            <!-- hint panel -->
+            <Border x:Name="HintPanel" Background="{StaticResource Surface}" CornerRadius="12" Padding="14,10" Margin="0,10,0,0" Visibility="Collapsed">
+                <StackPanel>
+                    <TextBlock x:Name="HintTitle" FontSize="15" FontWeight="Bold" />
+                    <TextBlock x:Name="HintMessage" TextWrapping="Wrap" Margin="0,4,0,8" FontSize="13.5" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button x:Name="HintPlace" Style="{StaticResource Primary}" Margin="0,0,6,0" Click="HintPlace_Click" />
+                        <Button Content="Close" Click="HintClose_Click" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- layer panel -->
+            <Border x:Name="LayerPanel" Background="{StaticResource Surface}" CornerRadius="12" Padding="14,10" Margin="0,10,0,0" Visibility="Collapsed">
+                <StackPanel>
+                    <TextBlock Text="Layers — most repeated number first" FontSize="15" FontWeight="Bold" />
+                    <TextBlock Text="Pick a digit to see its layer. Small number = how many times it is already on the board."
+                               TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="12.5" Margin="0,2,0,6" />
+                    <WrapPanel x:Name="Chips" Margin="0,0,0,6" />
+                    <WrapPanel Margin="0,0,0,4">
+                        <Border Width="11" Height="11" CornerRadius="2" Background="{StaticResource LayerDigit}" Margin="0,0,4,0" />
+                        <TextBlock Text="has the digit" FontSize="12" Foreground="{StaticResource Muted}" Margin="0,0,12,0" />
+                        <Border Width="11" Height="11" CornerRadius="2" Background="{StaticResource Blocked}" Margin="0,0,4,0" />
+                        <TextBlock Text="cannot be it" FontSize="12" Foreground="{StaticResource Muted}" Margin="0,0,12,0" />
+                        <Border Width="11" Height="11" CornerRadius="2" Background="{StaticResource Forced}" Margin="0,0,4,0" />
+                        <TextBlock Text="only open cell in its box" FontSize="12" Foreground="{StaticResource Muted}" />
+                    </WrapPanel>
+                    <TextBlock x:Name="LayerMessage" TextWrapping="Wrap" FontSize="13.5" Margin="0,4,0,8" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button x:Name="FillYellowButton" Content="Fill yellow cells" Style="{StaticResource Primary}" Margin="0,0,6,0" Click="FillYellow_Click" />
+                        <Button Content="Close" Click="LayerClose_Click" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- footer -->
+            <Grid Margin="2,12,2,0">
+                <CheckBox x:Name="MistakesBox" Content="Highlight mistakes" Foreground="{StaticResource Muted}" FontSize="12.5"
+                          VerticalAlignment="Center" Click="Mistakes_Click" />
+                <TextBlock x:Name="StreakText" HorizontalAlignment="Right" Foreground="{StaticResource Muted}" FontSize="12.5" VerticalAlignment="Center" />
+            </Grid>
+        </StackPanel>
+
+        <!-- solved -->
+        <Border x:Name="WinCover" Background="#cc0d0f12" Visibility="Collapsed">
+            <Border Background="{StaticResource Surface}" CornerRadius="14" Padding="22,18" VerticalAlignment="Center" HorizontalAlignment="Center" MinWidth="320">
+                <StackPanel>
+                    <TextBlock Text="Solved!" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center" />
+                    <TextBlock x:Name="WinScore" FontSize="30" FontWeight="Bold" Foreground="{StaticResource Accent}" HorizontalAlignment="Center" Margin="0,4,0,4" />
+                    <TextBlock x:Name="WinBest" FontWeight="SemiBold" Foreground="{StaticResource Forced}" HorizontalAlignment="Center" />
+                    <TextBlock x:Name="WinStreak" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,4,0,0" />
+                    <TextBlock x:Name="WinMessage" TextWrapping="Wrap" TextAlignment="Center" Foreground="{StaticResource Muted}" Margin="0,8,0,12" MaxWidth="300" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <Button Content="New puzzle" Style="{StaticResource Primary}" Margin="0,0,6,0" Click="WinNew_Click" />
+                        <Button Content="Close" Click="WinClose_Click" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+    </Grid>
+</Window>

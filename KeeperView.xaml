@@ -418,6 +418,7 @@
             <Grid x:Name="IconClipboard" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="📋" /></Grid>
             <Grid x:Name="IconStopwatch" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="⏱️" /></Grid>
             <Grid x:Name="IconDaily" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="💡" /></Grid>
+            <Grid x:Name="IconSudoku" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="🔢" /></Grid>
         </StackPanel>
         </Grid>
 
