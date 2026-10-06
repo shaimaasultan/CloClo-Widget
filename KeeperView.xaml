@@ -358,9 +358,15 @@
             </Viewbox>
         </Canvas>
 
-        <!-- ===== text: sky in words, temperature, place ===== -->
+        <!-- ===== text: sky in words and the time, temperature, place ===== -->
         <TextBlock x:Name="SkyLabel" Style="{StaticResource Label}" Canvas.Left="0" Canvas.Top="-0.5" Width="150"
-                   TextAlignment="Center" FontSize="9" FontWeight="Bold" Visibility="Collapsed" />
+                   TextAlignment="Center" FontSize="9" FontWeight="Bold" />
+        <!-- The stopwatch, top-left under the battery (its Canvas.Top follows
+             what the battery shows - see PlaceStopwatch), while it has a time. -->
+        <TextBlock x:Name="StopwatchLabel" Style="{StaticResource Label}" Canvas.Left="9" Canvas.Top="15"
+                   FontSize="9.5" FontWeight="SemiBold" Visibility="Collapsed">
+            <Run FontFamily="Segoe UI Emoji" Text="⏱" /><Run x:Name="StopwatchTime" Text=" 0:00" />
+        </TextBlock>
         <TextBlock x:Name="Temp" Style="{StaticResource Label}" Canvas.Left="0" Canvas.Top="171.9" Width="150"
                    TextAlignment="Center" FontSize="19" FontWeight="ExtraBold" Text="--°" />
         <TextBlock x:Name="Place" Style="{StaticResource Label}" Canvas.Left="5" Canvas.Top="194" Width="140"
@@ -403,6 +409,7 @@
             <Grid x:Name="IconQr" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="📱" /></Grid>
             <Grid x:Name="IconVolume" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="🔊" /></Grid>
             <Grid x:Name="IconClipboard" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="📋" /></Grid>
+            <Grid x:Name="IconStopwatch" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="⏱️" /></Grid>
         </StackPanel>
         </Grid>
 

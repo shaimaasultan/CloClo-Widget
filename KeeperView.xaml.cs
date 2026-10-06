@@ -52,6 +52,10 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     // owns KeeperWrap's transform, so two never stomp each other.
     private bool _wrapBusy;
     private readonly DispatcherTimer _flashTimer = new();
+    // The sky in words (null when there's none to show) and the clock share
+    // the top line; the clock ticks on its own.
+    private string? _skyText;
+    private readonly DispatcherTimer _clockTimer = new() { Interval = TimeSpan.FromSeconds(1) };
 
     public KeeperView()
     {
@@ -61,6 +65,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
             ["youtube"] = IconYoutube, ["spotify"] = IconSpotify, ["bell"] = IconBell, ["search"] = IconSearch,
             ["gpu"] = IconGpu, ["read"] = IconRead, ["mic"] = IconMic, ["convert"] = IconConvert,
             ["color"] = IconColor, ["qr"] = IconQr, ["volume"] = IconVolume, ["clipboard"] = IconClipboard,
+            ["stopwatch"] = IconStopwatch,
         };
 
         BuildSunRays();
@@ -68,6 +73,8 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         BuildLoops();
 
         _flashTimer.Tick += (_, _) => { FlashLightning(); ScheduleFlash(); };
+        _clockTimer.Tick += (_, _) => UpdateTopLine();
+        _clockTimer.Start();
 
         ApplySky();
         RestartAmbient();
@@ -78,6 +85,29 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     // ---------------------------------------------------------------- host API
 
     public void SetPlace(string city) => Place.Text = city;
+
+    // null hides the stopwatch line; otherwise shows that elapsed time.
+    public void SetStopwatch(TimeSpan? elapsed)
+    {
+        StopwatchLabel.Visibility = Show(elapsed != null);
+        if (elapsed is TimeSpan t) StopwatchTime.Text = " " + FormatElapsed(t);
+        PlaceStopwatch();
+    }
+
+    // Top-left, in the battery's column: under its time-left line, under the
+    // percentage when there's no time left to show, or in its place when
+    // there's no battery - clear of the sky decorations on the right.
+    private void PlaceStopwatch()
+    {
+        var top = Battery.Visibility != Visibility.Visible ? 15
+            : BatteryTime.Visibility == Visibility.Visible ? 41
+            : 30;
+        Canvas.SetTop(StopwatchLabel, top);
+    }
+
+    // m:ss, or h:mm:ss from an hour on.
+    public static string FormatElapsed(TimeSpan t) =>
+        t.TotalHours >= 1 ? $"{(int)t.TotalHours}:{t.Minutes:00}:{t.Seconds:00}" : $"{t.Minutes}:{t.Seconds:00}";
 
     // "keeper" (the original) or "lady": the same figure, poses and weather
     // outfits, with long hair, lashes, rose lips and a skirt for "lady".
@@ -136,6 +166,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         if (status is not { } s)
         {
             Battery.Visibility = Visibility.Collapsed;
+            PlaceStopwatch();
             return;
         }
         BatteryPercent.Text = $"{Math.Round(s.Percent)}%";
@@ -147,6 +178,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         BatteryTime.Text = s.TimeRemaining is { Length: > 0 } t ? $"{t} left" : "";
         BatteryTime.Visibility = BatteryTime.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         Battery.Visibility = Visibility.Visible;
+        PlaceStopwatch();
     }
 
     // Null title hides the label. The icon is a notification's own app
@@ -335,9 +367,17 @@ public partial class KeeperView : System.Windows.Controls.UserControl
 
     private void ShowSkyLabel(string? sky)
     {
-        var label = sky != null && SkyLabels.TryGetValue(sky, out var l) ? l : null;
-        SkyLabel.Text = label ?? "";
-        SkyLabel.Visibility = Show(label != null);
+        _skyText = sky != null && SkyLabels.TryGetValue(sky, out var l) ? l : null;
+        UpdateTopLine();
+    }
+
+    // "Clear · 9:41 PM" - or just the time while there's no sky to name. The
+    // time follows Windows' own short-time format (12- or 24-hour).
+    private void UpdateTopLine()
+    {
+        var time = DateTime.Now.ToString("t", System.Globalization.CultureInfo.CurrentCulture);
+        var text = _skyText != null ? $"{_skyText} · {time}" : time;
+        if (SkyLabel.Text != text) SkyLabel.Text = text;
     }
 
     private void ApplySky()

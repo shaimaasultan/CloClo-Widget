@@ -58,6 +58,8 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   again (shortcut, Start Menu, the exe) doesn't open a second copy - it shows
   the running one, even if it was hidden from the tray, with "CloClo is
   already running".
+- **Top line:** the sky in words and the time (in Windows' 12- or 24-hour
+  format), e.g. "Clear · 9:41 PM".
 - **Icon bar** under the temperature — up to 7 of these at a time, picked in
   right-click → **Icons**:
 
@@ -74,6 +76,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   | QR code from selection | Makes a QR code of the highlighted text or link |
   | Volume/mute toggle | Mutes or unmutes the system sound |
   | Clipboard history | Lists Windows' clipboard history (Win+V); click one to copy it again |
+  | Stopwatch | One click starts it, the next stops it, the next resets it; the time shows top-left, under the battery |
 
   Clicking the label that appears under the icons opens the app it's showing;
   its pause button stops it.

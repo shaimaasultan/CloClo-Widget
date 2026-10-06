@@ -74,7 +74,7 @@ public partial class MainWindow : Window
     // currently enabled.
     private static readonly string[] IconOrder =
     {
-        "youtube", "spotify", "bell", "search", "gpu", "read", "mic", "convert", "color", "qr", "volume", "clipboard",
+        "youtube", "spotify", "bell", "search", "gpu", "read", "mic", "convert", "color", "qr", "volume", "clipboard", "stopwatch",
     };
     private const double IconWidth = 18, IconGap = 2, IconTop = 187, IconHeight = 20;
     // Matches #mediaBar's own left:10px anchor (stage x=10, i.e. relative
@@ -126,6 +126,11 @@ public partial class MainWindow : Window
     // for a user-initiated "read my selection" action.
     private IntPtr _lastExternalForegroundWindow;
     private DispatcherTimer? _foregroundTrackTimer;
+
+    // The stopwatch icon: one click starts it, the next stops it, the next
+    // resets it. Its time shows under the sky/time line at the top.
+    private readonly System.Diagnostics.Stopwatch _stopwatch = new();
+    private DispatcherTimer? _stopwatchTimer;
 
     [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
     [DllImport("user32.dll")] private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
@@ -791,6 +796,11 @@ public partial class MainWindow : Window
             ShowClipboardHistory();
             return;
         }
+        if (icons.TryGetValue("stopwatch", out var stopwatchRect) && stopwatchRect.Contains(p))
+        {
+            ToggleStopwatch();
+            return;
+        }
         if (PauseIconRect.Contains(p) && _watchedFetcher != null)
         {
             StopWatching();
@@ -814,6 +824,35 @@ public partial class MainWindow : Window
         }
         try { _avatarWindow!.DragMove(); } catch { /* button already released */ }
         SaveWindowPosition();
+    }
+
+    private void ToggleStopwatch()
+    {
+        if (_stopwatch.IsRunning)
+        {
+            _stopwatch.Stop();
+            _stopwatchTimer?.Stop();
+            Keeper.SetStopwatch(_stopwatch.Elapsed);
+            ShowOneShotLabel("Stopwatch stopped at " + KeeperView.FormatElapsed(_stopwatch.Elapsed), "Click the stopwatch again to reset it.");
+        }
+        else if (_stopwatch.Elapsed > TimeSpan.Zero)
+        {
+            _stopwatch.Reset();
+            Keeper.SetStopwatch(null);
+            ShowOneShotLabel("Stopwatch reset", "Click the stopwatch to start it.");
+        }
+        else
+        {
+            if (_stopwatchTimer == null)
+            {
+                _stopwatchTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+                _stopwatchTimer.Tick += (_, _) => Keeper.SetStopwatch(_stopwatch.Elapsed);
+            }
+            _stopwatch.Start();
+            _stopwatchTimer.Start();
+            Keeper.SetStopwatch(TimeSpan.Zero);
+            ShowOneShotLabel("Stopwatch started", "Click the stopwatch again to stop it.");
+        }
     }
 
     private void ShowContextMenuAtCursor()
@@ -1271,6 +1310,7 @@ public partial class MainWindow : Window
         ("qr", "QR code from selection"),
         ("volume", "Volume/mute toggle"),
         ("clipboard", "Clipboard history"),
+        ("stopwatch", "Stopwatch"),
     };
 
     private DrawingForms.ToolStripMenuItem BuildIconsMenu()
