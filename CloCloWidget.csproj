@@ -22,6 +22,17 @@
          menus and tray icon), and WPF reads it only from the manifest:
          without it there, windows turn blurry on high-DPI screens. -->
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
+    <!-- Size: only the English resources of WPF and Windows Forms (CloClo's
+         own text is English) - the 13 other languages added ~17 MB. -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- Memory: no background (concurrent) garbage collector. A widget's
+         heap is small, so a collection pauses for a few milliseconds at
+         most, and dropping the background GC thread and its reserve saved
+         ~6 MB of private memory and kept the working set from creeping up.
+         (The single-file bundle is deliberately NOT compressed: that halves
+         the exe but decompresses everything into private memory - measured
+         at +80 MB.) -->
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
   </PropertyGroup>
 
   <ItemGroup>

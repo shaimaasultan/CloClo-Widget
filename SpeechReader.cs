@@ -22,6 +22,24 @@ public static class SpeechReader
     // document would otherwise be synthesized in full, all in memory.
     private const int MaxSpokenChars = 5000;
 
+    // Raised (on a background thread) when reading stops, after the
+    // synthesized audio has been let go - a moment to free memory.
+    public static event Action? Finished;
+
+    static SpeechReader()
+    {
+        // The player would otherwise keep the last synthesized audio (MBs
+        // for a long selection) as its source until the next reading.
+        Player.MediaEnded += (_, _) => Release();
+        Player.MediaFailed += (_, _) => Release();
+    }
+
+    private static void Release()
+    {
+        Player.Source = null;
+        Finished?.Invoke();
+    }
+
     public static void Speak(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
@@ -29,7 +47,12 @@ public static class SpeechReader
         _ = SpeakAsync(text);
     }
 
-    public static void Stop() => Player.Pause();
+    public static void Stop()
+    {
+        if (Player.Source == null) return;
+        Player.Pause();
+        Release();
+    }
 
     private static async Task SpeakAsync(string text)
     {

@@ -127,6 +127,13 @@ public partial class MainWindow : Window
     private IntPtr _lastExternalForegroundWindow;
     private DispatcherTimer? _foregroundTrackTimer;
 
+    // A couple of seconds after something closes - once the window's
+    // rendering resources and event handlers have actually let go - one
+    // aggressive full collection: it compacts the heap and returns the freed
+    // memory to Windows straight away. Several closes in a row collapse
+    // into one.
+    private readonly DispatcherTimer _memoryRelease = new() { Interval = TimeSpan.FromSeconds(2) };
+
     // The stopwatch icon: one click starts it, the next stops it, the next
     // resets it. Its time shows under the sky/time line at the top.
     private readonly System.Diagnostics.Stopwatch _stopwatch = new();
@@ -169,6 +176,15 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // Memory is handed back to Windows once a window opened from the
+        // widget closes (QR code, clipboard history, Sudoku, colour picker...)
+        // or reading aloud ends, instead of whenever the GC next runs.
+        _memoryRelease.Tick += (_, _) => { _memoryRelease.Stop(); ReleaseMemory(); };
+        EventManager.RegisterClassHandler(typeof(Window), UnloadedEvent, new RoutedEventHandler((sender, _) =>
+        {
+            if (!ReferenceEquals(sender, this) && !ReferenceEquals(sender, _avatarWindow)) ScheduleMemoryRelease();
+        }));
+        SpeechReader.Finished += () => Dispatcher.BeginInvoke(new Action(ScheduleMemoryRelease));
         SourceInitialized += MainWindow_SourceInitialized;
         Loaded += MainWindow_Loaded;
         Closing += (_, _) =>
@@ -558,6 +574,7 @@ public partial class MainWindow : Window
         SpeechReader.Stop();
         StopColorPicking();
         Keeper.SetNowPlaying(null, null, null, false);
+        ScheduleMemoryRelease();
     }
 
     // Clicking the label body (anywhere but the pause/list buttons)
@@ -903,6 +920,21 @@ public partial class MainWindow : Window
         _sudoku.Closed += (_, _) => _sudoku = null;
         _sudoku.Show();
         _sudoku.Activate();
+    }
+
+    private void ScheduleMemoryRelease()
+    {
+        _memoryRelease.Stop();
+        _memoryRelease.Start();
+    }
+
+    private static void ReleaseMemory()
+    {
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+        // Windows and media objects let go of their native parts in
+        // finalizers; a second pass collects what those freed.
+        GC.WaitForPendingFinalizers();
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
     }
 
     private void ShowContextMenuAtCursor()
