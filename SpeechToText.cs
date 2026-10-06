@@ -83,12 +83,43 @@ public static class SpeechToText
         }
     }
 
+    // The new file must not exist yet (CreateNew): the name is predictable,
+    // so something else could have put a file or a link there first to have
+    // dictation written - or an existing file emptied - somewhere else. A
+    // name that's taken (also by a second new file within the same second,
+    // which used to empty the first) gets a number added instead.
     public static string CreateNewFile()
     {
         Directory.CreateDirectory(DictationFolder);
-        var path = Path.Combine(DictationFolder, $"Dictation-{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.txt");
-        File.WriteAllText(path, string.Empty);
-        return path;
+        var stamp = $"Dictation-{DateTime.Now:yyyy-MM-dd_HH-mm-ss}";
+        for (var n = 1; ; n++)
+        {
+            var path = Path.Combine(DictationFolder, n == 1 ? $"{stamp}.txt" : $"{stamp}-{n}.txt");
+            try
+            {
+                new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None).Dispose();
+                return path;
+            }
+            catch (IOException) when (n < 100 && Path.Exists(path))
+            {
+                // Taken - try the next number.
+            }
+        }
+    }
+
+    // The current dictation file is only appended to while it's still a plain
+    // file: one replaced by a link since it was created gets a new file instead.
+    public static bool IsPlainFile(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            return info.Exists && (info.Attributes & FileAttributes.ReparsePoint) == 0;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public static void Append(string filePath, string text)
