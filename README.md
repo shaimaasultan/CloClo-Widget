@@ -58,8 +58,9 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   again (shortcut, Start Menu, the exe) doesn't open a second copy - it shows
   the running one, even if it was hidden from the tray, with "CloClo is
   already running".
-- **Top line:** the sky in words and the time (in Windows' 12- or 24-hour
-  format), e.g. "Clear · 9:41 PM".
+- **Top line:** the time and date, in Windows' own formats (12- or 24-hour,
+  day/month order), e.g. "9:41 PM · Tue, Oct 6". The sky in words sits with
+  the temperature: "12° Clear".
 - **Icon bar** under the temperature — up to 7 of these at a time, picked in
   right-click → **Icons**:
 

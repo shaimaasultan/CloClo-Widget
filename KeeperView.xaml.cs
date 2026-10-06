@@ -52,9 +52,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     // owns KeeperWrap's transform, so two never stomp each other.
     private bool _wrapBusy;
     private readonly DispatcherTimer _flashTimer = new();
-    // The sky in words (null when there's none to show) and the clock share
-    // the top line; the clock ticks on its own.
-    private string? _skyText;
+    // The time and date on the top line, ticking on their own.
     private readonly DispatcherTimer _clockTimer = new() { Interval = TimeSpan.FromSeconds(1) };
 
     public KeeperView()
@@ -73,7 +71,8 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         BuildLoops();
 
         _flashTimer.Tick += (_, _) => { FlashLightning(); ScheduleFlash(); };
-        _clockTimer.Tick += (_, _) => UpdateTopLine();
+        _clockTimer.Tick += (_, _) => UpdateClock();
+        UpdateClock();
         _clockTimer.Start();
 
         ApplySky();
@@ -145,10 +144,10 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     {
         if (reading is not { } w)
         {
-            Temp.Text = "—°";
+            TempValue.Text = "—°";
             return;
         }
-        Temp.Text = $"{w.Temperature}°";
+        TempValue.Text = $"{w.Temperature}°";
         _liveSky = w.Sky;
         // Day/night applies even under a manual sky, so a picked "Clear"
         // still shows the moon at night.
@@ -365,19 +364,23 @@ public partial class KeeperView : System.Windows.Controls.UserControl
 
     // ---------------------------------------------------------------- sky
 
+    // Next to the temperature: "12° Clear".
     private void ShowSkyLabel(string? sky)
     {
-        _skyText = sky != null && SkyLabels.TryGetValue(sky, out var l) ? l : null;
-        UpdateTopLine();
+        SkyWord.Text = sky != null && SkyLabels.TryGetValue(sky, out var l) ? "  " + l : "";
     }
 
-    // "Clear · 9:41 PM" - or just the time while there's no sky to name. The
-    // time follows Windows' own short-time format (12- or 24-hour).
-    private void UpdateTopLine()
+    // "9:41 PM · Tue, Oct 6", in Windows' own formats: its short time
+    // (12- or 24-hour) and its day/month order, with short names.
+    private void UpdateClock()
     {
-        var time = DateTime.Now.ToString("t", System.Globalization.CultureInfo.CurrentCulture);
-        var text = _skyText != null ? $"{_skyText} · {time}" : time;
-        if (SkyLabel.Text != text) SkyLabel.Text = text;
+        var now = DateTime.Now;
+        var culture = System.Globalization.CultureInfo.CurrentCulture;
+        var monthDay = culture.DateTimeFormat.MonthDayPattern.Replace("MMMM", "MMM");
+        var time = now.ToString("t", culture);
+        var date = now.ToString("ddd, " + monthDay, culture);
+        if (ClockTime.Text != time) ClockTime.Text = time;
+        if (ClockDate.Text != date) ClockDate.Text = date;
     }
 
     private void ApplySky()
