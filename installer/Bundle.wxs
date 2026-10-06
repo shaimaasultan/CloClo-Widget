@@ -1,0 +1,28 @@
+<!--
+  CloClo-Setup.exe: the installer you run. It carries the CloClo package
+  (Package.wxs) inside, shows Windows Installer's progress, and offers to
+  start CloClo at the end. "Launch" runs it as you, not as administrator -
+  CloClo refuses to run elevated.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+  <Bundle Name="CloClo" Manufacturer="CloClo" Version="$(Version)"
+          UpgradeCode="EE052FAD-DFF9-49E0-8C68-CD517309BF13"
+          IconSourceFile="..\Assets\icon.ico">
+
+    <BootstrapperApplication>
+      <!-- WiX's standard screens with CloClo's own text and logo
+           (CloCloTheme.xml/.wxl): a description on the welcome page, and an
+           Uninstall page when setup runs again on a PC that has CloClo. -->
+      <bal:WixStandardBootstrapperApplication Theme="hyperlinkLicense" LicenseUrl=""
+                                              ThemeFile="CloCloTheme.xml" LocalizationFile="CloCloTheme.wxl" LogoFile="logo.png"
+                                              SuppressOptionsUI="yes" SuppressRepair="yes" ShowVersion="yes" />
+    </BootstrapperApplication>
+
+    <Variable Name="LaunchTarget" Value="[ProgramFiles64Folder]CloClo\CloCloWidget.exe" />
+
+    <Chain>
+      <MsiPackage SourceFile="$(MsiPath)" />
+    </Chain>
+  </Bundle>
+</Wix>

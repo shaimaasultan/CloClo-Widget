@@ -1,0 +1,27 @@
+<Project>
+  <!--
+    Signs the installer's outputs with the same sign.ps1 - and so the same
+    rules - as CloClo itself: only a protected key may sign, RFC 3161
+    timestamps, and every file is verified straight after signing.
+    WiX calls these hooks in its own order: the package (CloClo.msi), then
+    the setup's engine (before the package is attached to it), then the
+    finished CloClo-Setup.exe. Without SignCertThumbprint nothing is signed.
+  -->
+  <PropertyGroup Condition="'$(SignCertThumbprint)' != ''">
+    <SignOutput>true</SignOutput>
+    <_SetupSignPowerShell>$([System.IO.Path]::Combine($([System.Environment]::GetFolderPath(SpecialFolder.System)), 'WindowsPowerShell', 'v1.0', 'powershell.exe'))</_SetupSignPowerShell>
+    <_SetupSignCommand>&quot;$(_SetupSignPowerShell)&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\sign.ps1&quot; -Thumbprint $(SignCertThumbprint)</_SetupSignCommand>
+  </PropertyGroup>
+
+  <Target Name="SignMsi">
+    <Exec Command="$(_SetupSignCommand) -Path &quot;%(SignMsi.FullPath)&quot;" />
+  </Target>
+
+  <Target Name="SignBundleEngine">
+    <Exec Command="$(_SetupSignCommand) -Path &quot;%(SignBundleEngine.FullPath)&quot;" />
+  </Target>
+
+  <Target Name="SignBundle">
+    <Exec Command="$(_SetupSignCommand) -Path &quot;%(SignBundle.FullPath)&quot;" />
+  </Target>
+</Project>

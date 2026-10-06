@@ -1,0 +1,27 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+  <!--
+    CloClo.msi - see Package.wxs. Built by build-setup.ps1, which passes:
+      AppDir             the signed Program Files build of CloClo
+      SetupVersion       the package version
+      SignCertThumbprint the signing certificate (optional: unsigned without it)
+  -->
+  <PropertyGroup>
+    <OutputName>CloClo</OutputName>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <DefineConstants>AppDir=$(AppDir);Version=$(SetupVersion)</DefineConstants>
+    <!-- Both projects share this folder: each takes only its own files (no automatic pickup of every .wxs or .wxl here). -->
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <!-- These three validation checks are written in VBScript, which recent
+         Windows 11 no longer includes (error 2738), so they can't run; every
+         other check still does. ICE61 would also flag same-version upgrades,
+         which MajorUpgrade allows on purpose. -->
+    <SuppressIces>ICE09;ICE32;ICE61</SuppressIces>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Package.wxs" />
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+  </ItemGroup>
+
+  <Import Project="Signing.targets" />
+</Project>

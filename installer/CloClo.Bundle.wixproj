@@ -1,0 +1,22 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+  <!--
+    CloClo-Setup.exe - see Bundle.wxs. Built by build-setup.ps1, which passes:
+      MsiPath            the signed CloClo.msi to carry
+      SetupVersion       the bundle version
+      SignCertThumbprint the signing certificate (optional: unsigned without it)
+  -->
+  <PropertyGroup>
+    <OutputName>CloClo-Setup</OutputName>
+    <OutputType>Bundle</OutputType>
+    <DefineConstants>MsiPath=$(MsiPath);Version=$(SetupVersion)</DefineConstants>
+    <!-- Both projects share this folder: each takes only its own files (no automatic pickup of every .wxs or .wxl here). -->
+    <EnableDefaultItems>false</EnableDefaultItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Bundle.wxs" />
+    <PackageReference Include="WixToolset.Bal.wixext" Version="5.0.2" />
+  </ItemGroup>
+
+  <Import Project="Signing.targets" />
+</Project>

@@ -1,0 +1,12 @@
+<Project>
+  <!--
+    The installer projects build into the project's own top-level obj\ and
+    bin\ folders (obj\installer\..., bin\installer\...), which Check-Source
+    and the source record already leave out as build output - not into
+    installer\obj and installer\bin, which they'd count as changed source.
+  -->
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)..\obj\installer\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(MSBuildThisFileDirectory)..\bin\installer\$(MSBuildProjectName)\</BaseOutputPath>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,51 @@
+<!--
+  CloClo's Windows Installer package: what CloClo-Setup.exe installs.
+  Per-machine, into Program Files\CloClo (only administrators can change it),
+  with a Start menu shortcut. A newer package replaces an older one in place;
+  a running CloClo is asked to close first (and ended if it doesn't). Windows
+  Installer rolls everything back if anything fails.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="CloClo" Manufacturer="CloClo" Version="$(Version)"
+           UpgradeCode="1E9ECC83-FCA5-44EC-BEC2-39493DE5F789"
+           Scope="perMachine" Compressed="yes">
+
+    <!-- Two builds within the same ten minutes share a version: the newer
+         one still replaces the older instead of installing beside it. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of CloClo is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+    <SummaryInformation Description="CloClo desktop widget - weather, clock, shortcuts, daily quote and word, and the Layer Sudoku daily game" />
+    <Property Id="ARPCOMMENTS" Value="Desktop widget: weather, clock and date, media and notification shortcuts, stopwatch, daily quote, Arabic word, joke and fact, and the Layer Sudoku daily game." />
+
+    <Icon Id="CloClo.ico" SourceFile="..\Assets\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="CloClo.ico" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <!-- Close a running CloClo (it saves its settings on close), and end it
+         if it hasn't gone after a few seconds, so its files can be replaced. -->
+    <util:CloseApplication Id="CloseCloClo" Target="CloCloWidget.exe" CloseMessage="yes"
+                           TerminateProcess="1" Timeout="5" RebootPrompt="no" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="CloClo">
+        <!-- The signed, self-contained CloClo and the native WPF DLLs that
+             sit beside it in a Program Files build (all pinned by SHA-256
+             inside the exe). -->
+        <Files Include="$(AppDir)\*.exe" />
+        <Files Include="$(AppDir)\*.dll" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut">
+        <Shortcut Id="CloCloShortcut" Name="CloClo" Description="CloClo desktop widget"
+                  Target="[INSTALLFOLDER]CloCloWidget.exe" WorkingDirectory="INSTALLFOLDER" />
+        <!-- Windows Installer tracks a shortcut through a value in HKCU
+             (ICE38/ICE43); it's just a marker. -->
+        <RegistryValue Root="HKCU" Key="Software\CloClo" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+  </Package>
+</Wix>

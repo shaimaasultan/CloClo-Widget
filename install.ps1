@@ -205,7 +205,14 @@ if ($Uninstall) {
     Remove-Item -LiteralPath "HKCU:\$uninstallKey" -Recurse -Force -ErrorAction SilentlyContinue
     if ((Test-Path $machineDir) -or (Test-Path -LiteralPath "HKLM:\$uninstallKey")) {
         # The HKLM entry only exists from earlier versions.
-        $code = Invoke-Elevated "Remove-Item -LiteralPath $(Quote $machineDir) -Recurse -Force -ErrorAction SilentlyContinue`nRemove-Item -LiteralPath $(Quote "HKLM:\$uninstallKey") -Recurse -Force -ErrorAction SilentlyContinue"
+        # Each removed only if it's there, without silencing errors: a real
+        # failure (files in use) stops with an error, and success ends with
+        # an explicit exit 0 - PowerShell -Command otherwise reports 1
+        # whenever its last command failed, even an ignored one, such as
+        # removing the HKLM entry that most installs never had.
+        $code = Invoke-Elevated ("if (Test-Path -LiteralPath $(Quote $machineDir)) { Remove-Item -LiteralPath $(Quote $machineDir) -Recurse -Force }`n" +
+            "if (Test-Path -LiteralPath $(Quote "HKLM:\$uninstallKey")) { Remove-Item -LiteralPath $(Quote "HKLM:\$uninstallKey") -Recurse -Force }`n" +
+            "exit 0")
         if ($code -ne 0) { throw "Couldn't remove $machineDir (exit code $code) - is CloClo still running?" }
     }
     Write-Host "Uninstalled. Settings and dictation files in AppData were left in place."

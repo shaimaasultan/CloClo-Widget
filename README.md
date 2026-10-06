@@ -299,6 +299,44 @@ Deleting the key is permanent, and already-signed copies keep their
 signature. Keep the private key to yourself — never export the certificate
 with its key.
 
+### An installer for other PCs (CloClo-Setup.exe)
+
+Double-click **`Build-Setup.cmd`**. It builds CloClo, wraps it in a Windows
+Installer package and a setup program, signs all three with your CN=CloClo
+certificate (Windows asks you to confirm each signing), and leaves
+`dist\CloClo-Setup-<version>.exe` (~50 MB, compressed) with its SHA-256.
+
+That one file installs CloClo on any 64-bit Windows 10/11 PC — no .NET SDK
+or source folder needed there:
+
+- Windows' own installer does the work: the administrator prompt names the
+  publisher, a failed install rolls back completely, and Settings > Apps gets
+  an entry with Uninstall.
+- It installs to Program Files\CloClo with a Start menu shortcut, closes a
+  running CloClo first, and a newer setup replaces an older install in place.
+- The last page has a **Launch** button, which starts CloClo as you, not as
+  administrator.
+- To uninstall: Settings > Apps > CloClo > Uninstall, or run the setup again
+  on a PC that has it - it opens on an Uninstall page. Settings, Sudoku
+  progress and dictation files are kept.
+- To install without any screens: `CloClo-Setup-<version>.exe /quiet`
+  (and `/uninstall /quiet` to remove it).
+
+Send the SHA-256 with the file, so the person installing it can check
+(`Get-FileHash`) that they got exactly what you built.
+
+On other PCs your self-signed certificate isn't trusted, so Windows shows the
+publisher as unknown and SmartScreen warns before it runs. For a clean
+install elsewhere, sign with a publicly trusted code-signing certificate
+(Azure Trusted Signing is the cheapest for an individual) and pass it:
+`Build-Setup.cmd -CertThumbprint <thumbprint>`.
+
+Use either the setup or `Install-CloClo.cmd` on a PC, not both: they're
+separate installs of the same folder. To switch to the setup, first remove
+the Install-CloClo.cmd install (Settings > Apps > CloClo > Uninstall).
+Uninstalling leaves your settings (%AppData%\CloCloWidget); if "Start with
+Windows" was on, turn it off in CloClo before uninstalling.
+
 ## Checking the source
 
 Every install records the SHA-256 of each source file in the project folder

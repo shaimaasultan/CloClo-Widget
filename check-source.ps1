@@ -15,7 +15,7 @@
   whatever changes the project folder can't also rewrite the record or the
   checker. Run it through Check-Source.cmd, which uses the installed copy.
 
-  Build output (bin, obj, publish, .vs, TestResults) and *.user files are
+  Build output (bin, obj, publish, dist, .vs, TestResults) and *.user files are
   left out: they change on every build and aren't source.
 #>
 param(
@@ -37,7 +37,7 @@ param(
 # takes effect. Reproduced with a look-alike Join-Path.)
 $env:PSModulePath = $PSHOME + '\Modules'
 $ErrorActionPreference = 'Stop'
-$excludedDirs = 'bin', 'obj', 'publish', '.vs', 'TestResults'
+$excludedDirs = 'bin', 'obj', 'publish', 'dist', '.vs', 'TestResults'
 
 # Walks the folder itself instead of Get-ChildItem -Recurse, so links are
 # never followed: a folder link (junction or symbolic link) could pull files
