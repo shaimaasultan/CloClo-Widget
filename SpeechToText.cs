@@ -1,7 +1,11 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading.Tasks;
+using System.ComponentModel;
+using Microsoft.Win32.SafeHandles;
 using Windows.Globalization;
 using Windows.Media.SpeechRecognition;
 
@@ -74,8 +78,11 @@ public static class SpeechToText
         if (string.IsNullOrEmpty(path)) return false;
         try
         {
-            var folder = Path.GetFullPath(DictationFolder) + Path.DirectorySeparatorChar;
-            return Path.GetFullPath(path).StartsWith(folder, StringComparison.OrdinalIgnoreCase);
+            var folder = Path.GetFullPath(DictationFolder).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var fullPath = Path.GetFullPath(path);
+            return string.Equals(Path.GetDirectoryName(fullPath)?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                       folder, StringComparison.OrdinalIgnoreCase)
+                && IsDictationFileName(Path.GetFileName(fullPath));
         }
         catch
         {
@@ -91,13 +98,25 @@ public static class SpeechToText
     public static string CreateNewFile()
     {
         Directory.CreateDirectory(DictationFolder);
+        return CreateNewFileCore(null);
+    }
+
+    public static string CreateNewFileWithText(string text)
+    {
+        Directory.CreateDirectory(DictationFolder);
+        return CreateNewFileCore(text);
+    }
+
+    private static string CreateNewFileCore(string? initialText)
+    {
         var stamp = $"Dictation-{DateTime.Now:yyyy-MM-dd_HH-mm-ss}";
-        for (var n = 1; ; n++)
+        for (var n = 1; n <= 100; n++)
         {
             var path = Path.Combine(DictationFolder, n == 1 ? $"{stamp}.txt" : $"{stamp}-{n}.txt");
             try
             {
-                new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None).Dispose();
+                using var stream = OpenDictationFile(path, createNew: true);
+                if (initialText != null) WriteAppend(stream, initialText);
                 return path;
             }
             catch (IOException) when (n < 100 && Path.Exists(path))
@@ -105,26 +124,110 @@ public static class SpeechToText
                 // Taken - try the next number.
             }
         }
+        throw new IOException("Couldn't create a new dictation file because all available names are taken.");
     }
 
-    // The current dictation file is only appended to while it's still a plain
-    // file: one replaced by a link since it was created gets a new file instead.
-    public static bool IsPlainFile(string path)
+    // Open without following the final reparse point, then inspect the opened
+    // handle before writing. Reject directories, reparse points and hardlinks.
+    public static bool TryAppend(string? filePath, string text)
     {
+        if (!IsInDictationFolder(filePath)) return false;
+
+        FileStream stream;
         try
         {
-            var info = new FileInfo(path);
-            return info.Exists && (info.Attributes & FileAttributes.ReparsePoint) == 0;
+            stream = OpenDictationFile(filePath!, createNew: false);
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
         {
             return false;
         }
+
+        using (stream) WriteAppend(stream, text);
+        return true;
     }
 
-    public static void Append(string filePath, string text)
+    private static void WriteAppend(FileStream stream, string text)
     {
-        Directory.CreateDirectory(DictationFolder);
-        File.AppendAllText(filePath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {text}{Environment.NewLine}");
+        stream.Seek(0, SeekOrigin.End);
+        using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), 1024, leaveOpen: true);
+        writer.Write($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {text}{Environment.NewLine}");
+        writer.Flush();
     }
+
+    private static bool IsDictationFileName(string fileName)
+    {
+        if (!fileName.StartsWith("Dictation-", StringComparison.Ordinal) || !fileName.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var stem = fileName["Dictation-".Length..^".txt".Length];
+        const int timestampLength = 19;
+        if (stem.Length > timestampLength && stem[timestampLength] == '-' &&
+            int.TryParse(stem[(timestampLength + 1)..], out var suffix) && suffix is >= 2 and <= 100)
+            stem = stem[..timestampLength];
+
+        return stem.Length == timestampLength && DateTime.TryParseExact(stem, "yyyy-MM-dd_HH-mm-ss", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out _);
+    }
+
+    private static FileStream OpenDictationFile(string path, bool createNew)
+    {
+        const uint GenericWrite = 0x40000000;
+        const uint ShareRead = 0x00000001;
+        const uint CreateNew = 1;
+        const uint OpenExisting = 3;
+        const uint OpenReparsePoint = 0x00200000;
+
+        var handle = CreateFileW(path, GenericWrite, ShareRead, IntPtr.Zero,
+            createNew ? CreateNew : OpenExisting, OpenReparsePoint, IntPtr.Zero);
+        if (handle.IsInvalid)
+        {
+            var error = Marshal.GetLastWin32Error();
+            handle.Dispose();
+            if (createNew && error is 80 or 183)
+                throw new IOException("Dictation file name is already taken.");
+            throw new Win32Exception(error);
+        }
+
+        try
+        {
+            if (!GetFileInformationByHandle(handle, out var info))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+
+            const uint DirectoryAttribute = 0x00000010;
+            const uint ReparsePointAttribute = 0x00000400;
+            if ((info.FileAttributes & (DirectoryAttribute | ReparsePointAttribute)) != 0 || info.NumberOfLinks != 1)
+                throw new IOException("Dictation path isn't a plain, single-link file.");
+
+            return new FileStream(handle, FileAccess.Write);
+        }
+        catch
+        {
+            handle.Dispose();
+            throw;
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ByHandleFileInformation
+    {
+        public uint FileAttributes;
+        public System.Runtime.InteropServices.ComTypes.FILETIME CreationTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastAccessTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastWriteTime;
+        public uint VolumeSerialNumber;
+        public uint FileSizeHigh;
+        public uint FileSizeLow;
+        public uint NumberOfLinks;
+        public uint FileIndexHigh;
+        public uint FileIndexLow;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "CreateFileW")]
+    private static extern SafeFileHandle CreateFileW(string fileName, uint desiredAccess, uint shareMode,
+        IntPtr securityAttributes, uint creationDisposition, uint flagsAndAttributes, IntPtr templateFile);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandle(SafeFileHandle file, out ByHandleFileInformation information);
 }

@@ -511,13 +511,20 @@ public partial class MainWindow : Window
 
         var text = dialog.CapturedText;
         var path = _settings.DictationFilePath;
-        if (!SpeechToText.IsInDictationFolder(path) || !SpeechToText.IsPlainFile(path))
+        try
         {
-            path = SpeechToText.CreateNewFile();
-            _settings.DictationFilePath = path;
-            _settings.Save();
+            if (!SpeechToText.IsInDictationFolder(path) || !SpeechToText.TryAppend(path, text))
+            {
+                path = SpeechToText.CreateNewFileWithText(text);
+                _settings.DictationFilePath = path;
+                _settings.Save();
+            }
         }
-        SpeechToText.Append(path, text);
+        catch
+        {
+            ShowOneShotLabel("Dictation wasn't saved", "Check local app-data storage and try again.");
+            return;
+        }
 
         const int titleLimit = 60;
         var title = text.Length > titleLimit ? text[..titleLimit] + "…" : text;
