@@ -59,6 +59,9 @@ public class WidgetSettings
     // Off = the notification label shows only which app sent it, never the
     // message text itself (2FA codes, message previews…).
     public bool ShowNotificationText { get; set; } = true;
+    // Speaks a short welcome using the local account name when it is a
+    // simple, safe-to-say name. The user can disable it in Privacy.
+    public bool SpeakGreeting { get; set; } = true;
     // Which figure the widget shows: "keeper" or "lady" - picked from the
     // right-click menu's "Avatar" submenu.
     public string Avatar { get; set; } = "keeper";

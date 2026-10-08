@@ -459,6 +459,12 @@ files are double-click launchers for those scripts.
   Sudoku saves are bounded JSON deserialized into fixed data classes and
   validated before use. Neither file is passed to a script host, evaluator,
   shell command or dynamic assembly loader.
+- **Startup greeting stays local.** The optional welcome uses Windows' local
+  speech synthesis and the local account's full name when one is set; if it
+  differs, the short logon name is spoken too. Domain accounts use the short
+  logon name without contacting a domain controller. Names are filtered and
+  never stored. Turn it off under right-click → Privacy if speaking names
+  aloud isn't appropriate.
 - **No global input hooks.** The tray icon uses a WPF message callback on its
   own hidden window for tray clicks and Explorer restarts. It is not a global
   keyboard or mouse hook, and it accepts callbacks only for CloClo's tray ID.

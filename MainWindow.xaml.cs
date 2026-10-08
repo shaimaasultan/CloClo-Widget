@@ -25,6 +25,7 @@ public partial class MainWindow : Window
     private DispatcherTimer? _batteryTimer;
     private DispatcherTimer? _idleTimer;
     private DispatcherTimer? _weatherTimer;
+    private DispatcherTimer? _greetingTimer;
     // "awake", "asleep", or "workout" — see UpdateActivityState.
     private string _activityState = "awake";
     // When the current unbroken stretch of activity began — reset every
@@ -190,6 +191,12 @@ public partial class MainWindow : Window
             // SystemEvents holds its handlers in a static list, so leaving this
             // one attached would keep the whole window alive past close.
             Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+            if (_greetingTimer != null)
+            {
+                _greetingTimer.Stop();
+                _greetingTimer.Tick -= GreetingTimer_Tick;
+                _greetingTimer = null;
+            }
             SaveWindowPosition();
             _avatarWindow?.Close();
         };
@@ -226,6 +233,7 @@ public partial class MainWindow : Window
         SetupForegroundTracking();
         SetupBatteryTimer();
         SetupIdleTimer();
+        QueueGreeting();
 
         ApplyDisplaySettings();
         RefreshBattery();
@@ -244,6 +252,33 @@ public partial class MainWindow : Window
     private async Task RefreshWeatherAsync()
     {
         Keeper.SetWeather(await WeatherService.GetCurrentAsync(_settings.Latitude, _settings.Longitude));
+    }
+
+    private void QueueGreeting()
+    {
+        if (!_settings.SpeakGreeting) return;
+        _greetingTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _greetingTimer.Tick += GreetingTimer_Tick;
+        _greetingTimer.Start();
+    }
+
+    private void GreetingTimer_Tick(object? sender, EventArgs e)
+    {
+        _greetingTimer?.Stop();
+        if (_greetingTimer != null) _greetingTimer.Tick -= GreetingTimer_Tick;
+        _greetingTimer = null;
+        if (_settings.SpeakGreeting && IsLoaded)
+            SpeechReader.Speak(BuildGreeting());
+    }
+
+    private static string BuildGreeting()
+    {
+        var displayName = UserAccountName.GetDisplayName();
+        var userName = UserAccountName.GetUserName();
+        if (displayName != null && userName != null &&
+            !string.Equals(displayName, userName, StringComparison.OrdinalIgnoreCase))
+            return $"Hi, {displayName}, also known as {userName}.";
+        return $"Hi, {displayName ?? userName ?? "there"}.";
     }
 
     // "Current session" (tried first) turned out to be Windows' own guess
@@ -1341,6 +1376,7 @@ public partial class MainWindow : Window
         {
             Item("Hide from screen sharing", ToggleHideFromScreenCapture, isChecked: _settings.HideFromScreenCapture),
             Item("Show notification text", ToggleNotificationText, isChecked: _settings.ShowNotificationText),
+            Item("Speak greeting and account name on startup", ToggleSpeakGreeting, isChecked: _settings.SpeakGreeting),
         });
 
     private void ToggleHideFromScreenCapture()
@@ -1360,6 +1396,18 @@ public partial class MainWindow : Window
         _settings.ShowNotificationText = !_settings.ShowNotificationText;
         _settings.Save();
         if (_watchingNotifications) _ = RefreshWatched();
+    }
+
+    private void ToggleSpeakGreeting()
+    {
+        _settings.SpeakGreeting = !_settings.SpeakGreeting;
+        _settings.Save();
+        if (!_settings.SpeakGreeting && _greetingTimer != null)
+        {
+            _greetingTimer.Stop();
+            _greetingTimer.Tick -= GreetingTimer_Tick;
+            _greetingTimer = null;
+        }
     }
 
     // Opened by Explorer's full path with the folder as an argument, not by
