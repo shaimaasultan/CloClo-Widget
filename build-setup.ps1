@@ -43,6 +43,47 @@ $dotnetExe = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'dotnet\do
 $appDir = Join-Path $root 'obj\setup\app'
 $distDir = Join-Path $root 'dist'
 
+function Reset-SafeBuildDirectory([string]$path, [string]$expectedParent, [string]$projectRoot) {
+    $fullPath = [IO.Path]::GetFullPath($path).TrimEnd('\')
+    $fullParent = [IO.Path]::GetFullPath($expectedParent).TrimEnd('\')
+    $fullRoot = [IO.Path]::GetFullPath($projectRoot).TrimEnd('\')
+    if ([IO.Path]::GetDirectoryName($fullPath).TrimEnd('\') -ine $fullParent -or
+        -not $fullParent.StartsWith($fullRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to clean a build directory outside the project: $fullPath"
+    }
+
+    # Check every existing component from the target through the project root,
+    # then inspect descendants without following links.
+    $current = $fullPath
+    while ($current -and $current.Length -ge $fullRoot.Length) {
+        if (Test-Path -LiteralPath $current) {
+            $item = Get-Item -LiteralPath $current -Force
+            if (-not $item.PSIsContainer) { throw "Refusing to clean a path that isn't a directory: $current" }
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw "Refusing to clean a build path containing a junction or symbolic link: $current"
+            }
+        }
+        if ($current -ieq $fullRoot) { break }
+        $current = [IO.Path]::GetDirectoryName($current)
+    }
+    if ($current -ine $fullRoot) { throw "Build directory isn't inside the project root: $fullPath" }
+
+    if (Test-Path -LiteralPath $fullPath) {
+        $pending = New-Object System.Collections.Generic.Stack[string]
+        $pending.Push($fullPath)
+        while ($pending.Count) {
+            foreach ($item in Get-ChildItem -LiteralPath $pending.Pop() -Force) {
+                if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                    throw "Refusing to clean build output containing a junction or symbolic link: $($item.FullName)"
+                }
+                if ($item.PSIsContainer) { $pending.Push($item.FullName) }
+            }
+        }
+        Remove-Item -LiteralPath $fullPath -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $fullPath -Force | Out-Null
+}
+
 try {
     if (([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
             [Security.Principal.WindowsBuiltInRole]::Administrator) -and
@@ -84,7 +125,7 @@ try {
 
     # ------------------------------------------------------------ 1. CloClo
     Write-Host "`n1/3 Building CloClo..." -ForegroundColor Cyan
-    if (Test-Path -LiteralPath $appDir) { Remove-Item -LiteralPath $appDir -Recurse -Force }
+    Reset-SafeBuildDirectory $appDir ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($appDir))) $root
     & $dotnetExe publish (Join-Path $root 'CloCloWidget.csproj') @common -r win-x64 --self-contained true `
         -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=false -p:DebugType=none -o $appDir $signArg `
         "-p:Version=$version"   # a rising file version, so Windows Installer replaces an older exe
@@ -114,6 +155,16 @@ try {
         $sig = Get-AuthenticodeSignature -LiteralPath $f
         $who = if ($sig.SignerCertificate) { "$($sig.SignerCertificate.Subject) ($($sig.SignerCertificate.Thumbprint))" } else { 'not signed' }
         Write-Host ("{0,-28} {1,-12} {2}" -f (Split-Path $f -Leaf), $sig.Status, $who)
+
+        if ($CertThumbprint) {
+            if ($sig.Status -notin 'Valid', 'UnknownError', 'NotTrusted' -or
+                -not $sig.SignerCertificate -or
+                $sig.SignerCertificate.Thumbprint -ine $CertThumbprint) {
+                throw "$($f.FullName) doesn't have an intact signature from the requested certificate $CertThumbprint (status: $($sig.Status))."
+            }
+        } elseif ($sig.Status -ne 'NotSigned') {
+            throw "$($f.FullName) was expected to be unsigned, but its signature status is $($sig.Status)."
+        }
     }
     Write-Host ''
     Write-Host "Setup: $out" -ForegroundColor Green

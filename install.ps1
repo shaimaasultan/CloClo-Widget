@@ -97,6 +97,49 @@ function Stop-RunningWidget {
     }
 }
 
+# Refuse to clean a path that resolves outside its intended parent or has a
+# junction/symlink anywhere below the project/install root. This prevents a
+# redirected build-output directory (or a link inside it) from making cleanup
+# recurse into unrelated files.
+function Assert-SafeOutputDirectory([string]$path, [string]$parent) {
+    $fullPath = [IO.Path]::GetFullPath($path).TrimEnd('\')
+    $fullParent = [IO.Path]::GetFullPath($parent).TrimEnd('\')
+    if ([IO.Path]::GetDirectoryName($fullPath).TrimEnd('\') -ine $fullParent) {
+        throw "Refusing to clean output outside its expected parent: $fullPath"
+    }
+    $current = $fullPath
+    while ($current -and $current.Length -ge $fullParent.Length) {
+        if (Test-Path -LiteralPath $current) {
+            $item = Get-Item -LiteralPath $current -Force
+            if (-not $item.PSIsContainer) { throw "Refusing to clean a path that isn't a directory: $current" }
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw "Refusing to clean a directory that is a junction or symbolic link: $current"
+            }
+        }
+        if ($current -ieq $fullParent) { break }
+        $current = [IO.Path]::GetDirectoryName($current)
+    }
+    if ($current -ine $fullParent) { throw "Output path isn't inside its expected parent: $fullPath" }
+    if (Test-Path -LiteralPath $fullPath) {
+        $pending = New-Object System.Collections.Generic.Stack[string]
+        $pending.Push($fullPath)
+        while ($pending.Count) {
+            foreach ($item in Get-ChildItem -LiteralPath $pending.Pop() -Force) {
+                if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                    throw "Refusing to clean output containing a junction or symbolic link: $($item.FullName)"
+                }
+                if ($item.PSIsContainer) { $pending.Push($item.FullName) }
+            }
+        }
+    }
+}
+
+function Reset-SafeOutputDirectory([string]$path, [string]$parent) {
+    Assert-SafeOutputDirectory $path $parent
+    if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
+    New-Item -ItemType Directory -Path $path -Force | Out-Null
+}
+
 function Test-Elevated {
     ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
         [Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -198,6 +241,8 @@ function Get-UninstallEntryScript([string]$hive, [string]$version, [long]$bytes)
 }
 
 if ($Uninstall) {
+    $userInstallParent = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($userDir))
+    Assert-SafeOutputDirectory $userDir $userInstallParent
     Stop-RunningWidget
     Remove-Item $startMenu, $desktop -Force -ErrorAction SilentlyContinue
     Remove-ItemProperty -Path $runKey -Name $runValue -ErrorAction SilentlyContinue
@@ -321,7 +366,7 @@ Stop-RunningWidget
 $publishDir = Join-Path $root 'publish'
 # Emptied first: the two install kinds publish different file sets, and a
 # stale DLL from the other kind must never be installed.
-if (Test-Path $publishDir) { Get-ChildItem $publishDir -Force | Remove-Item -Recurse -Force }
+Reset-SafeOutputDirectory $publishDir $root
 # Per-user: WPF's native DLLs ride inside the exe and get unpacked to %TEMP%
 # (verified at startup, see NativeLibraryCheck.cs). Program Files: they sit
 # next to the exe instead, where only administrators can change them.
@@ -456,12 +501,76 @@ if ($ProgramFiles) {
     # A per-user copy left behind would still be the one anything else
     # (old shortcuts, "Start with Windows") points at.
     if (Test-Path $userDir) {
+        Assert-SafeOutputDirectory $userDir ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($userDir)))
         Remove-Item $userDir -Recurse -Force
         Write-Host "Removed the previous per-user copy."
     }
 } else {
-    New-Item -ItemType Directory -Force -Path $installDir | Out-Null
-    foreach ($f in $files) { Copy-Item $f.FullName (Join-Path $installDir $f.Name) -Force }
+    $installParent = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($userDir))
+    $stageDir = $userDir + '.new'
+    $backupDir = $userDir + '.old'
+    Assert-SafeOutputDirectory $userDir $installParent
+    Assert-SafeOutputDirectory $stageDir $installParent
+    Assert-SafeOutputDirectory $backupDir $installParent
+
+    # Recover a prior interrupted swap before preparing the next one.
+    if (-not (Test-Path -LiteralPath $userDir) -and (Test-Path -LiteralPath $backupDir)) {
+        Move-Item -LiteralPath $backupDir -Destination $userDir
+    } elseif (Test-Path -LiteralPath $backupDir) {
+        Remove-Item -LiteralPath $backupDir -Recurse -Force
+    }
+
+    Reset-SafeOutputDirectory $stageDir $installParent
+    try {
+        foreach ($f in $files) { Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $stageDir $f.Name) }
+        $stagedEntries = @(Get-ChildItem -LiteralPath $stageDir -Force)
+        if ($stagedEntries.Count -ne $files.Count -or @($stagedEntries | Where-Object { $_.PSIsContainer }).Count) {
+            throw 'The staged per-user install has an unexpected file set.'
+        }
+        foreach ($f in $files) {
+            $staged = Join-Path $stageDir $f.Name
+            if (-not (Test-Path -LiteralPath $staged -PathType Leaf) -or
+                (Get-FileHash -LiteralPath $staged -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash) {
+                throw "The staged per-user file '$($f.Name)' doesn't match the build."
+            }
+        }
+    } catch {
+        Remove-Item -LiteralPath $stageDir -Recurse -Force -ErrorAction SilentlyContinue
+        throw
+    }
+
+    $movedOldInstall = $false
+    if (Test-Path -LiteralPath $userDir) {
+        Move-Item -LiteralPath $userDir -Destination $backupDir
+        $movedOldInstall = $true
+    }
+    try {
+        Move-Item -LiteralPath $stageDir -Destination $userDir
+        $installedEntries = @(Get-ChildItem -LiteralPath $userDir -Force)
+        if ($installedEntries.Count -ne $files.Count -or @($installedEntries | Where-Object { $_.PSIsContainer }).Count) {
+            throw 'The installed per-user folder has an unexpected file set.'
+        }
+        foreach ($f in $files) {
+            $installedFile = Join-Path $userDir $f.Name
+            if (-not (Test-Path -LiteralPath $installedFile -PathType Leaf) -or
+                (Get-FileHash -LiteralPath $installedFile -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash) {
+                throw "The installed per-user file '$($f.Name)' doesn't match the build."
+            }
+        }
+    } catch {
+        if (Test-Path -LiteralPath $userDir) {
+            Assert-SafeOutputDirectory $userDir $installParent
+            Remove-Item -LiteralPath $userDir -Recurse -Force
+        }
+        if ($movedOldInstall -and (Test-Path -LiteralPath $backupDir)) {
+            Move-Item -LiteralPath $backupDir -Destination $userDir
+        }
+        throw
+    }
+    if (Test-Path -LiteralPath $backupDir) {
+        try { Remove-Item -LiteralPath $backupDir -Recurse -Force }
+        catch { Write-Warning "The new install is active, but the old backup remains at ${backupDir}: $($_.Exception.Message)" }
+    }
     if (Test-Path $machineDir) {
         Write-Warning "A Program Files copy also exists in $machineDir. Remove it with: .\install.ps1 -Uninstall"
     }
@@ -474,7 +583,7 @@ $differs = @($files | Where-Object {
     $inst = Join-Path $installDir $_.Name
     -not (Test-Path -LiteralPath $inst) -or (Get-FileHash -LiteralPath $inst -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
 } | ForEach-Object Name) + @($present | Where-Object { $files.Name -notcontains $_.Name } | ForEach-Object Name)
-if ($differs.Count) { Write-Warning "In $installDir these don't match what was built: $($differs -join ', ')" }
+if ($differs.Count) { throw "Install verification failed in $installDir; files differ from the build: $($differs -join ', ')" }
 else { Write-Host "Checked: $installDir holds exactly the $($files.Count) files that were built." }
 
 # The Installed apps entry, in the user's own registry for both install
