@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
@@ -24,6 +25,13 @@ namespace CloCloWidget;
 // WPF animation here, with the same durations, delays and easing.
 public partial class KeeperView : System.Windows.Controls.UserControl
 {
+    private sealed class TextContrastState
+    {
+        public bool UsesDarkText { get; set; }
+        public bool? PendingDarkText { get; set; }
+        public int PendingSamples { get; set; }
+    }
+
     // CSS's own ease-in-out / ease-out curves, so motion feels the same.
     private static readonly KeySpline EaseInOut = new(0.42, 0, 0.58, 1);
     private static readonly KeySpline EaseOut = new(0, 0, 0.58, 1);
@@ -70,6 +78,8 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     private readonly DispatcherTimer _flashTimer = new();
     // The time and date on the top line, ticking on their own.
     private readonly DispatcherTimer _clockTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private int _contrastTicks;
+    private readonly Dictionary<TextBlock, TextContrastState> _textContrast = new();
 
     public KeeperView()
     {
@@ -90,7 +100,20 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         BuildLoops();
 
         _flashTimer.Tick += (_, _) => { FlashLightning(); ScheduleFlash(); };
-        _clockTimer.Tick += (_, _) => UpdateClock();
+        Loaded += (_, _) =>
+        {
+            _contrastTicks = 0;
+            UpdateTextContrast();
+        };
+        _clockTimer.Tick += (_, _) =>
+        {
+            UpdateClock();
+            if (++_contrastTicks >= 2)
+            {
+                _contrastTicks = 0;
+                UpdateTextContrast();
+            }
+        };
         UpdateClock();
         _clockTimer.Start();
 
@@ -430,6 +453,104 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         if (ClockTime.Text != time) ClockTime.Text = time;
         if (ClockDate.Text != date) ClockDate.Text = date;
     }
+
+    // Sample one pixel behind each label group, not the widget itself: the
+    // layered-window BitBlt used by NativeScreen.ColorAt leaves transparent
+    // WPF windows out. No screenshot or sampled color is retained.
+    private void UpdateTextContrast()
+    {
+        if (!IsLoaded) return;
+
+        ApplyTextContrast(DateTimeLine, DateTimeLine, new Point(2, DateTimeLine.ActualHeight / 2));
+        ApplyTextContrast(StopwatchLabel, StopwatchLabel, new Point(StopwatchLabel.ActualWidth + 3, StopwatchLabel.ActualHeight / 2));
+        ApplyTextContrast(Temp, Temp, new Point(2, Temp.ActualHeight / 2));
+        ApplyTextContrast(Place, Place, new Point(2, Place.ActualHeight / 2));
+        ApplyTextContrast(BatteryPercent, BatteryPercent, new Point(BatteryPercent.ActualWidth + 3, BatteryPercent.ActualHeight / 2));
+        ApplyTextContrast(BatteryBolt, BatteryPercent, new Point(BatteryPercent.ActualWidth + 3, BatteryPercent.ActualHeight / 2));
+        ApplyTextContrast(BatteryTime, BatteryTime, new Point(BatteryTime.ActualWidth + 3, BatteryTime.ActualHeight / 2));
+
+        var iconStyle = (Style)FindResource("IconGlyph");
+        var iconBackground = TrySampleBackground(MediaBar, new Point(2, MediaBar.ActualHeight / 2));
+        if (iconBackground is null) return;
+        foreach (var icon in MediaBar.Children.OfType<Grid>())
+        {
+            foreach (var text in icon.Children.OfType<TextBlock>())
+            {
+                if (ReferenceEquals(text.Style, iconStyle)) ApplyTextContrast(text, iconBackground.Value);
+            }
+        }
+    }
+
+    private void ApplyTextContrast(TextBlock target, FrameworkElement sampleFrom, Point localSamplePoint)
+    {
+        if (!sampleFrom.IsVisible || sampleFrom.ActualWidth <= 0 || sampleFrom.ActualHeight <= 0) return;
+        try
+        {
+            var screenPoint = sampleFrom.PointToScreen(localSamplePoint);
+            var background = NativeScreen.ColorAt((int)Math.Round(screenPoint.X), (int)Math.Round(screenPoint.Y));
+            ApplyTextContrast(target, background);
+        }
+        catch
+        {
+            // Keep the last usable contrast if the element has no screen point.
+        }
+    }
+
+    private Color? TrySampleBackground(FrameworkElement sampleFrom, Point localSamplePoint)
+    {
+        if (!sampleFrom.IsVisible || sampleFrom.ActualWidth <= 0 || sampleFrom.ActualHeight <= 0) return null;
+        try
+        {
+            var screenPoint = sampleFrom.PointToScreen(localSamplePoint);
+            return NativeScreen.ColorAt((int)Math.Round(screenPoint.X), (int)Math.Round(screenPoint.Y));
+        }
+        catch { return null; }
+    }
+
+    private void ApplyTextContrast(TextBlock target, Color background)
+    {
+        if (!_textContrast.TryGetValue(target, out var state))
+        {
+            state = new TextContrastState { UsesDarkText = IsWhiteBackground(background) };
+            _textContrast.Add(target, state);
+            SetTextContrastStyle(target, state.UsesDarkText);
+            return;
+        }
+
+        // Require two consecutive readings before switching, which filters
+        // transient changes from animation or another window moving.
+        var desiredStyle = IsWhiteBackground(background);
+
+        if (desiredStyle == state.UsesDarkText)
+        {
+            state.PendingDarkText = null;
+            state.PendingSamples = 0;
+            return;
+        }
+
+        if (state.PendingDarkText == desiredStyle) state.PendingSamples++;
+        else
+        {
+            state.PendingDarkText = desiredStyle;
+            state.PendingSamples = 1;
+        }
+        if (state.PendingSamples < 2) return;
+
+        state.UsesDarkText = desiredStyle;
+        state.PendingDarkText = null;
+        state.PendingSamples = 0;
+        SetTextContrastStyle(target, state.UsesDarkText);
+    }
+
+    private void SetTextContrastStyle(TextBlock target, bool useDarkText)
+    {
+        target.Foreground = (Brush)FindResource(useDarkText ? "BlackText" : "WhiteText");
+        target.Effect = (Effect)FindResource(useDarkText ? "TextHalo" : "TextShadow");
+    }
+
+    private static bool IsWhiteBackground(Color color) =>
+        color.R >= 228 && color.G >= 228 && color.B >= 228 &&
+        Math.Max(color.R, Math.Max(color.G, color.B)) - Math.Min(color.R, Math.Min(color.G, color.B)) <= 18;
 
     private void ApplySky()
     {

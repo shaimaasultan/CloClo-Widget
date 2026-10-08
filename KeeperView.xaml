@@ -20,6 +20,8 @@
         <SolidColorBrush x:Key="Metal3" Color="#8a6a2f" />
         <SolidColorBrush x:Key="Face" Color="#ede3ce" />
         <SolidColorBrush x:Key="Ink" Color="#241e1a" />
+        <SolidColorBrush x:Key="BlackText" Color="#000000" />
+        <SolidColorBrush x:Key="WhiteText" Color="#ffffff" />
         <SolidColorBrush x:Key="Highlight" Color="#f3d78b" />
         <SolidColorBrush x:Key="Sweater" Color="#b0483d" />
         <SolidColorBrush x:Key="Skin" Color="#e8b98c" />
@@ -48,22 +50,24 @@
         <SolidColorBrush x:Key="Nightgown" Color="#e3a9b9" />
         <SolidColorBrush x:Key="Slippers" Color="#c9b8a6" />
 
-        <!-- The page's text-shadow: 0 1px 3px rgba(0,0,0,.85), 0 0 10px rgba(0,0,0,.55). -->
+        <!-- Dark lettering stays legible on light wallpaper; a soft light
+             halo preserves its edge over darker wallpaper. -->
+        <DropShadowEffect x:Key="TextHalo" Color="White" Direction="270" ShadowDepth="0" BlurRadius="2" Opacity="0.85" />
         <DropShadowEffect x:Key="TextShadow" Color="Black" Direction="270" ShadowDepth="1" BlurRadius="6" Opacity="0.9" />
+        <DropShadowEffect x:Key="BatteryShadow" Color="Black" Direction="270" ShadowDepth="1" BlurRadius="6" Opacity="0.9" />
         <DropShadowEffect x:Key="IconShadow" Color="Black" Direction="270" ShadowDepth="1" BlurRadius="3" Opacity="0.4" />
 
         <Style x:Key="Label" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="Segoe UI" />
-            <Setter Property="Foreground" Value="{StaticResource Face}" />
-            <Setter Property="Effect" Value="{StaticResource TextShadow}" />
+            <Setter Property="Foreground" Value="{StaticResource BlackText}" />
+            <Setter Property="Effect" Value="{StaticResource TextHalo}" />
         </Style>
         <!-- WPF draws emoji in monochrome only (no color-font support), so
-             they take the same cream + shadow as the labels, which keeps
-             them legible on any wallpaper. -->
+             use the same high-contrast ink and halo as the labels. -->
         <Style x:Key="IconGlyph" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="Segoe UI Emoji" />
-            <Setter Property="Foreground" Value="{StaticResource Face}" />
-            <Setter Property="Effect" Value="{StaticResource TextShadow}" />
+            <Setter Property="Foreground" Value="{StaticResource BlackText}" />
+            <Setter Property="Effect" Value="{StaticResource TextHalo}" />
             <Setter Property="HorizontalAlignment" Value="Center" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
@@ -381,7 +385,7 @@
 
         <!-- ===== battery, top-left ===== -->
         <Canvas x:Name="Battery" Visibility="Collapsed">
-            <Canvas Effect="{StaticResource TextShadow}">
+            <Canvas Effect="{StaticResource BatteryShadow}">
                 <Border Canvas.Left="8" Canvas.Top="18" Width="15" Height="8" BorderBrush="{StaticResource Face}" BorderThickness="1.2" CornerRadius="2" />
                 <Rectangle Canvas.Left="23.3" Canvas.Top="21.2" Width="1.5" Height="3" RadiusX="0.7" RadiusY="0.7" Fill="{StaticResource Face}" />
                 <Rectangle x:Name="BatteryFill" Canvas.Left="10.2" Canvas.Top="20.2" Width="2" Height="3.6" RadiusX="1" RadiusY="1" Fill="{StaticResource Face}" />
@@ -426,8 +430,8 @@
              ListIconRect and LabelBodyRect must stay in sync with this ===== -->
         <Canvas x:Name="NowPlaying" Visibility="Collapsed">
             <Rectangle Canvas.Left="3" Canvas.Top="230" Width="144" Height="36" RadiusX="9" RadiusY="9" Fill="#66000000" />
-            <TextBlock x:Name="NowPlayingNote" Canvas.Left="9" Canvas.Top="235" Text="♪" FontFamily="Segoe UI Symbol" FontSize="10"
-                       Foreground="{StaticResource Face}" Opacity="0.85" />
+                <TextBlock x:Name="NowPlayingNote" Canvas.Left="9" Canvas.Top="235" Text="♪" FontFamily="Segoe UI Symbol" FontSize="10"
+                       Foreground="{StaticResource Face}" Effect="{StaticResource TextShadow}" Opacity="0.85" />
             <Image x:Name="NowPlayingIcon" Canvas.Left="9" Canvas.Top="235" Width="15" Height="15" Stretch="UniformToFill" Visibility="Collapsed">
                 <Image.Clip><RectangleGeometry Rect="0,0,15,15" RadiusX="3" RadiusY="3" /></Image.Clip>
             </Image>
@@ -441,7 +445,7 @@
                     </LinearGradientBrush>
                 </Canvas.OpacityMask>
                 <TextBlock x:Name="NowPlayingTitle" Canvas.Top="-0.45" FontFamily="Segoe UI" FontSize="11" FontWeight="SemiBold"
-                           Foreground="{StaticResource Face}">
+                           Foreground="{StaticResource Face}" Effect="{StaticResource TextShadow}">
                     <TextBlock.RenderTransform><TranslateTransform /></TextBlock.RenderTransform>
                 </TextBlock>
             </Canvas>
@@ -455,14 +459,14 @@
                     </LinearGradientBrush>
                 </Canvas.OpacityMask>
                 <TextBlock x:Name="NowPlayingSubtitle" Canvas.Top="-0.38" FontFamily="Segoe UI" FontSize="9.5"
-                           Foreground="{StaticResource Face}" Opacity="0.8">
+                           Foreground="{StaticResource Face}" Effect="{StaticResource TextShadow}" Opacity="0.8">
                     <TextBlock.RenderTransform><TranslateTransform /></TextBlock.RenderTransform>
                 </TextBlock>
             </Canvas>
             <TextBlock x:Name="ListButton" Canvas.Left="115" Canvas.Top="233.5" Text="☰" FontFamily="Segoe UI Symbol" FontSize="9"
-                       Foreground="{StaticResource Face}" Opacity="0.8" Visibility="Collapsed" />
+                       Foreground="{StaticResource Face}" Effect="{StaticResource TextShadow}" Opacity="0.8" Visibility="Collapsed" />
             <TextBlock Canvas.Left="130" Canvas.Top="233.4" Text="⏸" FontFamily="Segoe UI Symbol" FontSize="10"
-                       Foreground="{StaticResource Face}" Opacity="0.8" />
+                       Foreground="{StaticResource Face}" Effect="{StaticResource TextShadow}" Opacity="0.8" />
         </Canvas>
     </Canvas>
 </UserControl>
