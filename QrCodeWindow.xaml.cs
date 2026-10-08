@@ -16,9 +16,11 @@ public partial class QrCodeWindow : Window
         InitializeComponent();
         SourceTextBox.Text = text;
 
-        var generator = new QRCodeGenerator();
-        var data = generator.CreateQrCode(text, QRCodeGenerator.ECCLevel.Q);
-        var png = new PngByteQRCode(data).GetGraphic(10);
+        byte[] png;
+        using (var generator = new QRCodeGenerator())
+        using (var data = generator.CreateQrCode(text, QRCodeGenerator.ECCLevel.Q))
+        using (var qrCode = new PngByteQRCode(data))
+            png = qrCode.GetGraphic(10);
 
         var bitmap = new BitmapImage();
         using (var stream = new MemoryStream(png))

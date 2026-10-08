@@ -22,9 +22,13 @@ public static class VolumeControl
         {
             var vol = OpenDefaultEndpointVolume();
             if (vol == null) return null;
-            vol.GetMasterVolumeLevelScalar(out var level);
-            vol.GetMute(out var muted);
-            return new State(level, muted);
+            try
+            {
+                vol.GetMasterVolumeLevelScalar(out var level);
+                vol.GetMute(out var muted);
+                return new State(level, muted);
+            }
+            finally { ReleaseComObject(vol); }
         }
         catch
         {
@@ -39,12 +43,15 @@ public static class VolumeControl
             var vol = OpenDefaultEndpointVolume();
             if (vol == null) return null;
 
-            vol.GetMute(out var muted);
-            var eventContext = Guid.Empty;
-            vol.SetMute(!muted, ref eventContext);
-
-            vol.GetMasterVolumeLevelScalar(out var level);
-            return new State(level, !muted);
+            try
+            {
+                vol.GetMute(out var muted);
+                var eventContext = Guid.Empty;
+                vol.SetMute(!muted, ref eventContext);
+                vol.GetMasterVolumeLevelScalar(out var level);
+                return new State(level, !muted);
+            }
+            finally { ReleaseComObject(vol); }
         }
         catch
         {
@@ -59,12 +66,26 @@ public static class VolumeControl
     private static IAudioEndpointVolume? OpenDefaultEndpointVolume()
     {
         var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
-        var hr = enumerator.GetDefaultAudioEndpoint(ERender, ERoleMultimedia, out var device);
-        if (hr != 0 || device == null) return null;
+        IMMDevice? device = null;
+        try
+        {
+            var hr = enumerator.GetDefaultAudioEndpoint(ERender, ERoleMultimedia, out var endpoint);
+            device = endpoint;
+            if (hr != 0 || device == null) return null;
+            var iid = typeof(IAudioEndpointVolume).GUID;
+            hr = device.Activate(ref iid, ClsctxAll, IntPtr.Zero, out var vol);
+            return hr == 0 ? vol : null;
+        }
+        finally
+        {
+            ReleaseComObject(device);
+            ReleaseComObject(enumerator);
+        }
+    }
 
-        var iid = typeof(IAudioEndpointVolume).GUID;
-        hr = device.Activate(ref iid, ClsctxAll, IntPtr.Zero, out var vol);
-        return hr == 0 ? vol : null;
+    private static void ReleaseComObject(object? value)
+    {
+        if (value != null && Marshal.IsComObject(value)) Marshal.FinalReleaseComObject(value);
     }
 
     [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
@@ -37,6 +38,8 @@ public partial class DictationCaptureWindow : Window
     private static readonly Media.Brush InactiveLangBrush = new Media.SolidColorBrush(Media.Color.FromRgb(0x3c, 0x2f, 0x1a));
 
     private string _currentLanguageTag = EnglishLanguageTag;
+    private readonly CancellationTokenSource _lifetime = new();
+    private int _languageSwitchVersion;
     // Switching languages changes the input language (see below) — put
     // back whatever the user had once this window is done.
     private readonly CultureInfo _originalInputLanguage = InputLanguageManager.Current.CurrentInputLanguage;
@@ -49,19 +52,28 @@ public partial class DictationCaptureWindow : Window
         UpdateLanguageHighlight();
         Closed += (_, _) =>
         {
+            _lifetime.Cancel();
+            CloseVoiceTyping();
             try { InputLanguageManager.Current.CurrentInputLanguage = _originalInputLanguage; }
             catch { /* that layout was removed meanwhile */ }
+            _lifetime.Dispose();
         };
         Loaded += async (_, _) =>
         {
+            var token = _lifetime.Token;
             CaptureBox.Focus();
             // Give the window's focus a moment to fully settle before
             // triggering Voice Typing — sending Win+H immediately after
             // Loaded risked it targeting a still-transitioning focus state
             // during testing.
-            await Task.Delay(300);
-            InputLanguageManager.Current.CurrentInputLanguage = CultureInfo.GetCultureInfo(_currentLanguageTag);
-            OpenVoiceTyping();
+            try
+            {
+                await Task.Delay(300, token);
+                if (!IsLoaded) return;
+                InputLanguageManager.Current.CurrentInputLanguage = CultureInfo.GetCultureInfo(_currentLanguageTag);
+                OpenVoiceTyping();
+            }
+            catch (OperationCanceledException) { }
         };
     }
 
@@ -77,13 +89,19 @@ public partial class DictationCaptureWindow : Window
     {
         if (cultureTag == _currentLanguageTag) return;
         _currentLanguageTag = cultureTag;
+        var switchVersion = ++_languageSwitchVersion;
         UpdateLanguageHighlight();
 
         CloseVoiceTyping();
         CaptureBox.Focus();
         InputLanguageManager.Current.CurrentInputLanguage = CultureInfo.GetCultureInfo(cultureTag);
-        await Task.Delay(300);
-        OpenVoiceTyping();
+        try
+        {
+            await Task.Delay(300, _lifetime.Token);
+            if (IsLoaded && switchVersion == _languageSwitchVersion)
+                OpenVoiceTyping();
+        }
+        catch (OperationCanceledException) { }
     }
 
     private void UpdateLanguageHighlight()

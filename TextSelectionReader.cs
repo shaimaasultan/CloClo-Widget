@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Automation;
 
@@ -17,22 +18,44 @@ public static class TextSelectionReader
     [DllImport("user32.dll")] private static extern int GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
 
     private static readonly TimeSpan UiAutomationTimeout = TimeSpan.FromMilliseconds(1500);
+    // UI Automation providers can hang inside a synchronous COM call. A
+    // timeout cannot interrupt that call, so serialize the work and avoid
+    // accumulating additional stuck worker threads on repeated requests.
+    private static readonly SemaphoreSlim UiAutomationGate = new(1, 1);
 
     public static async Task<string?> ReadSelectedTextAsync(IntPtr targetWindow)
     {
         if (targetWindow == IntPtr.Zero || !IsWindow(targetWindow)) return null;
 
         if (GetForegroundWindow() != targetWindow) return null;
-        // Never read out of a password box.
-        if (await Task.Run(IsFocusedPasswordField)) return null;
-
-        var automationTask = Task.Run(() => TryReadViaUiAutomation(targetWindow));
-        if (await Task.WhenAny(automationTask, Task.Delay(UiAutomationTimeout)) == automationTask
-            && !string.IsNullOrEmpty(automationTask.Result))
+        using var timeout = new CancellationTokenSource(UiAutomationTimeout);
+        try
         {
-            return automationTask.Result;
+            var automationTask = Task.Run(async () =>
+            {
+                await UiAutomationGate.WaitAsync(timeout.Token);
+                try
+                {
+                    timeout.Token.ThrowIfCancellationRequested();
+                    if (IsFocusedPasswordField()) return null;
+                    return TryReadViaUiAutomation(targetWindow);
+                }
+                finally
+                {
+                    UiAutomationGate.Release();
+                }
+            });
+            if (await Task.WhenAny(automationTask, Task.Delay(UiAutomationTimeout)) != automationTask)
+            {
+                timeout.Cancel();
+                return null;
+            }
+            return await automationTask;
         }
-        return null;
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
     }
 
     private static bool IsFocusedPasswordField()
@@ -60,5 +83,4 @@ public static class TextSelectionReader
             return null; // not every app implements TextPattern, or implements it well
         }
     }
-
 }

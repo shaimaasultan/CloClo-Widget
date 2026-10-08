@@ -70,10 +70,12 @@ public static class RunningApps
 
     private static string? TryGetAppUserModelId(IntPtr hwnd)
     {
+        IPropertyStore? store = null;
         try
         {
             var iid = typeof(IPropertyStore).GUID;
-            SHGetPropertyStoreForWindow(hwnd, ref iid, out var store);
+            SHGetPropertyStoreForWindow(hwnd, ref iid, out var propertyStore);
+            store = propertyStore;
             var key = PKEY_AppUserModel_ID;
             store.GetValue(ref key, out var value);
             try
@@ -88,6 +90,10 @@ public static class RunningApps
         catch
         {
             return null;
+        }
+        finally
+        {
+            if (store != null && Marshal.IsComObject(store)) Marshal.FinalReleaseComObject(store);
         }
     }
 

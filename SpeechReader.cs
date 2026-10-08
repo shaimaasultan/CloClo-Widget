@@ -18,6 +18,8 @@ public static class SpeechReader
 {
     private static readonly SpeechSynthesizer Synth = new();
     private static readonly MediaPlayer Player = new();
+    private static readonly object PlaybackLock = new();
+    private static PlaybackResources? _playbackResources;
     // Plenty for a highlighted paragraph; an accidental select-all of a huge
     // document would otherwise be synthesized in full, all in memory.
     private const int MaxSpokenChars = 5000;
@@ -36,7 +38,14 @@ public static class SpeechReader
 
     private static void Release()
     {
-        Player.Source = null;
+        PlaybackResources? resources;
+        lock (PlaybackLock)
+        {
+            Player.Source = null;
+            resources = _playbackResources;
+            _playbackResources = null;
+        }
+        resources?.Dispose();
         Finished?.Invoke();
     }
 
@@ -56,6 +65,7 @@ public static class SpeechReader
 
     private static async Task SpeakAsync(string text)
     {
+        var resources = new PlaybackResources();
         try
         {
             var list = new MediaPlaybackList();
@@ -63,18 +73,50 @@ public static class SpeechReader
             {
                 Synth.Voice = voice;
                 var stream = await Synth.SynthesizeTextToStreamAsync(runText);
-                list.Items.Add(new MediaPlaybackItem(MediaSource.CreateFromStream(stream, stream.ContentType)));
+                resources.Own(stream);
+                var source = MediaSource.CreateFromStream(stream, stream.ContentType);
+                resources.Own(source);
+                var item = new MediaPlaybackItem(source);
+                list.Items.Add(item);
             }
-            if (list.Items.Count == 0) return;
+            if (list.Items.Count == 0)
+            {
+                resources.Dispose();
+                return;
+            }
 
-            Player.Source = list;
-            Player.Play();
+            lock (PlaybackLock)
+            {
+                Player.Source = null;
+                _playbackResources?.Dispose();
+                _playbackResources = resources;
+                Player.Source = list;
+                Player.Play();
+            }
         }
         catch
         {
+            resources.Dispose();
             // No matching voice, no audio device, etc. — reading aloud is a
             // bonus on top of the label already showing the text, not worth
             // surfacing a failure for.
+        }
+    }
+
+    private sealed class PlaybackResources : IDisposable
+    {
+        private readonly List<IDisposable> _owned = new();
+        private bool _disposed;
+
+        public void Own(IDisposable resource) => _owned.Add(resource);
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            for (var i = _owned.Count - 1; i >= 0; i--)
+                _owned[i].Dispose();
+            _owned.Clear();
         }
     }
 

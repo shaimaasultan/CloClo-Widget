@@ -12,9 +12,10 @@ public static class AppLauncher
     public static void TryActivate(string? appUserModelId)
     {
         if (string.IsNullOrWhiteSpace(appUserModelId)) return;
+        IApplicationActivationManager? manager = null;
         try
         {
-            var manager = (IApplicationActivationManager)new ApplicationActivationManager();
+            manager = (IApplicationActivationManager)new ApplicationActivationManager();
             manager.ActivateApplication(appUserModelId, string.Empty, ActivateOptions.None, out _);
         }
         catch
@@ -22,6 +23,10 @@ public static class AppLauncher
             // Not every AUMID we see is activatable this way (e.g. a
             // browser's own generic id without a specific PWA registration)
             // — best-effort, nothing to do if it fails.
+        }
+        finally
+        {
+            if (manager != null && Marshal.IsComObject(manager)) Marshal.FinalReleaseComObject(manager);
         }
     }
 
