@@ -1077,6 +1077,7 @@ public partial class MainWindow : Window
         Keeper.SetPlace(_settings.City);
         Keeper.SetAvatar(_settings.Avatar);
         Keeper.SetOutfit(CurrentOutfit);
+        Keeper.SetMotionMode(_settings.MotionMode);
         Keeper.SetSkyOverride(_settings.Sky);
         Keeper.SetEnabledIcons(IconOrder.Where(k => _settings.EnabledIcons.Contains(k)));
     }
@@ -1200,6 +1201,7 @@ public partial class MainWindow : Window
         menu.Items.Add(BuildAvatarMenu());
         menu.Items.Add(BuildSkyMenu());
         menu.Items.Add(BuildIconsMenu());
+        menu.Items.Add(BuildMotionMenu());
         menu.Items.Add(BuildSleepMenu());
         menu.Items.Add(BuildWorkoutMenu());
         menu.Items.Add(Item("Refresh weather", () => _ = RefreshWeatherAsync()));
@@ -1237,6 +1239,21 @@ public partial class MainWindow : Window
 
     private MenuItem BuildSkyMenu() =>
         SubMenu("Weather", SkyOptions.Select(opt => Item(opt.Label, () => SetSky(opt.Value), isChecked: _settings.Sky == opt.Value)));
+
+    private static readonly (string Value, string Label)[] MotionOptions =
+    {
+        ("full", "Full motion"),
+        ("gentle", "Gentle motion"),
+        ("still", "Reduced motion / still"),
+    };
+
+    private MenuItem BuildMotionMenu() =>
+        SubMenu("Motion", MotionOptions.Select(opt => Item(opt.Label, () =>
+        {
+            _settings.MotionMode = opt.Value;
+            _settings.Save();
+            Keeper.SetMotionMode(opt.Value);
+        }, isChecked: _settings.MotionMode == opt.Value)));
 
     private static readonly (string Value, string Label)[] AvatarOptions =
     {

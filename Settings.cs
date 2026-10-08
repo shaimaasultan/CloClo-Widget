@@ -69,6 +69,8 @@ public class WidgetSettings
     // picked from "Avatar" -> "Outfit colour".
     public string KeeperOutfit { get; set; } = "classic";
     public string LadyOutfit { get; set; } = "classic";
+    // Avatar and decorative weather motion: full, gentle, or still.
+    public string MotionMode { get; set; } = "full";
 
     // Two decimals is ~1 km: plenty for weather and a city name, without
     // keeping or sending a precise position.
@@ -128,6 +130,7 @@ public class WidgetSettings
         WindowTop = IsValidWindowCoordinate(WindowTop) ? WindowTop : null;
         Sky = Sky is not null && AllowedSkies.Contains(Sky) ? Sky : "auto";
         Avatar = Avatar is "keeper" or "lady" ? Avatar : "keeper";
+        MotionMode = MotionMode is "full" or "gentle" or "still" ? MotionMode : "full";
         KeeperOutfit = IsAllowedOutfit(KeeperOutfit) ? KeeperOutfit : "classic";
         LadyOutfit = IsAllowedOutfit(LadyOutfit) ? LadyOutfit : "classic";
         SleepAfterMinutes = AllowedSleepIntervals.Contains(SleepAfterMinutes) ? SleepAfterMinutes : 5;

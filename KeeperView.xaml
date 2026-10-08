@@ -362,6 +362,18 @@
             </Viewbox>
         </Canvas>
 
+        <!-- Quiet local-time accents; these remain static in reduced-motion modes. -->
+        <Canvas x:Name="MorningMug" Canvas.Left="119" Canvas.Top="135" Width="15" Height="14" Visibility="Collapsed" IsHitTestVisible="False">
+            <Rectangle Canvas.Left="2" Canvas.Top="4" Width="9" Height="8" RadiusX="1.5" RadiusY="1.5" Fill="#FFF3E2" Stroke="#FF8B5E3C" StrokeThickness="1" />
+            <Path Data="M11,6 C15,5 15,11 11,10" Stroke="#FF8B5E3C" StrokeThickness="1.2" />
+            <Path Data="M4,2 C2,0 5,0 4,0 M8,2 C6,0 9,0 8,0" Stroke="#FFB98054" StrokeThickness="0.8" StrokeStartLineCap="Round" />
+        </Canvas>
+        <Canvas x:Name="EveningBook" Canvas.Left="13" Canvas.Top="139" Width="17" Height="12" Visibility="Collapsed" IsHitTestVisible="False">
+            <Path Data="M0,2 Q4,0 8.5,2 L8.5,11 Q4,9 0,11 Z" Fill="#FFFFE6B8" Stroke="#FF72513D" StrokeThickness="0.8" />
+            <Path Data="M8.5,2 Q13,0 17,2 L17,11 Q13,9 8.5,11 Z" Fill="#FFFFF2D8" Stroke="#FF72513D" StrokeThickness="0.8" />
+            <Line X1="8.5" Y1="2" X2="8.5" Y2="11" Stroke="#FF9A6B4D" StrokeThickness="0.8" />
+        </Canvas>
+
         <!-- ===== text: time and date on top; temperature with the sky in words; place ===== -->
         <!-- Only the time and the date up here, a little larger than the
              other small text, so they read at a glance. -->

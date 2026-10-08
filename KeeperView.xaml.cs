@@ -57,6 +57,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     private string _activityState = "awake";
     private string _avatar = "keeper";
     private string _outfit = "classic";
+    private string _motionMode = "full";
     private readonly string? _shirtName;
 
     // Colour sets for the everyday outfit: the sweater, Keeper's trousers and
@@ -78,6 +79,9 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     private readonly DispatcherTimer _flashTimer = new();
     // The time and date on the top line, ticking on their own.
     private readonly DispatcherTimer _clockTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private DispatcherTimer? _blinkTimer;
+    private DispatcherTimer? _blinkReopenTimer;
+    private DispatcherTimer? _fidgetTimer;
     private int _contrastTicks;
     private readonly Dictionary<TextBlock, TextContrastState> _textContrast = new();
 
@@ -126,6 +130,29 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     // ---------------------------------------------------------------- host API
 
     public void SetPlace(string city) => Place.Text = city;
+
+    public void SetMotionMode(string mode)
+    {
+        var normalized = mode is "full" or "gentle" or "still" ? mode : "full";
+        if (_motionMode == normalized) return;
+        _motionMode = normalized;
+        StopIdleMotionTimers();
+        _wrapBusy = false;
+        ClearWrap();
+        HeadRotate.BeginAnimation(RotateTransform.AngleProperty, null);
+        RightArmShift.BeginAnimation(TranslateTransform.XProperty, null);
+        RightArmShift.BeginAnimation(TranslateTransform.YProperty, null);
+        EyesOpen.Visibility = Visibility.Visible;
+        EyesClosed.Visibility = Visibility.Collapsed;
+        _flashTimer.Stop();
+        foreach (var group in _loops.Keys.ToArray()) SetLoops(group, false);
+        ApplySky();
+        if (_motionMode != "still")
+        {
+            ScheduleBlink();
+            ScheduleFidget();
+        }
+    }
 
     // One of Outfits' keys; anything else falls back to "classic".
     public void SetOutfit(string key)
@@ -325,10 +352,16 @@ public partial class KeeperView : System.Windows.Controls.UserControl
             SetLoops("zzz", sleeping);
             // Dims a touch once asleep — a resting cue that reads even out
             // of the corner of your eye.
-            Stage.BeginAnimation(OpacityProperty, new DoubleAnimation(sleeping ? 0.85 : 1, TimeSpan.FromSeconds(0.6))
+            if (_motionMode == "full")
+                Stage.BeginAnimation(OpacityProperty, new DoubleAnimation(sleeping ? 0.85 : 1, TimeSpan.FromSeconds(0.6))
+                {
+                    EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut },
+                });
+            else
             {
-                EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut },
-            });
+                Stage.BeginAnimation(OpacityProperty, null);
+                Stage.Opacity = sleeping ? 0.85 : 1;
+            }
             RestartAmbient();
         }
 
@@ -452,6 +485,14 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         var date = now.ToString("ddd, " + monthDay, culture);
         if (ClockTime.Text != time) ClockTime.Text = time;
         if (ClockDate.Text != date) ClockDate.Text = date;
+        UpdateTimeDetails(now);
+    }
+
+    private void UpdateTimeDetails(DateTime now)
+    {
+        var awake = _activityState == "awake";
+        MorningMug.Visibility = Show(awake && now.Hour >= 7 && now.Hour < 11);
+        EveningBook.Visibility = Show(awake && now.Hour >= 19 && now.Hour < 22);
     }
 
     // Sample one pixel behind each label group, not the widget itself: the
@@ -574,7 +615,13 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         SetLoops("flakes", kind == "snow");
         SetLoops("leaves", kind == "windy");
         SetLoops("fog", kind == "fog");
-        Fog.BeginAnimation(OpacityProperty, new DoubleAnimation(kind == "fog" ? 1 : 0, TimeSpan.FromSeconds(0.4)));
+        if (_motionMode == "full")
+            Fog.BeginAnimation(OpacityProperty, new DoubleAnimation(kind == "fog" ? 1 : 0, TimeSpan.FromSeconds(0.4)));
+        else
+        {
+            Fog.BeginAnimation(OpacityProperty, null);
+            Fog.Opacity = kind == "fog" ? 1 : 0;
+        }
         ConfigureDrops(kind);
 
         if (kind == "storm") { if (!_flashTimer.IsEnabled) ScheduleFlash(); }
@@ -667,7 +714,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         foreach (var drop in _drops)
         {
             var shift = (TranslateTransform)drop.RenderTransform;
-            if (!raining && !drizzle)
+            if ((!raining && !drizzle) || _motionMode != "full")
             {
                 shift.BeginAnimation(TranslateTransform.YProperty, null);
                 drop.Opacity = 0;
@@ -683,13 +730,14 @@ public partial class KeeperView : System.Windows.Controls.UserControl
 
     private void ScheduleFlash()
     {
+        if (_motionMode != "full" || _sky != "storm") { _flashTimer.Stop(); return; }
         _flashTimer.Interval = TimeSpan.FromMilliseconds(1800 + _random.NextDouble() * 3200);
         _flashTimer.Start();
     }
 
     private void FlashLightning()
     {
-        if (_sky != "storm") return;
+        if (_motionMode != "full" || _sky != "storm") return;
         Flash.BeginAnimation(OpacityProperty, new DoubleAnimation(0.55, 0, TimeSpan.FromSeconds(0.5))
         {
             EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut },
@@ -705,14 +753,19 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     {
         if (_wrapBusy) return;
         ClearWrap();
+        if (_motionMode == "still") return;
         if (_sky == "windy")
         {
-            WrapTranslate.BeginAnimation(TranslateTransform.YProperty, Loop(Keys(2.2, EaseInOut, (0, 0), (0.3, -2), (0.65, -3), (1, 0)), 0));
-            WrapRotate.BeginAnimation(RotateTransform.AngleProperty, Loop(Keys(2.2, EaseInOut, (0, 0), (0.3, -4), (0.65, 2.5), (1, 0)), 0));
+            var scale = _motionMode == "gentle" ? 0.35 : 1;
+            var windyPeriod = _motionMode == "gentle" ? 6.6 : 2.2;
+            WrapTranslate.BeginAnimation(TranslateTransform.YProperty, Loop(Keys(windyPeriod, EaseInOut, (0, 0), (0.3, -2 * scale), (0.65, -3 * scale), (1, 0)), 0));
+            WrapRotate.BeginAnimation(RotateTransform.AngleProperty, Loop(Keys(windyPeriod, EaseInOut, (0, 0), (0.3, -4 * scale), (0.65, 2.5 * scale), (1, 0)), 0));
             return;
         }
         var period = _activityState switch { "asleep" => 5.5, "workout" => 1.6, _ => 3.2 };
-        WrapTranslate.BeginAnimation(TranslateTransform.YProperty, Loop(Keys(period, EaseInOut, (0, 0), (0.5, -3), (1, 0)), 0));
+        if (_motionMode == "gentle") period = Math.Max(period, 6.5);
+        var lift = _motionMode == "gentle" ? -0.8 : -3;
+        WrapTranslate.BeginAnimation(TranslateTransform.YProperty, Loop(Keys(period, EaseInOut, (0, 0), (0.5, lift), (1, 0)), 0));
     }
 
     private void ClearWrap()
@@ -726,6 +779,8 @@ public partial class KeeperView : System.Windows.Controls.UserControl
 
     private void RunWrapOneShot(double seconds, KeySpline spline, params (IAnimatable Target, DependencyProperty Property, (double, double)[] Frames)[] parts)
     {
+        if (_motionMode == "still") return;
+        if (_motionMode == "gentle") seconds *= 1.5;
         if (_sky == "windy") return; // the sway wins, as it did in CSS
         _wrapBusy = true;
         ClearWrap();
@@ -738,19 +793,24 @@ public partial class KeeperView : System.Windows.Controls.UserControl
 
     private void ScheduleBlink()
     {
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(2400 + _random.NextDouble() * 2800) };
+        if (_motionMode == "still") return;
+        _blinkTimer?.Stop();
+        var gentle = _motionMode == "gentle";
+        var timer = _blinkTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(gentle ? 9000 + _random.NextDouble() * 6000 : 2400 + _random.NextDouble() * 2800) };
         timer.Tick += (_, _) =>
         {
             timer.Stop();
+            if (_motionMode == "still") return;
             if (_activityState != "asleep")
             {
                 EyesOpen.Visibility = Visibility.Collapsed;
                 EyesClosed.Visibility = Visibility.Visible;
             }
-            var reopen = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(140) };
+            var reopen = _blinkReopenTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(140) };
             reopen.Tick += (_, _) =>
             {
                 reopen.Stop();
+                if (_motionMode == "still") return;
                 if (_activityState != "asleep")
                 {
                     EyesOpen.Visibility = Visibility.Visible;
@@ -767,14 +827,27 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     // there (awake, not asleep or mid-stretch). Charm, not signal.
     private void ScheduleFidget()
     {
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(15000 + _random.NextDouble() * 25000) };
+        if (_motionMode == "still") return;
+        var gentle = _motionMode == "gentle";
+        var timer = _fidgetTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(gentle ? 55000 + _random.NextDouble() * 35000 : 15000 + _random.NextDouble() * 25000) };
         timer.Tick += (_, _) =>
         {
             timer.Stop();
-            if (_activityState == "awake" && !_wrapBusy) PlayFidget(_random.Next(5));
+            if (_motionMode != "still" && _activityState == "awake" && !_wrapBusy)
+                PlayFidget(gentle ? _random.Next(2, 5) : _random.Next(5));
             ScheduleFidget();
         };
         timer.Start();
+    }
+
+    private void StopIdleMotionTimers()
+    {
+        _blinkTimer?.Stop();
+        _blinkTimer = null;
+        _blinkReopenTimer?.Stop();
+        _blinkReopenTimer = null;
+        _fidgetTimer?.Stop();
+        _fidgetTimer = null;
     }
 
     private void PlayFidget(int which)
@@ -834,7 +907,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
                 ((UIElement)target).Visibility = Show(on);
                 continue;
             }
-            target.BeginAnimation(property, on ? animation : null);
+            target.BeginAnimation(property, on && _motionMode == "full" ? animation : null);
         }
     }
 
