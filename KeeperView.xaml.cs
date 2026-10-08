@@ -208,6 +208,15 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     {
         if (string.IsNullOrEmpty(title))
         {
+            NowPlayingTitle.Text = "";
+            NowPlayingSubtitle.Text = "";
+            FitLine(NowPlayingTitle, LineWidth);
+            FitLine(NowPlayingSubtitle, LineWidth);
+            NowPlayingIcon.Source = null;
+            NowPlayingIcon.Visibility = Visibility.Collapsed;
+            NowPlayingNote.Visibility = Visibility.Visible;
+            SubtitleLine.Visibility = Visibility.Collapsed;
+            ListButton.Visibility = Visibility.Collapsed;
             NowPlaying.Visibility = Visibility.Collapsed;
             return;
         }
@@ -249,10 +258,11 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         try
         {
             var image = new BitmapImage();
+            using var stream = new MemoryStream(bytes);
             image.BeginInit();
             image.CacheOption = BitmapCacheOption.OnLoad;
             image.DecodePixelWidth = 32;
-            image.StreamSource = new MemoryStream(bytes);
+            image.StreamSource = stream;
             image.EndInit();
             image.Freeze();
             return image;

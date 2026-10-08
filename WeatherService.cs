@@ -1,7 +1,6 @@
 using System;
 using System.Globalization;
 using System.Linq;
-using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -16,12 +15,6 @@ public readonly record struct WeatherReading(int Temperature, string Sky, bool I
 // numbers it formats itself.
 public static class WeatherService
 {
-    private static readonly HttpClient Http = new()
-    {
-        Timeout = TimeSpan.FromSeconds(15),
-        MaxResponseContentBufferSize = 1024 * 1024,
-    };
-
     // Wind only gets its own visual when it's the most notable thing
     // happening — under a plain or overcast sky. Rain/snow/storm/fog already
     // read as "bad weather" on their own.
@@ -45,7 +38,7 @@ public static class WeatherService
 
         try
         {
-            using var doc = JsonDocument.Parse(await Http.GetStringAsync(url));
+            using var doc = JsonDocument.Parse(await NetworkClient.Shared.GetStringAsync(url));
             var current = doc.RootElement.GetProperty("current");
             var temp = (int)Math.Round(current.GetProperty("temperature_2m").GetDouble());
             var code = current.GetProperty("weather_code").GetInt32();

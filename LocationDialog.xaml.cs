@@ -1,5 +1,4 @@
 using System;
-using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
@@ -9,12 +8,6 @@ namespace CloCloWidget;
 
 public partial class LocationDialog : Window
 {
-    private static readonly HttpClient Http = new()
-    {
-        Timeout = TimeSpan.FromSeconds(15),
-        MaxResponseContentBufferSize = 1024 * 1024,
-    };
-
     public string ResolvedCity { get; private set; } = "";
     public double ResolvedLat { get; private set; }
     public double ResolvedLon { get; private set; }
@@ -86,7 +79,7 @@ public partial class LocationDialog : Window
         try
         {
             var url = $"https://geocoding-api.open-meteo.com/v1/search?count=1&name={Uri.EscapeDataString(name)}";
-            var json = await Http.GetStringAsync(url);
+            var json = await NetworkClient.Shared.GetStringAsync(url);
             using var doc = JsonDocument.Parse(json);
             if (doc.RootElement.TryGetProperty("results", out var results) && results.GetArrayLength() > 0)
             {

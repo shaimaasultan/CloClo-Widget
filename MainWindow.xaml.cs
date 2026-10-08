@@ -180,14 +180,9 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        // Memory is handed back to Windows once a window opened from the
-        // widget closes (QR code, clipboard history, Sudoku, colour picker...)
-        // or reading aloud ends, instead of whenever the GC next runs.
-        _memoryRelease.Tick += (_, _) => { _memoryRelease.Stop(); ReleaseMemory(); };
-        EventManager.RegisterClassHandler(typeof(Window), UnloadedEvent, new RoutedEventHandler((sender, _) =>
-        {
-            if (!ReferenceEquals(sender, this) && !ReferenceEquals(sender, _avatarWindow)) ScheduleMemoryRelease();
-        }));
+        // Coalesce close events so several tools closing together schedule
+        // one background collection after their references have been cleared.
+        _memoryRelease.Tick += (_, _) => { _memoryRelease.Stop(); _ = Task.Run(ReleaseMemory); };
         SpeechReader.Finished += () => Dispatcher.BeginInvoke(new Action(ScheduleMemoryRelease));
         SourceInitialized += MainWindow_SourceInitialized;
         Loaded += MainWindow_Loaded;
@@ -429,7 +424,7 @@ public partial class MainWindow : Window
     private void ShowSensitive(Window window)
     {
         ScreenCapture.SetExcluded(window, _settings.HideFromScreenCapture);
-        window.Show();
+        ShowToolWindow(window);
     }
 
     // Voice dictation, appended to a running text file rather than just
@@ -444,7 +439,7 @@ public partial class MainWindow : Window
     {
         _watchingNotifications = false;
         var dialog = new DictationCaptureWindow { Owner = this };
-        if (dialog.ShowDialog() != true || string.IsNullOrWhiteSpace(dialog.CapturedText)) return;
+        if (ShowToolDialog(dialog) != true || string.IsNullOrWhiteSpace(dialog.CapturedText)) return;
 
         var text = dialog.CapturedText;
         var path = _settings.DictationFilePath;
@@ -485,7 +480,7 @@ public partial class MainWindow : Window
             }
         }
 
-        new UnitConverterWindow(parsed) { Owner = this }.Show();
+        ShowToolWindow(new UnitConverterWindow(parsed) { Owner = this });
     }
 
     // Eyedropper: live hex preview while hovering anywhere on screen (not
@@ -505,13 +500,14 @@ public partial class MainWindow : Window
         StopColorPicking(); // in case a previous pick session is still running
 
         _colorPickerOverlay = new ColorPickerOverlay();
+        TrackToolWindow(_colorPickerOverlay);
         _colorPickerOverlay.Previewed += color =>
             ShowOneShotLabel(ColorPicker.ToHex(color), "Click to copy, Esc to cancel");
         _colorPickerOverlay.Picked += color =>
         {
             var hex = ColorPicker.ToHex(color);
             ShowOneShotLabel(hex, SafeClipboard.TrySetText(hex) ? "Copied to clipboard" : "Clipboard busy - not copied");
-            new ColorViewerWindow(color) { Owner = this }.Show();
+            ShowToolWindow(new ColorViewerWindow(color) { Owner = this });
             _colorPickerOverlay = null;
         };
         _colorPickerOverlay.Cancelled += () =>
@@ -526,6 +522,20 @@ public partial class MainWindow : Window
     {
         _colorPickerOverlay?.Close();
         _colorPickerOverlay = null;
+    }
+
+    private void TrackToolWindow(Window window) => window.Closed += (_, _) => ScheduleMemoryRelease();
+
+    private void ShowToolWindow(Window window)
+    {
+        TrackToolWindow(window);
+        window.Show();
+    }
+
+    private bool? ShowToolDialog(Window window)
+    {
+        TrackToolWindow(window);
+        return window.ShowDialog();
     }
 
     // "Start new dictation file" menu action — the counterpart to
@@ -911,7 +921,7 @@ public partial class MainWindow : Window
             return;
         }
         _sudoku = new SudokuWindow();
-        _sudoku.Closed += (_, _) => _sudoku = null;
+        _sudoku.Closed += (_, _) => { _sudoku = null; ScheduleMemoryRelease(); };
         _sudoku.Show();
         _sudoku.Activate();
     }
@@ -924,10 +934,6 @@ public partial class MainWindow : Window
 
     private static void ReleaseMemory()
     {
-        GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
-        // Windows and media objects let go of their native parts in
-        // finalizers; a second pass collects what those freed.
-        GC.WaitForPendingFinalizers();
         GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
     }
 
@@ -1416,7 +1422,7 @@ public partial class MainWindow : Window
             var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
             var start = new System.Diagnostics.ProcessStartInfo(explorer) { UseShellExecute = false };
             start.ArgumentList.Add(SpeechToText.DictationFolder);
-            System.Diagnostics.Process.Start(start);
+            using var explorerProcess = System.Diagnostics.Process.Start(start);
         }
         catch
         {
@@ -1434,7 +1440,7 @@ public partial class MainWindow : Window
     private void OpenLocationDialog()
     {
         var dialog = new LocationDialog(_settings.City) { Owner = this };
-        if (dialog.ShowDialog() == true)
+        if (ShowToolDialog(dialog) == true)
         {
             _settings.City = dialog.ResolvedCity;
             _settings.Latitude = dialog.ResolvedLat;

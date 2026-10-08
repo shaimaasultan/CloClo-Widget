@@ -115,7 +115,8 @@ public partial class DictationCaptureWindow : Window
             GetWindowThreadProcessId(hWnd, out var pid);
             try
             {
-                if (Process.GetProcessById(pid).ProcessName == "TextInputHost")
+                using var process = Process.GetProcessById(pid);
+                if (process.ProcessName == "TextInputHost")
                 {
                     target = hWnd;
                     return false; // found it, stop enumerating

@@ -1,6 +1,5 @@
 using System;
 using System.Globalization;
-using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Windows.Devices.Geolocation;
@@ -14,20 +13,6 @@ namespace CloCloWidget;
 // instead of crashing.
 public static class GeoLocation
 {
-    private static readonly HttpClient Http = new()
-    {
-        Timeout = TimeSpan.FromSeconds(15),
-        MaxResponseContentBufferSize = 1024 * 1024,
-    };
-
-    static GeoLocation()
-    {
-        // Nominatim's usage policy requires a real User-Agent or requests
-        // get silently rejected — same "free, no API key" spirit as the
-        // open-meteo forward search LocationDialog already uses.
-        Http.DefaultRequestHeaders.UserAgent.ParseAdd("CloCloWidget/1.0 (desktop weather widget)");
-    }
-
     public static async Task<(double Lat, double Lon)?> GetCurrentAsync()
     {
         try
@@ -54,7 +39,7 @@ public static class GeoLocation
                 // needs — the precise GPS fix never leaves the machine.
                 $"&lat={WidgetSettings.RoundCoordinate(lat).ToString(CultureInfo.InvariantCulture)}" +
                 $"&lon={WidgetSettings.RoundCoordinate(lon).ToString(CultureInfo.InvariantCulture)}&zoom=10";
-            var json = await Http.GetStringAsync(url);
+            var json = await NetworkClient.Shared.GetStringAsync(url);
             using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("address", out var address)) return null;
 

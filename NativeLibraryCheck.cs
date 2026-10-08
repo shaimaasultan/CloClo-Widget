@@ -169,7 +169,7 @@ public static partial class NativeLibraryCheck
         }
         var restart = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false };
         restart.Environment[RetriedVariable] = "1";
-        Process.Start(restart);
+        using var restartedProcess = Process.Start(restart);
         return false;
     }
 
