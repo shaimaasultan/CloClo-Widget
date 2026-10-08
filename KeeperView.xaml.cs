@@ -49,6 +49,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     private string _activityState = "awake";
     private string _avatar = "keeper";
     private string _outfit = "classic";
+    private readonly string? _shirtName;
 
     // Colour sets for the everyday outfit: the sweater, Keeper's trousers and
     // Lady Keeper's skirt. Weather, gym and night clothes keep their own.
@@ -73,6 +74,9 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     public KeeperView()
     {
         InitializeComponent();
+        _shirtName = UserAccountName.GetUserName();
+        WorkoutCountdown.Text = _shirtName ?? string.Empty;
+        WorkoutCountdown.Visibility = Show(!string.IsNullOrEmpty(_shirtName));
         _iconsByKey = new()
         {
             ["youtube"] = IconYoutube, ["spotify"] = IconSpotify, ["bell"] = IconBell, ["search"] = IconSearch,
@@ -291,7 +295,8 @@ public partial class KeeperView : System.Windows.Controls.UserControl
             EyesClosed.Visibility = Show(sleeping);
             HangingArms.Visibility = Show(!working);
             WorkoutArms.Visibility = Show(working);
-            WorkoutCountdown.Visibility = Show(working);
+            WorkoutCountdown.Visibility = Show(working || (state == "awake" && !string.IsNullOrEmpty(_shirtName)));
+            if (!working && state == "awake") WorkoutCountdown.Text = _shirtName ?? string.Empty;
             ApplyOutfit();
 
             SetLoops("zzz", sleeping);

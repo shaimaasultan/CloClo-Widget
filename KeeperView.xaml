@@ -236,10 +236,10 @@
                         <Path Data="M43 74 Q50 81 57 74" Stroke="{StaticResource Paper}" StrokeThickness="1.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
                         <Path Data="M28 122 Q31 125 34 123 Q37 126 40 124 Q43 127 46 124.5 Q50 127.5 54 124.5 Q57 127 60 124 Q63 126 66 123 Q69 125 72 122" Stroke="{StaticResource Paper}" StrokeThickness="1.2" Opacity="0.85" />
                     </Canvas>
-                    <!-- Counts down the break during a workout nudge — right on
-                         the shirt, where a real stopwatch would sit. -->
+                    <!-- Shows the account name on the everyday shirt and the
+                         remaining break time on the gym shirt. -->
                     <TextBlock x:Name="WorkoutCountdown" Canvas.Left="30" Canvas.Top="83.3" Width="40" TextAlignment="Center"
-                               FontFamily="IBM Plex Mono, Segoe UI" FontWeight="Bold" FontSize="9"
+                               FontFamily="IBM Plex Mono, Segoe UI" FontWeight="Bold" FontSize="9" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
                                Foreground="{StaticResource Paper}" Visibility="Collapsed" Text="2:00" />
 
                     <Canvas x:Name="Head">
