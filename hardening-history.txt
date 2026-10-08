@@ -655,3 +655,294 @@ signing left none either. dotnet accepts the new options.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
+1144945 Record the .pfx signing fix in the checklist and history
+
+- SECURITY-CHECKLIST.md: builds and signing - leftover .pfx keys are
+  removed and no build server keeps the password (8631357); known limits -
+  the window while signing with a .pfx.
+- hardening-history.txt: regenerated through 8631357 (45 commits, now
+  including 027e4ea).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+bc20286 Create dictation files with CreateNew; append only to a plain file
+
+SpeechToText.CreateNewFile used File.WriteAllText on a predictable name
+(Dictation-<date_time>.txt), so a file or link placed there first would
+have been emptied and written to. It's now created with CreateNew, which
+refuses anything already there; a taken name gets a number added. That
+also fixes "Start new dictation file" twice within one second emptying
+the first file.
+
+Dictation is appended to the current file only while it's still a plain
+file (not a reparse point); otherwise a new file is started.
+
+Tested with a harness compiling the real SpeechToText.cs: two files in
+the same second got distinct names and the first kept its text; with
+the next three names pre-placed, the new file skipped to -6 and left them
+untouched; nothing was left in the Dictation folder. (Symbolic links
+need Developer Mode here, so the link case wasn't run.)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+d70c6a9 Add Lady Keeper, an Avatar menu, and gym and night clothes
+
+Avatar: a right-click "Avatar" submenu switches between Keeper and Lady
+Keeper; the choice is saved in settings.json (Avatar, default "keeper").
+Lady Keeper is the same figure with long hair over the shoulders, a
+side-swept fringe, a flower clip, lashes, rose lips and a skirt, so every
+pose and weather outfit works for both.
+
+Outfits: KeeperView.ApplyOutfit picks the clothes from the activity, the
+weather and the avatar. During a workout break both wear gym clothes and
+a sweatband (Keeper: blue top, shorts; Lady Keeper: pink top, leggings);
+asleep, both wear a nightcap and slippers (Keeper: striped pyjamas; Lady
+Keeper: a nightgown). The sky still shows the weather, and in rain the
+umbrella leans beside them. Awake again, the weather outfit comes back.
+
+Checked by rendering the real KeeperView for both avatars across awake,
+workout and asleep in several skies.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+e5f25e1 Show the time on the top line; add a stopwatch icon
+
+Top line: the sky in words and the time ("Clear · 9:41 PM"), in Windows'
+own short-time format, updated every second; just the time when there's
+no sky to name.
+
+Stopwatch: a new icon-bar icon (turn it on under right-click -> Icons).
+One click starts it, the next stops it, the next resets it, with the
+label under the icons confirming each step. The time (m:ss, or h:mm:ss
+from an hour on) shows top-left in the battery's column - under the
+time-left line, under the percentage, or in the battery's place when
+there's none - clear of the sun, moon and clouds on the right.
+
+Checked by rendering the real KeeperView with and without a battery,
+charging, an hour-plus time, and in several skies for both avatars.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+34c3138 Put the time and date alone on the top line; sky word by the temperature
+
+Top line: "9:41 PM · Tue, Oct 6" - time bold, date semi-bold, a size up
+(10) from the other small text. Both follow Windows' own formats: its
+short time (12- or 24-hour) and its day/month order, with short day and
+month names in its language.
+
+The sky in words moves from the top line to the temperature ("12°
+Clear"), smaller than the number, so neither line is crowded.
+
+Checked by rendering the real KeeperView with and without a battery,
+charging, an hour-plus stopwatch time, and the longest sky word.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+47a11af Fix the three build warnings
+
+- CS8604: IsInDictationFolder marks its path [NotNullWhen(true)], so the
+  compiler knows the dictation path isn't null after the check (and the
+  path! in the caller goes).
+- IL3000: suppressed on the one line that reads Assembly.Location - its
+  being empty in a single-file app is exactly what that check tests for
+  before verifying the extracted DLLs.
+- WFO0003: suppressed for the project. It asks Windows Forms apps to move
+  DPI awareness out of app.manifest; CloClo is a WPF app (Windows Forms
+  only for menus and the tray icon), and WPF reads it only from there.
+
+A full single-file Release build now reports 0 warnings; without these
+changes the same build shows all three.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+2457c5a Let each avatar's outfit colour be picked from the menu
+
+Right-click -> Avatar -> "Outfit colour (<avatar>)": Classic red (the
+original), Ocean blue, Forest green, Plum, Mustard or Charcoal, each with
+a colour swatch. A set colours the everyday outfit - the sweater, Keeper's
+trousers and Lady Keeper's skirt; raincoat, snow, storm, gym and night
+clothes keep their own colours. Keeper and Lady Keeper each remember their
+own choice (KeeperOutfit / LadyOutfit in settings.json, default
+"classic").
+
+Checked by rendering the real KeeperView with every set on both avatars.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+b5b0c11 Add a daily quote, Arabic word, joke and fact speech bubble
+
+A new icon-bar icon (turn it on under right-click -> Icons) opens a speech
+bubble beside the widget, its tail pointing at the avatar: today's quote
+(with the Arabic original for Arabic proverbs), an English -> Arabic word
+with transliteration and an example sentence in both languages, a joke
+and a "did you know" fact. Click it (or Right/Space/Enter) for the next,
+Left for the previous, x or Esc to close.
+
+The bubble opens on whichever side of the widget has room, follows it
+when dragged, stays on screen, closes when the widget is hidden, and
+follows the always-on-top and screen-capture privacy settings. It doesn't
+take keyboard focus when it opens.
+
+All content (40 quotes, 66 words, 40 jokes, 40 facts) is written in
+DailyContent.cs and compiled into the signed exe - nothing is fetched,
+so the weather stays CloClo's only network call. Each list rotates by
+date: one item a day, every item before any repeats.
+
+Checked by rendering all four pages from the real window and placing it
+beside a widget at both screen edges.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+1fd95ac Add Layer Sudoku as a native daily game
+
+A new icon-bar icon (turn it on under right-click -> Icons) opens Layer
+Sudoku in its own window: a native WPF port of LayerSudoku.html - no
+browser engine, no network.
+
+SudokuEngine.cs ports the layer-propagation method, the generator and the
+hints line by line, including the seeded random source, so the daily
+puzzle is the one the HTML game gives for that date: checked against the
+original JavaScript (run in Node) on 21 seeds - this week's dailies,
+every level at 6x6/12x12/16x16 and the classic family - all identical.
+
+The window: daily puzzle with streak, New at 6x6-16x16 and four levels
+(generated in the background), per-digit colours, layer view with forced
+cells and "Fill yellow cells", hints that follow the method (wrong
+entries -> layers -> single missing -> fewest candidates) with the HTML's
+hint limits, notes, undo, erase, timer with pause (also on minimise),
+the HTML's scoring, and keyboard play. Not ported yet: option-layer
+hints, cube/Rubik views, friends, badges, history calendar, sharing.
+
+Progress is kept in %AppData%\CloCloWidget\sudoku.json, written like
+settings.json (fresh temp file with CreateNew, then swapped in); on load
+every field is checked - sizes, levels, dates, ranges, givens against the
+solution, the solution's validity - and anything that doesn't fit is
+dropped.
+
+Tested by driving the real window: daily, wrong entry, layer view, hint
+and place, undo, solve (score, streak), 16x16 Hard, close and reopen
+(resumes paused). Release single-file build: 0 warnings.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+1517a3e Trim size and memory: English-only resources, no background GC, free memory on close
+
+Size: only the English resources of WPF and Windows Forms are shipped
+(SatelliteResourceLanguages=en) - the 13 other languages added ~17 MB;
+the exe goes from 183 to 165 MB. Compressing the single-file bundle was
+tried and left out on purpose: it halves the exe but decompresses all
+code into private memory, measured at +80 MB.
+
+Memory:
+- ConcurrentGarbageCollection=false: no background GC thread and its
+  reserve; measured ~6 MB less private memory and a steady working set.
+  A widget's heap is small, so a full collection pauses for milliseconds.
+- When a window opened from the widget closes (QR, clipboard history,
+  converter, colour picker, dictation, location, daily bubble, Sudoku),
+  when reading aloud ends, or when the label is paused, one aggressive,
+  compacting full collection runs two seconds later and returns the freed
+  memory to Windows. Measured with the real windows: 10-15 MB back each
+  time, every closed window collected (no leaks).
+- SpeechReader lets go of the last synthesized audio when playback ends
+  or is stopped, instead of keeping it until the next reading.
+
+Release single-file build: 0 warnings.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+b10c8bd Drop Windows Forms: WPF menus, a native tray icon and direct Windows calls
+
+Windows Forms was only used for the tray icon, the right-click menus and
+a few screen/power queries, yet shipped ~23 MB of its own. Now:
+
+- TrayIcon.cs: the notification-area icon on Shell_NotifyIcon with a
+  hidden message window (double-click shows/hides, right-click opens the
+  menu); added back if Explorer restarts, removed on exit.
+- The right-click menus (widget, tray, app picker) are WPF ContextMenus
+  opened at the pointer, rebuilt each time so every tick shows the current
+  setting; outfit colours get WPF swatches; underscores in app titles are
+  escaped. Before a tray menu opens, our window is brought forward so the
+  menu closes on an outside click.
+- NativeScreen.cs: cursor position (GetCursorPos), monitor working areas
+  (EnumDisplayMonitors) and a screen pixel's colour (a plain BitBlt, as
+  CopyFromScreen did, so the picker still skips its own overlay).
+- BatteryInfo reads GetSystemPowerStatus.
+- NativeLibraryCheck's refusal uses Windows' own MessageBoxW - it runs
+  before WPF may load, so it can't be a WPF message box.
+- UseWindowsForms and the WFO0003 suppression are gone.
+
+The exe goes from 165 to 143 MB; memory at start is unchanged (~53 MB).
+Tested on the real build: starts cleanly, the tray icon is registered
+with the shell, the profiler refusal shows its message in a native box
+and exits, menus checked by hand. Release single-file build: 0 warnings.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+30c873f Say why the administrator prompt failed instead of always "declined"
+
+install.ps1 reported every failure to start the elevated step as "the
+request was declined". Now only Windows' cancelled-by-the-user error
+(1223, No on the UAC prompt) gets that message; anything else says the
+prompt couldn't be started and gives Windows' own reason.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+477810a Add CloClo-Setup.exe: a signed installer with CloClo inside
+
+Build-Setup.cmd (build-setup.ps1) builds dist\CloClo-Setup-<version>.exe:
+one file that installs CloClo on any 64-bit Windows 10/11 PC, with no
+.NET SDK or source needed there. Made with WiX Toolset 5.0.2 (v5, plain
+MS-RL; from nuget.org through the existing signature-required
+nuget.config):
+
+- installer\Package.wxs: a per-machine Windows Installer package -
+  Program Files\CloClo (the self-contained exe and the native WPF DLLs
+  beside it, nothing else), a Start menu shortcut, closes a running
+  CloClo first, a newer build replaces an older one in place, rollback on
+  failure, and a description for Settings > Apps.
+- installer\Bundle.wxs: the setup program around it, with WiX's standard
+  screens in CloClo's own theme (CloCloTheme.xml/.wxl, logo.png): a
+  welcome page describing CloClo, an Uninstall page when setup runs again
+  on a PC that has it, and a Launch button that starts CloClo as the
+  user, not elevated.
+- installer\Signing.targets: the package, the setup's engine and the
+  finished setup are all signed through sign.ps1, so the same rules apply
+  (protected key only, timestamps, verified straight after signing).
+- build-setup.ps1 follows install.ps1's hardening (module path first,
+  full paths, refuses an administrator window), stamps a rising file
+  version into the exe so Windows Installer replaces older ones, and
+  prints the setup's SHA-256 to send along with it.
+- Validation: three ICEs that are written in VBScript (removed from
+  recent Windows 11) are skipped; every other check runs.
+- Installer build output stays under obj\ and bin\; dist\ is ignored by
+  git and by Check-Source.
+
+Also: install.ps1 -Uninstall reported a successful uninstall as failed -
+PowerShell -Command exits 1 when its last command failed even quietly
+(removing an HKLM entry most installs never had). Each removal is now
+conditional and the step ends with exit 0; real failures still stop it.
+And a declined vs. failed administrator prompt are told apart.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+9af38cd Disable the clipboard fallback for reading selections
+
+ReadSelectedTextAsync now uses UI Automation's TextPattern selection only.
+It no longer sends Ctrl+C or reads or writes the clipboard.
+When an app does not expose its selection through UI Automation, the
+selection actions report that the selection is unavailable.
+
+7c9d17b Harden process and HTTP resource lifetimes
+
+- The Explorer launch, TextInputHost process lookup and native-library
+  restart now dispose their Process wrappers.
+- Weather and geocoding share one long-lived NetworkClient. Its
+  SocketsHttpHandler disables automatic redirects and cookies, rotates
+  pooled connections every 10 minutes, and keeps the 15-second timeout,
+  1 MB response limit and CloClo User-Agent.
+- Tool windows and dialogs schedule cleanup on Closed instead of the
+  broader Unloaded event. The delayed full collection runs on a worker
+  thread once, without waiting for finalizers or doing a second collection.
+- Hiding the now-playing label clears its text and image source; decoded
+  notification logos dispose their input stream after OnLoad completes.
+
