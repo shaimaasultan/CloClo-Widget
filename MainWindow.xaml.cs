@@ -301,14 +301,44 @@ public partial class MainWindow : Window
     private void WatchNotifications()
     {
         _watchingNotifications = true;
+        var cueShown = false;
         Watch(async () =>
         {
             var n = await NotificationWatcher.GetLatestAsync();
             if (n is not { } latest) return null;
+            if (!cueShown)
+            {
+                cueShown = true;
+                var cue = ClassifyNotification(latest.AppName, latest.Title);
+                if (cue != "none") Keeper.SetNotificationCue(cue);
+            }
             return _settings.ShowNotificationText
                 ? ($"{latest.AppName}: {latest.Title}", latest.Body, latest.IconPng)
                 : (latest.AppName, "New notification", latest.IconPng);
         });
+    }
+
+    // Notification details are read only after the user clicks the bell.
+    // Classification uses just the sender and title to choose a decorative
+    // pose; notification text is never executed or used to activate an app.
+    private static string ClassifyNotification(string appName, string title)
+    {
+        static bool HasAny(string value, params string[] terms) =>
+            terms.Any(term => value.Contains(term, StringComparison.OrdinalIgnoreCase));
+
+        if (HasAny(appName, "snipping tool", "screen capture", "screenshot", "camera") ||
+            HasAny(title, "screenshot", "screen shot", "screen snip", "snip saved", "photo captured", "capture saved"))
+            return "photo";
+
+        if (HasAny(appName, "news", "newspaper") ||
+            HasAny(title, "news", "headline", "breaking", "new article"))
+            return "news";
+
+        if (HasAny(appName, "windows update", "windows security", "microsoft defender", "device security") ||
+            HasAny(title, "system update", "update available", "restart required", "maintenance", "security alert", "backup completed", "driver update", "firmware update"))
+            return "system";
+
+        return "none";
     }
 
     // Static, not really something to "watch" the way media or

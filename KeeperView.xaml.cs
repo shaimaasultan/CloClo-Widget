@@ -82,6 +82,8 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     private DispatcherTimer? _blinkTimer;
     private DispatcherTimer? _blinkReopenTimer;
     private DispatcherTimer? _fidgetTimer;
+    private DispatcherTimer? _notificationCueTimer;
+    private string? _activeNotificationCue;
     private int _contrastTicks;
     private readonly Dictionary<TextBlock, TextContrastState> _textContrast = new();
 
@@ -136,6 +138,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         var normalized = mode is "full" or "gentle" or "still" ? mode : "full";
         if (_motionMode == normalized) return;
         _motionMode = normalized;
+        if (_motionMode == "still") ClearNotificationCue();
         StopIdleMotionTimers();
         _wrapBusy = false;
         ClearWrap();
@@ -300,6 +303,48 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         FitLine(NowPlayingSubtitle, width);
     }
 
+    // Notification text is never executed. A small allowlist selects one of
+    // three decorative poses for a few seconds, then restores the idle arms.
+    public void SetNotificationCue(string cue)
+    {
+        if (_motionMode == "still" || _activityState != "awake" || cue is not ("photo" or "news" or "system"))
+        {
+            ClearNotificationCue();
+            return;
+        }
+
+        ClearNotificationCue();
+        _activeNotificationCue = cue;
+        HangingArms.Visibility = Visibility.Collapsed;
+        UmbrellaHeld.Visibility = Visibility.Collapsed;
+        NotificationPhotoPose.Visibility = Show(cue == "photo");
+        NotificationNewsPose.Visibility = Show(cue == "news");
+        NotificationSystemPose.Visibility = Show(cue == "system");
+        MorningMug.Visibility = EveningBook.Visibility = Visibility.Collapsed;
+
+        var timer = _notificationCueTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3.5) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            if (_activeNotificationCue == cue) ClearNotificationCue();
+        };
+        timer.Start();
+    }
+
+    private void ClearNotificationCue()
+    {
+        var hadCue = _activeNotificationCue != null;
+        _notificationCueTimer?.Stop();
+        _notificationCueTimer = null;
+        _activeNotificationCue = null;
+        NotificationPhotoPose.Visibility = Visibility.Collapsed;
+        NotificationNewsPose.Visibility = Visibility.Collapsed;
+        NotificationSystemPose.Visibility = Visibility.Collapsed;
+        HangingArms.Visibility = Show(_activityState != "workout");
+        if (hadCue) ApplyOutfit();
+        UpdateTimeDetails(DateTime.Now);
+    }
+
     private static readonly byte[] PngSignature = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
 
     // Decodes a notification's app logo. Never trusted for anything beyond
@@ -334,6 +379,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         if (state != _activityState)
         {
             _activityState = state;
+            ClearNotificationCue();
             var sleeping = state == "asleep";
             var working = state == "workout";
 

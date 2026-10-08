@@ -7,7 +7,7 @@ using Windows.UI.Notifications.Management;
 
 namespace CloCloWidget;
 
-public readonly record struct LatestNotification(string AppName, string Title, string Body, byte[]? IconPng);
+public readonly record struct LatestNotification(string AppName, string Title, string Body, byte[]? IconPng, uint Id, DateTimeOffset CreatedAt);
 
 // The most recent toast notification, via UserNotificationListener — the
 // same store Windows' own Action Center reads from. This API has
@@ -22,14 +22,28 @@ public static class NotificationWatcher
         try
         {
             var listener = UserNotificationListener.Current;
-            var status = await listener.RequestAccessAsync();
+            var status = listener.GetAccessStatus();
+            if (status == UserNotificationListenerAccessStatus.Unspecified)
+                status = await listener.RequestAccessAsync();
             if (status != UserNotificationListenerAccessStatus.Allowed) return null;
 
             var notifications = await listener.GetNotificationsAsync(NotificationKinds.Toast);
             var latest = notifications.OrderByDescending(n => n.CreationTime).FirstOrDefault();
             if (latest == null) return null;
+            return await ReadNotificationAsync(latest, includeDetails: true);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
-            var appName = latest.AppInfo?.DisplayInfo?.DisplayName ?? "Notification";
+    private static async Task<LatestNotification?> ReadNotificationAsync(UserNotification latest, bool includeDetails)
+    {
+        try
+        {
+            var appInfo = latest.AppInfo;
+            var appName = appInfo?.DisplayInfo?.DisplayName ?? "Notification";
             var lines = latest.Notification.Visual
                 .GetBinding(KnownNotificationBindings.ToastGeneric)
                 ?.GetTextElements()
@@ -38,9 +52,9 @@ public static class NotificationWatcher
                 .ToArray() ?? Array.Empty<string>();
 
             var title = lines.Length > 0 ? lines[0] : appName;
-            var body = lines.Length > 1 ? string.Join(" ", lines.Skip(1)) : "";
-            var icon = await TryGetIconAsync(latest.AppInfo);
-            return new LatestNotification(appName, title, body, icon);
+            var body = includeDetails && lines.Length > 1 ? string.Join(" ", lines.Skip(1)) : "";
+            var icon = includeDetails ? await TryGetIconAsync(appInfo) : null;
+            return new LatestNotification(appName, title, body, icon, latest.Id, latest.CreationTime);
         }
         catch
         {

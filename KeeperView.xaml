@@ -358,6 +358,40 @@
                         </Path>
                         <Line X1="70" Y1="3" X2="70" Y2="0" Stroke="{StaticResource Metal3}" StrokeThickness="1.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
                     </Canvas>
+
+                    <!-- Short, local notification reactions; no interaction or app activation. -->
+                    <Canvas x:Name="NotificationPhotoPose" Visibility="Collapsed" IsHitTestVisible="False">
+                        <Path Data="M65,80 Q73,74 78,64" Stroke="{Binding ElementName=ArmR, Path=Stroke}" StrokeThickness="7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Ellipse Canvas.Left="74" Canvas.Top="59" Width="8" Height="8" Fill="{StaticResource Skin}" />
+                        <Rectangle Canvas.Left="73" Canvas.Top="47" Width="20" Height="13" RadiusX="2" RadiusY="2" Fill="#FF46505B" Stroke="#FFD9E2E8" StrokeThickness="1" />
+                        <Rectangle Canvas.Left="77" Canvas.Top="44.5" Width="6" Height="3" RadiusX="1" RadiusY="1" Fill="#FF46505B" />
+                        <Ellipse Canvas.Left="79" Canvas.Top="50" Width="7" Height="7" Fill="#FF9EB7C8" Stroke="#FF26313B" StrokeThickness="1" />
+                        <Ellipse Canvas.Left="81" Canvas.Top="52" Width="3" Height="3" Fill="#FF34404A" />
+                        <Path Data="M94,44 L95,47 L98,48 L95,49 L94,52 L93,49 L90,48 L93,47 Z" Fill="#FFFFD36A" />
+                    </Canvas>
+                    <Canvas x:Name="NotificationNewsPose" Visibility="Collapsed" IsHitTestVisible="False">
+                        <Path Data="M35,80 Q32,85 32,91" Stroke="{Binding ElementName=ArmL, Path=Stroke}" StrokeThickness="7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Path Data="M65,80 Q68,85 68,91" Stroke="{Binding ElementName=ArmR, Path=Stroke}" StrokeThickness="7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Rectangle Canvas.Left="29" Canvas.Top="77" Width="42" Height="22" RadiusX="1" RadiusY="1" Fill="#FFFFF3D8" Stroke="#FF72513D" StrokeThickness="1" />
+                        <Rectangle Canvas.Left="32" Canvas.Top="80" Width="15" Height="5" Fill="#FFB8523D" />
+                        <Line X1="50" Y1="81" X2="67" Y2="81" Stroke="#FF80766B" StrokeThickness="1" />
+                        <Line X1="50" Y1="85" X2="67" Y2="85" Stroke="#FF80766B" StrokeThickness="1" />
+                        <Line X1="33" Y1="89" X2="67" Y2="89" Stroke="#FF80766B" StrokeThickness="1" />
+                        <Line X1="33" Y1="93" X2="61" Y2="93" Stroke="#FF80766B" StrokeThickness="1" />
+                        <Ellipse Canvas.Left="28" Canvas.Top="87" Width="8" Height="8" Fill="{StaticResource Skin}" />
+                        <Ellipse Canvas.Left="64" Canvas.Top="87" Width="8" Height="8" Fill="{StaticResource Skin}" />
+                    </Canvas>
+                    <Canvas x:Name="NotificationSystemPose" Visibility="Collapsed" IsHitTestVisible="False">
+                        <Path Data="M35,80 Q31,86 33,94" Stroke="{Binding ElementName=ArmL, Path=Stroke}" StrokeThickness="7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Path Data="M65,80 Q69,86 67,94" Stroke="{Binding ElementName=ArmR, Path=Stroke}" StrokeThickness="7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Rectangle Canvas.Left="34" Canvas.Top="76" Width="31" Height="28" RadiusX="2" RadiusY="2" Fill="#FFDCE7E8" Stroke="#FF52666B" StrokeThickness="1" />
+                        <Rectangle Canvas.Left="41" Canvas.Top="73" Width="17" Height="5" RadiusX="2" RadiusY="2" Fill="Transparent" Stroke="#FF52666B" StrokeThickness="1" />
+                        <Path Data="M40,84 L42,86 L45,82 M47,85 L59,85 M40,91 L42,93 L45,89 M47,92 L59,92" Stroke="#FF47765D" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Ellipse Canvas.Left="29" Canvas.Top="90" Width="8" Height="8" Fill="{StaticResource Skin}" />
+                        <Ellipse Canvas.Left="63" Canvas.Top="90" Width="8" Height="8" Fill="{StaticResource Skin}" />
+                        <Path Data="M73,86 L76,82 L79,85 L77,88 L80,91 L77,94 L74,91 L71,93 L69,90 L72,87 Z" Fill="#FFB58A4A" Stroke="#FF705133" StrokeThickness="0.8" />
+                        <Ellipse Canvas.Left="73" Canvas.Top="85" Width="3" Height="3" Fill="#FFFFE8BF" />
+                    </Canvas>
                 </Canvas>
             </Viewbox>
         </Canvas>
