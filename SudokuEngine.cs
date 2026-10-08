@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 namespace CloCloWidget;
 
@@ -166,10 +167,11 @@ public static class SudokuEngine
 
     // Layers (most repeated first) and single-missing rows/columns, until
     // nothing changes. Fills grid in place; false on a contradiction.
-    public static bool Propagate(SudokuGeo g, int[] grid)
+    public static bool Propagate(SudokuGeo g, int[] grid, CancellationToken cancellationToken = default)
     {
         for (; ; )
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var changed = false;
             foreach (var d in DigitsByFrequency(g, grid).Order)
             {
@@ -187,7 +189,7 @@ public static class SudokuEngine
     }
 
     // Layer propagation + MRV branching; counts solutions up to limit.
-    public static (int Count, bool Aborted) CountSolutions(SudokuGeo g, int[] start, int limit, int budget)
+    public static (int Count, bool Aborted) CountSolutions(SudokuGeo g, int[] start, int limit, int budget, CancellationToken cancellationToken = default)
     {
         int count = 0, nodes = 0; var aborted = false;
         Rec((int[])start.Clone());
@@ -195,9 +197,10 @@ public static class SudokuEngine
 
         void Rec(int[] grid)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (count >= limit || aborted) return;
             if (++nodes > budget) { aborted = true; return; }
-            if (!Propagate(g, grid)) return;
+            if (!Propagate(g, grid, cancellationToken)) return;
             var cm = CandMasks(g, grid); int best = -1, bc = 99;
             for (var i = 0; i < grid.Length; i++) if (grid[i] == 0) { var k = PopCount(cm[i]); if (k < bc) { bc = k; best = i; } }
             if (best < 0) { count++; return; }
@@ -243,11 +246,12 @@ public static class SudokuEngine
     }
 
     // A random full grid (any family): random fill, fewest-options cell first.
-    private static int[] GenerateVaried(SudokuGeo g, Func<double> rand)
+    private static int[] GenerateVaried(SudokuGeo g, Func<double> rand, CancellationToken cancellationToken)
     {
         int n = g.N, nn = n * n, full = (1 << (n + 1)) - 2;
         for (var attempt = 0; attempt < 30; attempt++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var grid = new int[nn];
             int[] rm = new int[n], cm = new int[n], bm = new int[n];
             int nodes = 0, limitNodes = n <= 9 ? 20000 : 80000;
@@ -255,6 +259,7 @@ public static class SudokuEngine
 
             bool Rec()
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (++nodes > limitNodes) return false;
                 int best = -1, bc = 99, bmask = 0;
                 for (var i = 0; i < nn; i++)
@@ -301,11 +306,12 @@ public static class SudokuEngine
     // Symmetric (180°) clue removal, keeping a removal only while the puzzle
     // stays solvable by the layer method (Easy-Hard) or uniquely solvable with
     // MRV branching (Expert). seed: the daily puzzle's seed, or null.
-    public static (int[] Puzzle, int[] Solution) Generate(int n, string level, string? seed, string family)
+    public static (int[] Puzzle, int[] Solution) Generate(int n, string level, string? seed, string family, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var rand = seed != null ? SeededRandom(seed) : Random.Shared.NextDouble;
         var g = new SudokuGeo(n);
-        var solution = family == "classic" ? GenerateClassic(g, rand) : GenerateVaried(g, rand);
+        var solution = family == "classic" ? GenerateClassic(g, rand) : GenerateVaried(g, rand, cancellationToken);
         var puzzle = (int[])solution.Clone();
         var total = n * n;
         var target = (int)Math.Floor(total * Ratio(level) + 0.5);   // JavaScript's Math.round
@@ -314,8 +320,8 @@ public static class SudokuEngine
 
         bool Accept(int[] p)
         {
-            if (layerMethod) { var t = (int[])p.Clone(); return Propagate(g, t) && t.All(v => v != 0); }
-            var r = CountSolutions(g, p, 2, budget); return !r.Aborted && r.Count == 1;
+            if (layerMethod) { var t = (int[])p.Clone(); return Propagate(g, t, cancellationToken) && t.All(v => v != 0); }
+            var r = CountSolutions(g, p, 2, budget, cancellationToken); return !r.Aborted && r.Count == 1;
         }
 
         var pairs = new List<(int, int)>();
@@ -324,6 +330,7 @@ public static class SudokuEngine
         var clues = total;
         foreach (var (a, b) in pairs)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (clues <= target) break;
             int va = puzzle[a], vb = puzzle[b];
             puzzle[a] = 0; puzzle[b] = 0;
@@ -335,6 +342,7 @@ public static class SudokuEngine
             var order = Enumerable.Range(0, total).ToList(); Shuffle(order, rand);
             foreach (var i in order)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (clues <= target) break;
                 if (puzzle[i] == 0) continue;
                 var v = puzzle[i]; puzzle[i] = 0;

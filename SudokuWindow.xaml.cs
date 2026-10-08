@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -48,11 +49,17 @@ public partial class SudokuWindow : Window
     private readonly List<Cell> _cells = new();
     private readonly List<(int[] Grid, int[] Notes)> _undo = new();
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private CancellationTokenSource? _generation;
+    private bool _closed;
     private int _selected = -1;
     private bool _notesMode, _paused, _busy, _layerOpen;
     private int _layerDigit;
     private Overlay? _overlay;
     private SudokuEngine.Hint? _hint;
+
+    // If generation outlives the close event, let the owner schedule another
+    // collection after the task has released its captured state.
+    internal event Action? BackgroundWorkCompletedAfterClose;
 
     public SudokuWindow()
     {
@@ -61,10 +68,11 @@ public partial class SudokuWindow : Window
         MistakesBox.IsChecked = _store.HighlightMistakes;
         Select(SizeBox, _store.LastSize.ToString());
         Select(LevelBox, _store.LastLevel);
-        _timer.Tick += (_, _) => Tick();
+        _timer.Tick += Timer_Tick;
         KeyDown += OnKeyDown;
-        StateChanged += (_, _) => { if (WindowState == WindowState.Minimized && _game != null && !_game.Solved) SetPaused(true); };
-        Closing += (_, _) => { _timer.Stop(); _store.Save(); };
+        StateChanged += OnStateChanged;
+        Closing += (_, _) => { _generation?.Cancel(); _timer.Stop(); _store.Save(); };
+        Closed += OnClosed;
 
         if (_store.Game != null)
         {
@@ -88,18 +96,67 @@ public partial class SudokuWindow : Window
         WinCover.Visibility = Visibility.Collapsed;
         _timer.Stop();
         var seed = daily != null ? SudokuEngine.DailySeed(daily) : null;
-        var (puzzle, solution) = await Task.Run(() => SudokuEngine.Generate(n, level, seed, "varied"));
-        _game = new SudokuGame
+        var generation = new CancellationTokenSource();
+        _generation = generation;
+        try
         {
-            N = n, Level = level, Daily = daily, Puzzle = puzzle, Solution = solution,
-            Grid = (int[])puzzle.Clone(), Notes = new int[n * n],
-        };
-        _store.Game = _game;
+            var (puzzle, solution) = await Task.Run(
+                () => SudokuEngine.Generate(n, level, seed, "varied", generation.Token), generation.Token);
+            if (_closed) return;
+            _game = new SudokuGame
+            {
+                N = n, Level = level, Daily = daily, Puzzle = puzzle, Solution = solution,
+                Grid = (int[])puzzle.Clone(), Notes = new int[n * n],
+            };
+            _store.Game = _game;
+            _undo.Clear();
+            BusyCover.Visibility = Visibility.Collapsed;
+            _busy = false;
+            StartGame(paused: false);
+            _store.Save();
+        }
+        catch (OperationCanceledException) when (generation.IsCancellationRequested)
+        {
+            // Closing the window cancels generation; no result is applied or saved.
+        }
+        finally
+        {
+            if (ReferenceEquals(_generation, generation)) _generation = null;
+            generation.Dispose();
+            if (_closed) BackgroundWorkCompletedAfterClose?.Invoke();
+        }
+    }
+
+    private void Timer_Tick(object? sender, EventArgs e) => Tick();
+
+    private void OnStateChanged(object? sender, EventArgs e)
+    {
+        if (WindowState == WindowState.Minimized && _game != null && !_game.Solved) SetPaused(true);
+    }
+
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        _closed = true;
+        _generation?.Cancel();
+        _timer.Stop();
+        _timer.Tick -= Timer_Tick;
+        KeyDown -= OnKeyDown;
+        StateChanged -= OnStateChanged;
+
+        // The 16x16 board creates thousands of WPF controls. Drop their visual
+        // and model references immediately instead of waiting for the window
+        // graph to become collectible.
+        Board.Children.Clear();
+        BoxLines.Children.Clear();
+        Pad.Children.Clear();
+        Chips.Children.Clear();
+        _cells.Clear();
         _undo.Clear();
-        BusyCover.Visibility = Visibility.Collapsed;
-        _busy = false;
-        StartGame(paused: false);
-        _store.Save();
+        _store.Game = null;
+        _overlay = null;
+        _hint = null;
+        _geo = null!;
+        _game = null!;
     }
 
     private void StartGame(bool paused)

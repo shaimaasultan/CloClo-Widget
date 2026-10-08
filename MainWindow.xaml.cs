@@ -921,6 +921,7 @@ public partial class MainWindow : Window
             return;
         }
         _sudoku = new SudokuWindow();
+        _sudoku.BackgroundWorkCompletedAfterClose += ScheduleMemoryRelease;
         _sudoku.Closed += (_, _) => { _sudoku = null; ScheduleMemoryRelease(); };
         _sudoku.Show();
         _sudoku.Activate();
