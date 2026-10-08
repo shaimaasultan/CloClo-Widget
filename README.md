@@ -439,12 +439,10 @@ files are double-click launchers for those scripts.
   windows are hidden from screenshots, recordings and screen sharing by
   default (right-click → Privacy). Notification text can be switched off so
   only the sending app's name shows.
-- **Careful with your selection.** "Read selection", "Convert" and "QR" ask
-  the app for the highlighted text through UI Automation first, without
-  touching the clipboard. Only when that isn't supported do they send Ctrl+C,
-  and then: never to a terminal (where Ctrl+C stops the running command),
-  never to a password field, never to a window that's no longer in front, and
-  the previous clipboard is put back afterwards, kept out of clipboard history.
+- **Careful with your selection.** "Read selection", "Convert" and "QR" read
+  highlighted text only through UI Automation. They never send Ctrl+C or read
+  or write the clipboard. Apps that don't expose selected text through UI
+  Automation won't provide text to these features.
 - **Doesn't crash on errors.** Unexpected errors are logged to
   `errors.log` (error type and code location only, never any text) and the
   widget keeps running — a crash would also hand Windows Error Reporting a

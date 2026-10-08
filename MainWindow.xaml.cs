@@ -303,11 +303,9 @@ public partial class MainWindow : Window
 
     // A one-shot action, not a watch — grabs whatever's currently
     // highlighted in whichever app had focus before this click, shows it in
-    // the label, and has Keeper read it aloud. Deliberately doesn't go
-    // through Watch()/the polling timer the way GPU info does: re-running
-    // this every 4 seconds would mean repeatedly stealing focus and firing
-    // Ctrl+C into whatever the user is now doing, which GPU's harmless WMI
-    // re-query is not.
+    // the label, and has Keeper read it aloud. Selection is obtained only
+    // through UI Automation; unsupported apps return no text. Deliberately
+    // doesn't go through Watch()/the polling timer the way GPU info does.
     private void ReadSelection()
     {
         _watchingNotifications = false;
@@ -322,7 +320,7 @@ public partial class MainWindow : Window
         var text = await TextSelectionReader.ReadSelectedTextAsync(target);
         if (string.IsNullOrWhiteSpace(text))
         {
-            ShowOneShotLabel("Nothing selected", "Highlight some text, then click again.");
+            ShowOneShotLabel("Selection unavailable", "Highlight text in an app that supports UI Automation, then try again.");
             return;
         }
 
@@ -350,7 +348,7 @@ public partial class MainWindow : Window
         var text = await TextSelectionReader.ReadSelectedTextAsync(target);
         if (string.IsNullOrWhiteSpace(text))
         {
-            ShowOneShotLabel("Nothing selected", "Highlight some text, then click again.");
+            ShowOneShotLabel("Selection unavailable", "Highlight text in an app that supports UI Automation, then try again.");
             return;
         }
 
