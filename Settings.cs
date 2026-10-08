@@ -1,12 +1,26 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 
 namespace CloCloWidget;
 
 public class WidgetSettings
 {
+    private const int MaxSettingsFileBytes = 64 * 1024;
+    private const int MaxVisibleIcons = 7;
+    private static readonly JsonSerializerOptions LoadOptions = new() { MaxDepth = 16 };
+    private static readonly HashSet<string> AllowedSkies = new(StringComparer.Ordinal)
+    {
+        "auto", "clear", "cloudy", "mostlycloudy", "overcast", "windy", "fog", "drizzle", "rain", "snow", "storm",
+    };
+    private static readonly HashSet<string> AllowedIcons = new(StringComparer.Ordinal)
+    {
+        "youtube", "spotify", "bell", "search", "gpu", "read", "mic", "convert", "color", "qr", "volume", "clipboard", "stopwatch", "daily", "sudoku",
+    };
+    private static readonly HashSet<int> AllowedSleepIntervals = new() { 0, 2, 5, 15 };
+    private static readonly HashSet<int> AllowedWorkoutIntervals = new() { 0, 15, 30, 45, 60 };
     public string City { get; set; } = "Cairo";
     public double Latitude { get; set; } = 30.0444;
     public double Longitude { get; set; } = 31.2357;
@@ -68,15 +82,11 @@ public class WidgetSettings
         {
             if (File.Exists(FilePath))
             {
-                var json = File.ReadAllText(FilePath);
-                var loaded = JsonSerializer.Deserialize<WidgetSettings>(json);
+                var bytes = ReadSettingsBytes();
+                var loaded = JsonSerializer.Deserialize<WidgetSettings>(bytes, LoadOptions);
                 if (loaded != null)
                 {
-                    // Older builds stored full GPS precision; trimmed here so
-                    // the next save no longer keeps it on disk.
-                    loaded.Latitude = RoundCoordinate(loaded.Latitude);
-                    loaded.Longitude = RoundCoordinate(loaded.Longitude);
-                    return loaded;
+                    return loaded.ValidateAndNormalize();
                 }
             }
         }
@@ -86,6 +96,62 @@ public class WidgetSettings
         }
         return new WidgetSettings();
     }
+
+    private static byte[] ReadSettingsBytes()
+    {
+        // Read at most the limit plus one byte; checking FileInfo.Length alone
+        // would allow a file that grows after the check to use unbounded memory.
+        using var stream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var buffer = new byte[MaxSettingsFileBytes + 1];
+        var count = 0;
+        while (count < buffer.Length)
+        {
+            var read = stream.Read(buffer, count, buffer.Length - count);
+            if (read == 0) break;
+            count += read;
+        }
+        if (count > MaxSettingsFileBytes || stream.ReadByte() != -1)
+            throw new InvalidDataException("Settings file exceeds the size limit.");
+        Array.Resize(ref buffer, count);
+        return buffer;
+    }
+
+    private WidgetSettings ValidateAndNormalize()
+    {
+        City = IsSafeText(City, 100) ? City.Trim() : "Cairo";
+        Latitude = IsValidCoordinate(Latitude, -90, 90) ? RoundCoordinate(Latitude) : 30.04;
+        Longitude = IsValidCoordinate(Longitude, -180, 180) ? RoundCoordinate(Longitude) : 31.24;
+        WindowLeft = IsValidWindowCoordinate(WindowLeft) ? WindowLeft : null;
+        WindowTop = IsValidWindowCoordinate(WindowTop) ? WindowTop : null;
+        Sky = Sky is not null && AllowedSkies.Contains(Sky) ? Sky : "auto";
+        Avatar = Avatar is "keeper" or "lady" ? Avatar : "keeper";
+        KeeperOutfit = IsAllowedOutfit(KeeperOutfit) ? KeeperOutfit : "classic";
+        LadyOutfit = IsAllowedOutfit(LadyOutfit) ? LadyOutfit : "classic";
+        SleepAfterMinutes = AllowedSleepIntervals.Contains(SleepAfterMinutes) ? SleepAfterMinutes : 5;
+        WorkoutAfterMinutes = AllowedWorkoutIntervals.Contains(WorkoutAfterMinutes) ? WorkoutAfterMinutes : 15;
+        if (DictationFilePath is not null &&
+            (DictationFilePath.Length > 2048 || !SpeechToText.IsInDictationFolder(DictationFilePath)))
+            DictationFilePath = null;
+
+        var enabled = EnabledIcons ?? new WidgetSettings().EnabledIcons;
+        EnabledIcons = new HashSet<string>(
+            enabled.Where(key => key is not null && AllowedIcons.Contains(key))
+                   .Take(MaxVisibleIcons),
+            StringComparer.Ordinal);
+        return this;
+    }
+
+    private static bool IsSafeText(string? value, int maxLength) =>
+        !string.IsNullOrWhiteSpace(value) && value.Length <= maxLength && !value.Any(char.IsControl);
+
+    private static bool IsValidCoordinate(double value, double min, double max) =>
+        double.IsFinite(value) && value >= min && value <= max;
+
+    private static bool IsValidWindowCoordinate(double? value) =>
+        value is null || (double.IsFinite(value.Value) && Math.Abs(value.Value) <= 1_000_000);
+
+    private static bool IsAllowedOutfit(string? value) =>
+        value is not null && KeeperView.Outfits.Any(outfit => outfit.Key == value);
 
     public void Save()
     {

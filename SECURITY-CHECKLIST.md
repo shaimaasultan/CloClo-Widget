@@ -27,6 +27,7 @@ evidence is stated in the item where available. `[ ]` = still awaiting the real-
 - [x] Notification logos decoded only when PNG (no third-party image codecs) and ignored over 512 KB (`90e33d8`, `35b2e84`)
 - [x] **No crash dumps:** unexpected errors are logged to `errors.log` (type and stack only, never the message) and the widget keeps running; a background-thread error ends the process with `TerminateProcess` right after logging, before Windows Error Reporting takes a dump (`35b2e84`, `9b99169`) — tested: without it WerFault starts, with it no WerFault
 - [x] **Settings written safely:** to a new random-named file created with `CreateNew`, then swapped in - a crash can't corrupt `settings.json`, and nothing can pre-place a file to redirect the write (`90e33d8`, `9b99169`)
+- [x] **Settings loaded with limits and validation:** reads at most 64 KiB, limits JSON depth, validates coordinates, window positions, enum values, icon keys/count, timing values, city text and dictation path; invalid fields fall back to safe defaults
 - [x] **Dictation files created with `CreateNew`:** a predictable name can't have a file or link placed there first; a taken name gets a number, and the current file is only appended to while it's still a plain file (`bc20286`) — tested: same-second names, pre-placed files left untouched
 - [x] **Sudoku progress saved safely:** `sudoku.json` written like `settings.json` (fresh `CreateNew` file, then swapped in); on load every field is checked - sizes, levels, dates, value ranges, givens against the solution, the solution's validity - and anything that doesn't fit is dropped (`1fd95ac`)
 - [x] **Daily content built in:** quotes, words, jokes, facts and the Sudoku game are compiled into the signed exe - no new network connection, no outside text shown (`b5b0c11`, `1fd95ac`)
@@ -84,6 +85,7 @@ step is elevated.
 - [x] `Install-CloClo.cmd` picks the newest protected `CN=CloClo…` certificate or offers to create one with `-KeyProtection Protect` (`2335cf4`)
 - [x] **Pinned DLLs come from verified packages:** `verify-pins.ps1` checks each pinned native DLL against its signed `.nupkg` - signatures, author Microsoft Corporation, repository nuget.org, id/version, byte-for-byte match (`9b99169`) — tested: 19 DLLs pass, a one-byte change fails the build
 - [x] **Only signed nuget.org packages** (`nuget.config`: single source, package mapping, `signatureValidationMode=require`) (`22ee3b9`) — tested: unsigned package refused (NU3004)
+- [x] **Dependency updates checked weekly:** Dependabot opens update PRs for app NuGet packages, installer NuGet packages and GitHub Actions (`.github/dependabot.yml`)
 - [x] `dotnet`, PowerShell and `signtool` run by full Program Files / System32 paths, never through PATH (`00b0d61`, `3f70ae5`)
 - [x] Building refuses an administrator window (`3f70ae5`)
 - [x] A running widget is closed before building (its exe would be locked) (`668795b`)

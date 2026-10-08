@@ -452,6 +452,8 @@ files are double-click launchers for those scripts.
 - **Settings written safely.** `settings.json` is written to a new file with
   a random name (which must not exist yet) and then swapped in, so a crash
   can't corrupt it and nothing can pre-place a file to redirect the write.
+  Loading is limited to 64 KiB and JSON depth 16; every setting is checked
+  against its supported range or value set before the app uses it.
 
 **What CloClo checks before it runs** (in `NativeLibraryCheck`, before WPF
 loads anything)
@@ -526,6 +528,9 @@ loads anything)
   packages already in the cache from before were unpacked without it —
   `dotnet nuget locals global-packages --clear` makes everything download
   and get checked again (other projects then re-download too).
+- **Dependency update checks.** Dependabot checks the app and installer NuGet
+  packages and GitHub Actions weekly, and opens pull requests for available
+  updates.
 - **The source is fingerprinted** at every install, checked unchanged across
   the build, and the record is kept where only administrators can change it
   (Program Files), so `Check-Source.cmd` can tell whether the code changed
