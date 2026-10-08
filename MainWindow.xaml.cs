@@ -326,6 +326,11 @@ public partial class MainWindow : Window
         static bool HasAny(string value, params string[] terms) =>
             terms.Any(term => value.Contains(term, StringComparison.OrdinalIgnoreCase));
 
+        // App-specific reactions use the trusted sender display name only;
+        // notification text from these apps is never interpreted as a command.
+        if (HasAny(appName, "chatgpt", "openai")) return "chatgpt";
+        if (HasAny(appName, "claude", "anthropic")) return "claude";
+
         if (HasAny(appName, "snipping tool", "screen capture", "screenshot", "camera") ||
             HasAny(title, "screenshot", "screen shot", "screen snip", "snip saved", "photo captured", "capture saved"))
             return "photo";

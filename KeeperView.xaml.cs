@@ -307,7 +307,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     // three decorative poses for a few seconds, then restores the idle arms.
     public void SetNotificationCue(string cue)
     {
-        if (_motionMode == "still" || _activityState != "awake" || cue is not ("photo" or "news" or "system"))
+        if (_motionMode == "still" || _activityState != "awake" || cue is not ("photo" or "news" or "system" or "chatgpt" or "claude"))
         {
             ClearNotificationCue();
             return;
@@ -320,6 +320,8 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         NotificationPhotoPose.Visibility = Show(cue == "photo");
         NotificationNewsPose.Visibility = Show(cue == "news");
         NotificationSystemPose.Visibility = Show(cue == "system");
+        NotificationChatGptPose.Visibility = Show(cue == "chatgpt");
+        NotificationClaudePose.Visibility = Show(cue == "claude");
         MorningMug.Visibility = EveningBook.Visibility = Visibility.Collapsed;
 
         var timer = _notificationCueTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3.5) };
@@ -340,6 +342,8 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         NotificationPhotoPose.Visibility = Visibility.Collapsed;
         NotificationNewsPose.Visibility = Visibility.Collapsed;
         NotificationSystemPose.Visibility = Visibility.Collapsed;
+        NotificationChatGptPose.Visibility = Visibility.Collapsed;
+        NotificationClaudePose.Visibility = Visibility.Collapsed;
         HangingArms.Visibility = Show(_activityState != "workout");
         if (hadCue) ApplyOutfit();
         UpdateTimeDetails(DateTime.Now);

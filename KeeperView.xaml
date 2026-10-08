@@ -392,6 +392,25 @@
                         <Path Data="M73,86 L76,82 L79,85 L77,88 L80,91 L77,94 L74,91 L71,93 L69,90 L72,87 Z" Fill="#FFB58A4A" Stroke="#FF705133" StrokeThickness="0.8" />
                         <Ellipse Canvas.Left="73" Canvas.Top="85" Width="3" Height="3" Fill="#FFFFE8BF" />
                     </Canvas>
+                    <Canvas x:Name="NotificationChatGptPose" Visibility="Collapsed" IsHitTestVisible="False">
+                        <Path Data="M35,80 Q31,86 33,94" Stroke="{Binding ElementName=ArmL, Path=Stroke}" StrokeThickness="7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Path Data="M65,80 Q69,85 68,90" Stroke="{Binding ElementName=ArmR, Path=Stroke}" StrokeThickness="7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Rectangle Canvas.Left="31" Canvas.Top="76" Width="39" Height="25" RadiusX="5" RadiusY="5" Fill="#FFF5F8F5" Stroke="#FF2E8065" StrokeThickness="1.2" />
+                        <Path Data="M39,84 C39,81 44,81 44,84 C44,87 39,87 39,84 M47,84 C47,81 52,81 52,84 C52,87 47,87 47,84 M55,84 C55,81 60,81 60,84 C60,87 55,87 55,84" Stroke="#FF2E8065" StrokeThickness="1.7" />
+                        <Line X1="39" Y1="92" X2="62" Y2="92" Stroke="#FF9CB9AD" StrokeThickness="1.2" />
+                        <Ellipse Canvas.Left="28" Canvas.Top="88" Width="8" Height="8" Fill="{StaticResource Skin}" />
+                        <Ellipse Canvas.Left="64" Canvas.Top="87" Width="8" Height="8" Fill="{StaticResource Skin}" />
+                        <Path Data="M76,72 L78,77 L83,79 L78,81 L76,86 L74,81 L69,79 L74,77 Z" Fill="#FF2E8065" />
+                    </Canvas>
+                    <Canvas x:Name="NotificationClaudePose" Visibility="Collapsed" IsHitTestVisible="False">
+                        <Path Data="M35,80 Q31,86 33,94" Stroke="{Binding ElementName=ArmL, Path=Stroke}" StrokeThickness="7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Path Data="M65,80 Q69,85 68,90" Stroke="{Binding ElementName=ArmR, Path=Stroke}" StrokeThickness="7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Rectangle Canvas.Left="31" Canvas.Top="77" Width="39" Height="24" RadiusX="4" RadiusY="4" Fill="#FFFFF7EE" Stroke="#FFC66B3D" StrokeThickness="1.2" />
+                        <Path Data="M51,80 L53,85 L58,83 L55,88 L60,90 L54,91 L54,97 L50,93 L46,97 L47,91 L42,89 L48,87 L47,82 Z" Fill="#FFD47745" />
+                        <Ellipse Canvas.Left="28" Canvas.Top="88" Width="8" Height="8" Fill="{StaticResource Skin}" />
+                        <Ellipse Canvas.Left="64" Canvas.Top="87" Width="8" Height="8" Fill="{StaticResource Skin}" />
+                        <Path Data="M78,65 L80,70 L85,72 L80,74 L78,79 L76,74 L71,72 L76,70 Z" Fill="#FFD47745" />
+                    </Canvas>
                 </Canvas>
             </Viewbox>
         </Canvas>
