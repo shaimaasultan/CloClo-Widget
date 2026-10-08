@@ -7,7 +7,7 @@ using Windows.UI.Notifications.Management;
 
 namespace CloCloWidget;
 
-public readonly record struct LatestNotification(string AppName, string Title, string Body, byte[]? IconPng, string? AppUserModelId);
+public readonly record struct LatestNotification(string AppName, string Title, string Body, byte[]? IconPng);
 
 // The most recent toast notification, via UserNotificationListener — the
 // same store Windows' own Action Center reads from. This API has
@@ -40,7 +40,7 @@ public static class NotificationWatcher
             var title = lines.Length > 0 ? lines[0] : appName;
             var body = lines.Length > 1 ? string.Join(" ", lines.Skip(1)) : "";
             var icon = await TryGetIconAsync(latest.AppInfo);
-            return new LatestNotification(appName, title, body, icon, latest.AppInfo?.AppUserModelId);
+            return new LatestNotification(appName, title, body, icon);
         }
         catch
         {

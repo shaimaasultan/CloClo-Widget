@@ -9,8 +9,7 @@ namespace CloCloWidget;
 // declaring just the vtable slots actually needed, in their real order
 // (COM interop maps declared methods to vtable slots positionally, so
 // anything called must be declared, but trailing unused slots can be left
-// out — same approach AppLauncher.cs already uses for
-// IApplicationActivationManager) is lighter than pulling in a whole audio
+// out) is lighter than pulling in a whole audio
 // library for this one toggle.
 public static class VolumeControl
 {

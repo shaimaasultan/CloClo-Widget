@@ -68,7 +68,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   |---|---|
   | YouTube / Spotify | Shows what's playing there, and keeps it updated |
   | Notifications | Shows your latest notification; the list button opens Windows' notification panel |
-  | Search other apps | Lists apps playing media and every open app, to watch or switch to |
+  | Search other apps | Lists apps with media sessions; selecting one watches its media metadata without activating it |
   | GPU info | Shows the graphics cards in this PC |
   | Read selection aloud | Reads the text you highlighted in another app (up to 5,000 characters) |
   | Dictate | Opens Windows voice typing; the text is saved to a file |
@@ -81,8 +81,9 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   | Daily quote, word, joke & fact | A speech bubble with today's quote, an English → Arabic word (with an example), a joke and a "did you know" fact; click it for the next one, × or Esc to close. All built in - nothing is fetched |
   | Layer Sudoku (daily game) | Opens the Layer Sudoku game - today's daily puzzle (the same one the HTML version gives, with a streak), or 6×6 to 16×16 at four levels; layer view, method-following hints, notes, undo, timer and pause. Progress is saved |
 
-  Clicking the label that appears under the icons opens the app it's showing;
-  its pause button stops it.
+  The label under the icons only displays metadata; its pause button stops
+  monitoring. The app picker also only selects a media session to watch and
+  never activates the source app.
 - **Right-click** (or double-click) for the menu: **Set location…**,
   **Avatar** (Keeper or Lady Keeper, and each one's outfit colour), **Weather** (follow the live forecast, or pick a sky by hand), **Icons**,
   **Sleep after** (Keeper dozes off when you're away), **Workout reminder**
@@ -454,6 +455,16 @@ files are double-click launchers for those scripts.
   can't corrupt it and nothing can pre-place a file to redirect the write.
   Loading is limited to 64 KiB and JSON depth 16; every setting is checked
   against its supported range or value set before the app uses it.
+- **Saved content is data, not code.** Dictation is appended as plain text;
+  Sudoku saves are bounded JSON deserialized into fixed data classes and
+  validated before use. Neither file is passed to a script host, evaluator,
+  shell command or dynamic assembly loader.
+- **No global input hooks.** The tray icon uses a WPF message callback on its
+  own hidden window for tray clicks and Explorer restarts. It is not a global
+  keyboard or mouse hook, and it accepts callbacks only for CloClo's tray ID.
+  “Open dictation folder” opens Explorer after an explicit click. The media
+  picker and its label do not activate other apps; saved dictation and Sudoku
+  data cannot trigger program launches.
 
 **What CloClo checks before it runs** (in `NativeLibraryCheck`, before WPF
 loads anything)

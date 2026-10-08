@@ -77,7 +77,9 @@ public sealed class TrayIcon : IDisposable
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if (msg == WM_APP_TRAY)
+        // Ignore callbacks for other tray IDs; this hidden window may receive
+        // unrelated WM_APP messages, and only our own icon should dispatch UI.
+        if (msg == WM_APP_TRAY && wParam.ToInt32() == 1)
         {
             switch ((int)lParam & 0xFFFF)
             {

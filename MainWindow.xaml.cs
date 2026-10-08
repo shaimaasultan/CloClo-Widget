@@ -98,9 +98,9 @@ public partial class MainWindow : Window
     // harmless to check unconditionally since the label isn't shown at
     // all when nothing's being watched.
     private static readonly Rect ListIconRect = new(96 * Scale, 209 * Scale, 20 * Scale, 36 * Scale);
-    // The rest of the label (icon/note + both text lines) — clicking there
-    // opens the app. Checked after PauseIconRect/ListIconRect, which it
-    // overlaps, so those rects' clicks are claimed first.
+    // The rest of the label (icon/note + both text lines) is display-only.
+    // Checked after PauseIconRect/ListIconRect, which it overlaps, so those
+    // controls' clicks are claimed first.
     private static readonly Rect LabelBodyRect = new(0, 209 * Scale, 137 * Scale, 36 * Scale);
 
     private static readonly string[] YoutubeAumids = { "edge", "chrome" };
@@ -113,8 +113,7 @@ public partial class MainWindow : Window
     // fetcher delegate so the same watch/poll/pause machinery works for
     // both "what's playing in this app" and "the latest notification".
     // Icon is the sending app's logo bytes (notifications only — media has none) or null.
-    private Func<Task<(string Title, string Subtitle, byte[]? Icon, string? AppUserModelId)?>>? _watchedFetcher;
-    private string? _watchedAppUserModelId;
+    private Func<Task<(string Title, string Subtitle, byte[]? Icon)?>>? _watchedFetcher;
     // Notifications aren't really "one app" the way media is — the label
     // shows only the latest of possibly several, so clicking it opens
     // Windows' own notification flyout (the full list) rather than
@@ -260,7 +259,7 @@ public partial class MainWindow : Window
         Watch(async () =>
         {
             var info = await NowPlaying.GetForAppAsync(aumidMatches);
-            return info is { } np ? (np.Title, np.Artist, (byte[]?)null, (string?)np.AppUserModelId) : ((string, string, byte[]?, string?)?)null;
+            return info is { } np ? (np.Title, np.Artist, (byte[]?)null) : ((string, string, byte[]?)?)null;
         });
     }
 
@@ -272,8 +271,8 @@ public partial class MainWindow : Window
             var n = await NotificationWatcher.GetLatestAsync();
             if (n is not { } latest) return null;
             return _settings.ShowNotificationText
-                ? ($"{latest.AppName}: {latest.Title}", latest.Body, latest.IconPng, latest.AppUserModelId)
-                : (latest.AppName, "New notification", latest.IconPng, latest.AppUserModelId);
+                ? ($"{latest.AppName}: {latest.Title}", latest.Body, latest.IconPng)
+                : (latest.AppName, "New notification", latest.IconPng);
         });
     }
 
@@ -281,18 +280,17 @@ public partial class MainWindow : Window
     // notifications change — but reusing the same label/poll/pause
     // mechanism is simpler than building a separate one-shot display just
     // for this, and re-querying WMI every few seconds is cheap enough.
-    // There's no AUMID for a GPU, so the label body's "open app" click
-    // just does nothing here, which is the correct behaviour.
+    // GPU names are display-only, like all other watched metadata.
     private void WatchGpus()
     {
         _watchingNotifications = false;
         Watch(async () =>
         {
             var names = await Task.Run(GpuInfo.GetNames);
-            if (names.Count == 0) return ((string, string, byte[]?, string?)?)null;
+            if (names.Count == 0) return ((string, string, byte[]?)?)null;
             var title = names[0];
             var subtitle = names.Count > 1 ? string.Join(", ", names.Skip(1)) : "";
-            return (title, subtitle, (byte[]?)null, (string?)null);
+            return (title, subtitle, (byte[]?)null);
         });
     }
 
@@ -555,13 +553,12 @@ public partial class MainWindow : Window
     // timer would be wrong rather than just wasteful.
     private void ShowOneShotLabel(string title, string subtitle)
     {
-        _watchedFetcher = () => Task.FromResult<(string, string, byte[]?, string?)?>((title, subtitle, null, null));
-        _watchedAppUserModelId = null;
+        _watchedFetcher = () => Task.FromResult<(string, string, byte[]?)?>((title, subtitle, null));
         _nowPlayingTimer?.Stop();
         _ = RefreshWatched();
     }
 
-    private void Watch(Func<Task<(string Title, string Subtitle, byte[]? Icon, string? AppUserModelId)?>> fetcher)
+    private void Watch(Func<Task<(string Title, string Subtitle, byte[]? Icon)?>> fetcher)
     {
         _watchedFetcher = fetcher;
         _nowPlayingTimer ??= CreateNowPlayingTimer();
@@ -581,7 +578,6 @@ public partial class MainWindow : Window
     private void StopWatching()
     {
         _watchedFetcher = null;
-        _watchedAppUserModelId = null;
         _nowPlayingTimer?.Stop();
         SpeechReader.Stop();
         StopColorPicking();
@@ -589,12 +585,8 @@ public partial class MainWindow : Window
         ScheduleMemoryRelease();
     }
 
-    // Clicking the label body (anywhere but the pause/list buttons)
-    // launches whichever app it's showing — media or notification alike —
-    // using the AUMID captured from the last successful poll rather than
-    // re-querying on click.
-    private void OpenWatchedApp() => AppLauncher.TryActivate(_watchedAppUserModelId);
-
+    // The label body is display-only; its separate pause and notifications
+    // list controls remain available below.
     // The list button, notifications only — opens the full list instead
     // of launching just the one app that sent the latest notification.
     // Win+N is the standard shortcut for Windows' notification flyout on
@@ -605,14 +597,8 @@ public partial class MainWindow : Window
         KeyboardInput.SendChord(KeyboardInput.VK_LWIN, KeyboardInput.VK_N);
     }
 
-    // Two sections: apps that currently hold a media session (▶, same as
-    // before — YouTube/Spotify are just two hardcoded guesses at this same
-    // list), and below a separator, every other currently-running app
-    // (from RunningApps.List(), the same visible-window set Alt-Tab shows)
-    // in case what the user's after isn't playing anything (yet), or isn't
-    // media at all — picking one still watches it, and also brings it to
-    // the foreground right away so clicking it always does *something*
-    // visible even if it never reports a track.
+    // Lists media sessions for viewing only. Selecting an entry starts
+    // polling its title and artist; it never activates the other app.
     private async void ShowAppPicker()
     {
         var menu = new ContextMenu();
@@ -636,49 +622,14 @@ public partial class MainWindow : Window
                 var playing = session.GetPlaybackInfo()?.PlaybackStatus
                     == Windows.Media.Control.GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
                 var itemText = playing ? $"▶ {label}" : label;
-                var match = aumid; // capture for the closure below
-                menu.Items.Add(Item(itemText, () => WatchApp(new[] { match })));
+                menu.Items.Add(Item(itemText, () => WatchApp(new[] { aumid })));
             }
         }
-        catch { /* leave the "playing" section empty/fallback below */ }
-
-        try
-        {
-            var running = RunningApps.List();
-            if (running.Count > 0 && menu.Items.Count > 0)
-            {
-                menu.Items.Add(new Separator());
-            }
-            foreach (var app in running)
-            {
-                // Most plain Win32 apps never register an AUMID, so this
-                // is often null — dedupe against the "playing" section by
-                // AUMID when there is one, otherwise nothing to collide
-                // with, so just show it.
-                if (app.AppUserModelId != null && !seen.Add(app.AppUserModelId)) continue;
-                var aumid = app.AppUserModelId;
-                var hwnd = app.WindowHandle;
-                menu.Items.Add(Item(app.Title, () =>
-                {
-                    if (aumid != null)
-                    {
-                        WatchApp(new[] { aumid });
-                        AppLauncher.TryActivate(aumid);
-                    }
-                    else
-                    {
-                        // No AUMID to watch media through — just bring it
-                        // to the foreground directly via its window handle.
-                        RunningApps.Activate(hwnd);
-                    }
-                }));
-            }
-        }
-        catch { /* leave the "running" section empty */ }
+        catch { /* leave the media-session list empty */ }
 
         if (menu.Items.Count == 0)
         {
-            menu.Items.Add(Item("Nothing found to watch", null, enabled: false));
+            menu.Items.Add(Item("No media sessions found", null, enabled: false));
         }
         OpenMenu(menu);
     }
@@ -695,7 +646,6 @@ public partial class MainWindow : Window
     {
         if (_watchedFetcher == null) return;
         var result = await _watchedFetcher();
-        _watchedAppUserModelId = result?.AppUserModelId;
         if (result is { } r) Keeper.SetNowPlaying(r.Title, r.Subtitle, KeeperView.DecodeIcon(r.Icon), _watchingNotifications);
         else Keeper.SetNowPlaying(null, null, null, false);
     }
@@ -851,9 +801,9 @@ public partial class MainWindow : Window
             OpenNotificationFlyout();
             return;
         }
-        if (LabelBodyRect.Contains(p) && _watchedFetcher != null && _watchedAppUserModelId != null)
+        if (LabelBodyRect.Contains(p) && _watchedFetcher != null)
         {
-            OpenWatchedApp();
+            // This area displays metadata only; it does not activate its source app.
             return;
         }
 

@@ -43,6 +43,9 @@ public sealed class SudokuRecord
 
 public sealed class SudokuStore
 {
+    private const int MaxStoreFileBytes = 4 * 1024 * 1024;
+    private static readonly JsonSerializerOptions LoadOptions = new() { MaxDepth = 16 };
+
     public SudokuGame? Game { get; set; }
     public List<string> DailySolved { get; set; } = new();
     public List<SudokuRecord> History { get; set; } = new();
@@ -61,17 +64,35 @@ public sealed class SudokuStore
     {
         try
         {
-            if (File.Exists(FilePath) && new FileInfo(FilePath).Length < 4 * 1024 * 1024)
-            {
-                var loaded = JsonSerializer.Deserialize<SudokuStore>(File.ReadAllText(FilePath));
-                if (loaded != null) return loaded.Checked();
-            }
+            if (!File.Exists(FilePath)) return new SudokuStore();
+            var bytes = ReadStoreBytes();
+            var loaded = JsonSerializer.Deserialize<SudokuStore>(bytes, LoadOptions);
+            if (loaded != null) return loaded.Checked();
         }
         catch
         {
             // Unreadable or corrupt: start fresh.
         }
         return new SudokuStore();
+    }
+
+    private static byte[] ReadStoreBytes()
+    {
+        // Bound the actual read, not only FileInfo.Length: the file could
+        // otherwise grow between a size check and ReadAllText.
+        using var stream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var buffer = new byte[MaxStoreFileBytes + 1];
+        var count = 0;
+        while (count < buffer.Length)
+        {
+            var read = stream.Read(buffer, count, buffer.Length - count);
+            if (read == 0) break;
+            count += read;
+        }
+        if (count > MaxStoreFileBytes || stream.ReadByte() != -1)
+            throw new InvalidDataException("Sudoku save exceeds the size limit.");
+        Array.Resize(ref buffer, count);
+        return buffer;
     }
 
     // Keeps only what makes sense.
