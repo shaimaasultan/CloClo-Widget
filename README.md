@@ -86,7 +86,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   holds up to seven choices at once.
 
   The search box below the widget finds the actions in the right-click menu,
-  including **Windows status**, **Custom reminders**, **Open dictation folder**,
+  including **Windows status**, **Scientific calculator**, **Custom reminders**, **Open dictation folder**,
   and the avatar, weather, privacy and icon choices. Suggestions open below
   or beside the box; choose with the mouse or arrow keys and Enter. Esc closes them.
   The right-click menu remains available.

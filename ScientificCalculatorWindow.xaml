@@ -1,0 +1,54 @@
+<Window x:Class="CloCloWidget.ScientificCalculatorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="CloClo — Scientific calculator"
+        Width="410" Height="550" MinWidth="360" MinHeight="500"
+        WindowStartupLocation="Manual" ShowInTaskbar="False"
+        Background="#1C2935" Foreground="White">
+    <Window.Resources>
+        <Style x:Key="KeyButton" TargetType="Button">
+            <Setter Property="Background" Value="#34495B" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#526779" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="3" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style x:Key="FunctionButton" TargetType="Button" BasedOn="{StaticResource KeyButton}">
+            <Setter Property="Background" Value="#285D69" />
+        </Style>
+        <Style x:Key="OperatorButton" TargetType="Button" BasedOn="{StaticResource KeyButton}">
+            <Setter Property="Background" Value="#654F81" />
+        </Style>
+        <Style x:Key="EqualsButton" TargetType="Button" BasedOn="{StaticResource KeyButton}">
+            <Setter Property="Background" Value="#237A48" />
+        </Style>
+        <Style x:Key="ClearButton" TargetType="Button" BasedOn="{StaticResource KeyButton}">
+            <Setter Property="Background" Value="#943D3D" />
+        </Style>
+    </Window.Resources>
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <TextBlock Text="Scientific calculator" FontSize="19" FontWeight="Bold" Margin="0,0,0,10" />
+        <TextBox x:Name="ExpressionBox" Grid.Row="1" MaxLength="256"
+                 Background="#101A23" Foreground="White" CaretBrush="White"
+                 BorderBrush="#688196" BorderThickness="1" Padding="10,7"
+                 FontSize="20" HorizontalContentAlignment="Right"
+                 TextChanged="ExpressionBox_TextChanged" PreviewKeyDown="ExpressionBox_PreviewKeyDown" />
+        <StackPanel Grid.Row="2" Margin="0,8,0,12">
+            <TextBlock x:Name="ResultText" Text="Enter an expression" FontSize="20"
+                       FontWeight="SemiBold" Foreground="#B8E3C7"
+                       HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" />
+            <TextBlock Text="sin(30), sqrt(9), 2^3 · % means divide by 100"
+                       FontSize="11" Foreground="#B9C7D1" HorizontalAlignment="Right" />
+        </StackPanel>
+        <UniformGrid x:Name="Keypad" Grid.Row="3" Columns="5" Rows="8" />
+    </Grid>
+</Window>

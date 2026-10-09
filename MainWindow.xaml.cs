@@ -45,6 +45,7 @@ public partial class MainWindow : Window
     private static readonly TimeSpan BreakThreshold = TimeSpan.FromMinutes(2);
     private Window? _avatarWindow;
     private CommandSearchBar? _commandSearchBar;
+    private ScientificCalculatorWindow? _calculatorWindow;
     private ContextMenu? _activeContextMenu;
 
     private const int GWL_EXSTYLE = -20;
@@ -463,6 +464,29 @@ public partial class MainWindow : Window
         ShowSensitive(window);
     }
 
+    private void ShowScientificCalculator()
+    {
+        if (_calculatorWindow != null)
+        {
+            if (_calculatorWindow.WindowState == WindowState.Minimized) _calculatorWindow.WindowState = WindowState.Normal;
+            _calculatorWindow.Activate();
+            return;
+        }
+
+        var window = new ScientificCalculatorWindow
+        {
+            Owner = this,
+            Topmost = _settings.AlwaysOnTop,
+        };
+        _calculatorWindow = window;
+        window.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_calculatorWindow, window)) _calculatorWindow = null;
+        };
+        PositionBesideWidget(window);
+        ShowSensitive(window);
+    }
+
     // Search runs only these fixed menu actions. Typed text filters labels and
     // aliases; it is never passed to a process, file path or command parser.
     private IReadOnlyList<WidgetSearchAction> BuildQuickActions()
@@ -470,6 +494,7 @@ public partial class MainWindow : Window
         var actions = new List<WidgetSearchAction>
         {
             new("Windows status", "storage connection drive disk network wifi", WidgetSearchActionKind.OpenWindow, ShowWindowsStatus),
+            new("Scientific calculator", "math arithmetic trig sin cos log square root", WidgetSearchActionKind.OpenWindow, ShowScientificCalculator),
             new("Custom reminders", "reminder remainder schedule message", WidgetSearchActionKind.OpenWindow, OpenCustomReminders),
             new("Open dictation folder", "dictation files recordings", WidgetSearchActionKind.OpenFolder, OpenDictationFolder),
             new("Set location", "city place weather gps", WidgetSearchActionKind.OpenWindow, OpenLocationDialog),
@@ -1462,6 +1487,7 @@ public partial class MainWindow : Window
         menu.Items.Add(BuildWorkoutMenu());
         menu.Items.Add(Item("Custom reminders…", OpenCustomReminders));
         menu.Items.Add(Item("Windows status…", ShowWindowsStatus));
+        menu.Items.Add(Item("Scientific calculator…", ShowScientificCalculator));
         menu.Items.Add(Item("Refresh weather", () => _ = RefreshWeatherAsync()));
         menu.Items.Add(Item("Start new dictation file", StartNewDictationFile));
         menu.Items.Add(Item("Open dictation folder", OpenDictationFolder));
