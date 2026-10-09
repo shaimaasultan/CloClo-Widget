@@ -55,6 +55,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     private string _sky = "clear";
     private bool _isNight;
     private string _activityState = "awake";
+    private bool _customReminderActive;
     private string _avatar = "keeper";
     private string _outfit = "classic";
     private string _motionMode = "full";
@@ -83,6 +84,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     private DispatcherTimer? _blinkReopenTimer;
     private DispatcherTimer? _fidgetTimer;
     private DispatcherTimer? _notificationCueTimer;
+    private DispatcherTimer? _startupSaluteTimer;
     private string? _activeNotificationCue;
     private int _contrastTicks;
     private readonly Dictionary<TextBlock, TextContrastState> _textContrast = new();
@@ -111,6 +113,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
             _contrastTicks = 0;
             UpdateTextContrast();
         };
+        Unloaded += (_, _) => ClearStartupSalute();
         _clockTimer.Tick += (_, _) =>
         {
             UpdateClock();
@@ -138,6 +141,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         var normalized = mode is "full" or "gentle" or "still" ? mode : "full";
         if (_motionMode == normalized) return;
         _motionMode = normalized;
+        ClearStartupSalute();
         if (_motionMode == "still") ClearNotificationCue();
         StopIdleMotionTimers();
         _wrapBusy = false;
@@ -303,6 +307,15 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         FitLine(NowPlayingSubtitle, width);
     }
 
+    public void SetCustomReminderActive(bool active)
+    {
+        if (_customReminderActive == active) return;
+        _customReminderActive = active;
+        WorkoutCountdown.Visibility = Show(!active && (_activityState == "workout" ||
+            (_activityState == "awake" && !string.IsNullOrEmpty(_shirtName))));
+        ApplyOutfit();
+    }
+
     // Notification text is never executed. A small allowlist selects one of
     // three decorative poses for a few seconds, then restores the idle arms.
     public void SetNotificationCue(string cue)
@@ -314,6 +327,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         }
 
         ClearNotificationCue();
+        ClearStartupSalute();
         _activeNotificationCue = cue;
         HangingArms.Visibility = Visibility.Collapsed;
         UmbrellaHeld.Visibility = Visibility.Collapsed;
@@ -383,6 +397,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         if (state != _activityState)
         {
             _activityState = state;
+            ClearStartupSalute();
             ClearNotificationCue();
             var sleeping = state == "asleep";
             var working = state == "workout";
@@ -442,12 +457,13 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         var lady = _avatar == "lady";
         var gym = _activityState == "workout";
         var sleep = _activityState == "asleep";
-        var weather = !gym && !sleep;
+        var reminder = _customReminderActive && !gym && !sleep;
+        var weather = !gym && !sleep && !reminder;
 
         foreach (var el in new UIElement[]
         {
             TorsoRain, TorsoSnowExtra, TorsoStorm, RaincoatHoodBack, RaincoatHood, SnowHat, Sunglasses, UmbrellaHeld, UmbrellaLeaning,
-            GymTop, GymShorts, Headband, PajamaTop, Nightgown, Nightcap,
+            GymTop, ReminderTop, GymShorts, Headband, PajamaTop, Nightgown, Nightcap,
         })
         {
             el.Visibility = Visibility.Collapsed;
@@ -469,6 +485,12 @@ public partial class KeeperView : System.Windows.Controls.UserControl
             NightcapBody.Fill = (Brush)FindResource(lady ? "Nightgown" : "Pajama");
             (lady ? Nightgown : PajamaTop).Visibility = Visibility.Visible;
             (arms, legs, shoes) = (lady ? "Nightgown" : "Pajama", lady ? "Skin" : "Pajama", "Slippers");
+        }
+        else if (reminder)
+        {
+            ReminderTop.Visibility = Visibility.Visible;
+            arms = "ReminderTop";
+            (legs, shoes) = ("Trousers", "Shoes");
         }
         else
         {
@@ -497,13 +519,14 @@ public partial class KeeperView : System.Windows.Controls.UserControl
             (legs, shoes) = ("Trousers", "Shoes");
         }
         // In the rain the umbrella waits, leaning beside them, during a break or a nap.
-        UmbrellaLeaning.Visibility = Show(!weather && _sky == "rain");
+        UmbrellaLeaning.Visibility = Show(!weather && !reminder && _sky == "rain");
 
         // The everyday outfit's colours come from the chosen set.
         var set = Array.Find(Outfits, o => o.Key == _outfit);
         Brush Paint(string key) => key switch
         {
             "Sweater" => new SolidColorBrush(set.Top),
+            "ReminderTop" => (Brush)FindResource("ReminderTop"),
             "Trousers" => new SolidColorBrush(set.Trousers),
             _ => (Brush)FindResource(key),
         };
@@ -536,6 +559,44 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         if (ClockTime.Text != time) ClockTime.Text = time;
         if (ClockDate.Text != date) ClockDate.Text = date;
         UpdateTimeDetails(now);
+    }
+
+    // Briefly raise a hand when startup greeting speech actually begins.
+    // Still mode holds a static salute and returns automatically, preserving
+    // the cue without introducing motion for users who disabled animation.
+    public void Salute()
+    {
+        if (_activityState != "awake") return;
+        ClearStartupSalute();
+        HangingArms.Visibility = Visibility.Collapsed;
+        SalutePose.Visibility = Visibility.Visible;
+        _startupSaluteTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(_motionMode == "still" ? 2.5 : 2.1) };
+        _startupSaluteTimer.Tick += StartupSaluteTimer_Tick;
+        _startupSaluteTimer.Start();
+
+        if (_motionMode == "still") return;
+        var animation = Keys(2.1, null, (0.0, 27), (0.2, 0), (0.78, 0), (1.0, 27));
+        animation.Completed += (_, _) => ClearStartupSalute();
+        SaluteArmShift.BeginAnimation(TranslateTransform.YProperty, OneShot(animation));
+        SaluteArmWave.BeginAnimation(RotateTransform.AngleProperty,
+            OneShot(Keys(2.1, null, (0.0, 0), (0.2, 0), (0.31, -7), (0.42, 7), (0.53, -7), (0.64, 7), (0.76, 0), (1.0, 0))));
+    }
+
+    private void StartupSaluteTimer_Tick(object? sender, EventArgs e) => ClearStartupSalute();
+
+    private void ClearStartupSalute()
+    {
+        if (_startupSaluteTimer != null)
+        {
+            _startupSaluteTimer.Stop();
+            _startupSaluteTimer.Tick -= StartupSaluteTimer_Tick;
+            _startupSaluteTimer = null;
+        }
+        SaluteArmShift.BeginAnimation(TranslateTransform.YProperty, null);
+        SaluteArmWave.BeginAnimation(RotateTransform.AngleProperty, null);
+        SalutePose.Visibility = Visibility.Collapsed;
+        if (_activityState != "workout" && _activeNotificationCue == null)
+            HangingArms.Visibility = Visibility.Visible;
     }
 
     private void UpdateTimeDetails(DateTime now)

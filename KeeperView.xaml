@@ -48,6 +48,8 @@
         <SolidColorBrush x:Key="Pajama" Color="#7f9cc9" />
         <SolidColorBrush x:Key="PajamaStripe" Color="#b9cbe6" />
         <SolidColorBrush x:Key="Nightgown" Color="#e3a9b9" />
+        <SolidColorBrush x:Key="ReminderTop" Color="#397f76" />
+        <SolidColorBrush x:Key="ReminderAccent" Color="#f0cf78" />
         <SolidColorBrush x:Key="Slippers" Color="#c9b8a6" />
 
         <!-- Dark lettering stays legible on light wallpaper; a soft light
@@ -226,6 +228,14 @@
                         <Path Data="M44 74 L50 80 L56 74" Stroke="{StaticResource Sneakers}" StrokeThickness="1.2" StrokeLineJoin="Round" />
                         <Line X1="32" Y1="96" X2="68" Y2="96" Stroke="{StaticResource Sneakers}" StrokeThickness="1.4" Opacity="0.8" />
                     </Canvas>
+                    <!-- A teal reminder cardigan with a small note pocket. -->
+                    <Canvas x:Name="ReminderTop" Visibility="Collapsed">
+                        <Path Data="M31 106 Q29 78 50 73 Q71 78 69 106 Z" Fill="{StaticResource ReminderTop}" />
+                        <Path Data="M43 74 q7 6 14 0" Stroke="{StaticResource Paper}" StrokeThickness="1.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Rectangle Canvas.Left="56.5" Canvas.Top="85" Width="8.5" Height="11" RadiusX="1" RadiusY="1" Fill="{StaticResource ReminderAccent}" />
+                        <Line X1="58.5" Y1="88" X2="63" Y2="88" Stroke="{StaticResource Hair}" StrokeThickness="0.8" />
+                        <Line X1="58.5" Y1="91" X2="63" Y2="91" Stroke="{StaticResource Hair}" StrokeThickness="0.8" />
+                    </Canvas>
                     <!-- Asleep (Keeper): striped pyjamas. -->
                     <Canvas x:Name="PajamaTop" Visibility="Collapsed">
                         <Path Data="M31 106 Q29 78 50 73 Q71 78 69 106 Z" Fill="{StaticResource Pajama}" />
@@ -327,6 +337,22 @@
                             <Canvas.RenderTransform><TranslateTransform x:Name="RightArmShift" /></Canvas.RenderTransform>
                             <Path x:Name="ArmR" Data="M65 80 Q72 92 69 102" Stroke="{StaticResource Sweater}" StrokeThickness="7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
                             <Ellipse Canvas.Left="65" Canvas.Top="98" Width="8" Height="8" Fill="{StaticResource Skin}" />
+                        </Canvas>
+                    </Canvas>
+
+                    <!-- The brief startup greeting salute. -->
+                    <Canvas x:Name="SalutePose" Visibility="Collapsed">
+                        <Path Data="M35 80 Q28 92 31 102" Stroke="{Binding ElementName=ArmL, Path=Stroke}" StrokeThickness="7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Ellipse Canvas.Left="27" Canvas.Top="98" Width="8" Height="8" Fill="{StaticResource Skin}" />
+                        <Canvas x:Name="SaluteRightArm">
+                            <Canvas.RenderTransform>
+                                <TransformGroup>
+                                    <TranslateTransform x:Name="SaluteArmShift" />
+                                    <RotateTransform x:Name="SaluteArmWave" CenterX="65" CenterY="80" />
+                                </TransformGroup>
+                            </Canvas.RenderTransform>
+                            <Path Data="M65 80 Q70 70 71 60 Q72 55 68 51" Stroke="{Binding ElementName=ArmR, Path=Stroke}" StrokeThickness="7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            <Ellipse Canvas.Left="64" Canvas.Top="47" Width="8" Height="8" Fill="{StaticResource Skin}" />
                         </Canvas>
                     </Canvas>
 

@@ -21,6 +21,8 @@ public class WidgetSettings
     };
     private static readonly HashSet<int> AllowedSleepIntervals = new() { 0, 2, 5, 15 };
     private static readonly HashSet<int> AllowedWorkoutIntervals = new() { 0, 15, 30, 45, 60 };
+    private static readonly HashSet<int> AllowedCustomReminderIntervals = new() { 15, 30, 45, 60, 90, 120 };
+    private const int MaxCustomReminders = 5;
     public string City { get; set; } = "Cairo";
     public double Latitude { get; set; } = 30.0444;
     public double Longitude { get; set; } = 31.2357;
@@ -52,6 +54,7 @@ public class WidgetSettings
     // couple of minutes) before Keeper nudges a stretch break — 0 means
     // never. Picked from the right-click menu's "Workout reminder" submenu.
     public int WorkoutAfterMinutes { get; set; } = 15;
+    public List<CustomReminderSettings> CustomReminders { get; set; } = new();
     // Keeps the widget (and the clipboard/QR windows it opens) out of
     // screenshots, recordings and screen sharing — see ScreenCapture.cs.
     // On by default: it changes nothing on the local display.
@@ -135,6 +138,12 @@ public class WidgetSettings
         LadyOutfit = IsAllowedOutfit(LadyOutfit) ? LadyOutfit : "classic";
         SleepAfterMinutes = AllowedSleepIntervals.Contains(SleepAfterMinutes) ? SleepAfterMinutes : 5;
         WorkoutAfterMinutes = AllowedWorkoutIntervals.Contains(WorkoutAfterMinutes) ? WorkoutAfterMinutes : 15;
+        CustomReminders = (CustomReminders ?? new List<CustomReminderSettings>())
+            .Take(MaxCustomReminders)
+            .Select(reminder => reminder?.ValidateAndNormalize())
+            .Where(reminder => reminder != null)
+            .Cast<CustomReminderSettings>()
+            .ToList();
         if (DictationFilePath is not null &&
             (DictationFilePath.Length > 2048 || !SpeechToText.IsInDictationFolder(DictationFilePath)))
             DictationFilePath = null;
@@ -191,4 +200,40 @@ public class WidgetSettings
             // Best-effort persistence; losing a save isn't fatal.
         }
     }
+}
+
+public sealed class CustomReminderSettings
+{
+    public string Message { get; set; } = "Take a short stretch break.";
+    public int IntervalMinutes { get; set; } = 30;
+    public int StartHour { get; set; } = 9;
+    public int EndHour { get; set; } = 17;
+    public bool Speak { get; set; }
+    public bool Enabled { get; set; } = true;
+
+    public CustomReminderSettings ValidateAndNormalize()
+    {
+        if (string.IsNullOrWhiteSpace(Message) || Message.Length > 120 || Message.Any(char.IsControl))
+            Message = "Take a short stretch break.";
+        else
+            Message = Message.Trim();
+
+        if (IntervalMinutes is not (15 or 30 or 45 or 60 or 90 or 120)) IntervalMinutes = 30;
+        if (StartHour is < 0 or > 23) StartHour = 9;
+        if (EndHour is < 0 or > 23 || EndHour == StartHour) EndHour = StartHour == 17 ? 9 : 17;
+        return this;
+    }
+
+    public CustomReminderSettings Copy() => new()
+    {
+        Message = Message,
+        IntervalMinutes = IntervalMinutes,
+        StartHour = StartHour,
+        EndHour = EndHour,
+        Speak = Speak,
+        Enabled = Enabled,
+    };
+
+    public string Describe() =>
+        $"Every {IntervalMinutes} minutes · {StartHour:00}:00–{EndHour:00}:00 · {(Speak ? "speaks and displays" : "visual only")} · {(Enabled ? "on" : "off")}";
 }

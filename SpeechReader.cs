@@ -49,11 +49,11 @@ public static class SpeechReader
         Finished?.Invoke();
     }
 
-    public static void Speak(string text)
+    public static void Speak(string text, Action? onStarted = null)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
         if (text.Length > MaxSpokenChars) text = text[..MaxSpokenChars];
-        _ = SpeakAsync(text);
+        _ = SpeakAsync(text, onStarted);
     }
 
     public static void Stop()
@@ -63,7 +63,7 @@ public static class SpeechReader
         Release();
     }
 
-    private static async Task SpeakAsync(string text)
+    private static async Task SpeakAsync(string text, Action? onStarted)
     {
         var resources = new PlaybackResources();
         try
@@ -93,6 +93,8 @@ public static class SpeechReader
                 Player.Source = list;
                 Player.Play();
             }
+            try { onStarted?.Invoke(); }
+            catch { /* A visual callback must not affect speech playback. */ }
         }
         catch
         {

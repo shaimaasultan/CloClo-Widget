@@ -26,6 +26,10 @@ public partial class MainWindow : Window
     private DispatcherTimer? _idleTimer;
     private DispatcherTimer? _weatherTimer;
     private DispatcherTimer? _greetingTimer;
+    private DispatcherTimer? _customReminderTimer;
+    private DispatcherTimer? _customReminderDisplayTimer;
+    private bool _resumeWatchAfterCustomReminder;
+    private readonly Dictionary<CustomReminderSettings, DateTime> _customReminderLastChecked = new();
     // "awake", "asleep", or "workout" — see UpdateActivityState.
     private string _activityState = "awake";
     // When the current unbroken stretch of activity began — reset every
@@ -198,6 +202,10 @@ public partial class MainWindow : Window
                 _greetingTimer = null;
             }
             SaveWindowPosition();
+            _customReminderTimer?.Stop();
+            if (_customReminderTimer != null) _customReminderTimer.Tick -= CustomReminderTimer_Tick;
+            _customReminderTimer = null;
+            StopCustomReminderDisplayTimer();
             _avatarWindow?.Close();
         };
     }
@@ -233,6 +241,7 @@ public partial class MainWindow : Window
         SetupForegroundTracking();
         SetupBatteryTimer();
         SetupIdleTimer();
+        SetupCustomReminderTimer();
         QueueGreeting();
 
         ApplyDisplaySettings();
@@ -268,7 +277,7 @@ public partial class MainWindow : Window
         if (_greetingTimer != null) _greetingTimer.Tick -= GreetingTimer_Tick;
         _greetingTimer = null;
         if (_settings.SpeakGreeting && IsLoaded)
-            SpeechReader.Speak(BuildGreeting());
+            SpeechReader.Speak(BuildGreeting(), () => Dispatcher.BeginInvoke(new Action(Keeper.Salute)));
     }
 
     private static string BuildGreeting()
@@ -654,6 +663,7 @@ public partial class MainWindow : Window
     // next 4s tick to notice "nothing" on its own.
     private void StopWatching()
     {
+        StopCustomReminderDisplayTimer();
         _watchedFetcher = null;
         _nowPlayingTimer?.Stop();
         SpeechReader.Stop();
@@ -1015,6 +1025,85 @@ public partial class MainWindow : Window
         _idleTimer.Start();
     }
 
+    private void SetupCustomReminderTimer()
+    {
+        var now = DateTime.Now;
+        _customReminderLastChecked.Clear();
+        foreach (var reminder in _settings.CustomReminders)
+            _customReminderLastChecked[reminder] = now;
+
+        _customReminderTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
+        _customReminderTimer.Tick += CustomReminderTimer_Tick;
+        _customReminderTimer.Start();
+    }
+
+    private void CustomReminderTimer_Tick(object? sender, EventArgs e)
+    {
+        var now = DateTime.Now;
+        foreach (var reminder in _settings.CustomReminders)
+        {
+            if (!reminder.Enabled) continue;
+            if (_activityState != "awake")
+            {
+                _customReminderLastChecked[reminder] = now;
+                continue;
+            }
+            if (!IsWithinReminderHours(reminder, now))
+            {
+                _customReminderLastChecked[reminder] = now;
+                continue;
+            }
+
+            if (!_customReminderLastChecked.TryGetValue(reminder, out var lastChecked))
+                lastChecked = _customReminderLastChecked[reminder] = now;
+            if (now - lastChecked < TimeSpan.FromMinutes(reminder.IntervalMinutes)) continue;
+
+            // Deliver at most one per minute so simultaneous schedules are
+            // spaced out rather than replacing one another's visible label.
+            _customReminderLastChecked[reminder] = now;
+            ShowCustomReminder(reminder.Message);
+            if (reminder.Speak) SpeechReader.Speak(reminder.Message);
+            break;
+        }
+    }
+
+    private void ShowCustomReminder(string message)
+    {
+        _resumeWatchAfterCustomReminder = _nowPlayingTimer?.IsEnabled == true;
+        _nowPlayingTimer?.Stop();
+        Keeper.SetCustomReminderActive(true);
+        Keeper.SetNowPlaying(message, "Custom reminder", null, false);
+        _customReminderDisplayTimer ??= new DispatcherTimer();
+        _customReminderDisplayTimer.Stop();
+        _customReminderDisplayTimer.Interval = TimeSpan.FromSeconds(10);
+        _customReminderDisplayTimer.Tick -= CustomReminderDisplayTimer_Tick;
+        _customReminderDisplayTimer.Tick += CustomReminderDisplayTimer_Tick;
+        _customReminderDisplayTimer.Start();
+    }
+
+    private async void CustomReminderDisplayTimer_Tick(object? sender, EventArgs e)
+    {
+        var resumeWatch = _resumeWatchAfterCustomReminder;
+        StopCustomReminderDisplayTimer();
+        await RefreshWatched();
+        if (resumeWatch) _nowPlayingTimer?.Start();
+    }
+
+    private void StopCustomReminderDisplayTimer()
+    {
+        Keeper.SetCustomReminderActive(false);
+        if (_customReminderDisplayTimer == null) return;
+        _customReminderDisplayTimer.Stop();
+        _customReminderDisplayTimer.Tick -= CustomReminderDisplayTimer_Tick;
+        _customReminderDisplayTimer = null;
+        _resumeWatchAfterCustomReminder = false;
+    }
+
+    private static bool IsWithinReminderHours(CustomReminderSettings reminder, DateTime now) =>
+        reminder.StartHour < reminder.EndHour
+            ? now.Hour >= reminder.StartHour && now.Hour < reminder.EndHour
+            : now.Hour >= reminder.StartHour || now.Hour < reminder.EndHour;
+
     // Three states, sleep takes priority over the workout nudge (if you've
     // actually stepped away, you don't also need a "take a break" pose):
     // - asleep: idle for at least SleepAfterMinutes.
@@ -1246,6 +1335,7 @@ public partial class MainWindow : Window
         menu.Items.Add(BuildMotionMenu());
         menu.Items.Add(BuildSleepMenu());
         menu.Items.Add(BuildWorkoutMenu());
+        menu.Items.Add(Item("Custom reminders…", OpenCustomReminders));
         menu.Items.Add(Item("Refresh weather", () => _ = RefreshWeatherAsync()));
         menu.Items.Add(Item("Start new dictation file", StartNewDictationFile));
         menu.Items.Add(Item("Open dictation folder", OpenDictationFolder));
@@ -1380,6 +1470,85 @@ public partial class MainWindow : Window
             _activeStreakStart = DateTime.Now; // start the new threshold's countdown fresh, not mid-streak
             UpdateActivityState();
         }, isChecked: _settings.WorkoutAfterMinutes == opt.Minutes)));
+
+    private void OpenCustomReminders()
+    {
+        var dialog = new CustomRemindersWindow(_settings.CustomReminders)
+        {
+            Owner = this,
+            Topmost = _settings.AlwaysOnTop,
+        };
+        PositionBesideWidget(dialog);
+
+        // Keep the widget's foreground recovery timer from repeatedly
+        // reordering it while its owned dialog (or the editor it opens) is
+        // active. The avatar hit window covers only the widget itself; the
+        // reminder window is placed beside that area.
+        var resumeTopmostTimer = _topmostTimer?.IsEnabled == true;
+        _topmostTimer?.Stop();
+        bool? saved = null;
+        try
+        {
+            saved = dialog.ShowDialog();
+        }
+        finally
+        {
+            if (resumeTopmostTimer)
+            {
+                _topmostTimer?.Start();
+                ReassertTopmost();
+            }
+        }
+
+        if (saved != true) return;
+        _settings.CustomReminders = dialog.Reminders.ToList();
+        _settings.Save();
+        var now = DateTime.Now;
+        _customReminderLastChecked.Clear();
+        foreach (var reminder in _settings.CustomReminders)
+            _customReminderLastChecked[reminder] = now;
+    }
+
+    private void PositionBesideWidget(Window dialog)
+    {
+        var workAreas = NativeScreen.WorkingAreas();
+        if (workAreas.Count == 0) return;
+
+        var screenOrigin = PointToScreen(new Point(0, 0));
+        var screenBottomRight = PointToScreen(new Point(Width, Height));
+        var widgetLeft = screenOrigin.X;
+        var widgetTop = screenOrigin.Y;
+        var widgetRight = screenBottomRight.X;
+        var widgetBottom = screenBottomRight.Y;
+        var widgetCenterX = (widgetLeft + widgetRight) / 2;
+        var widgetCenterY = (widgetTop + widgetBottom) / 2;
+        var area = workAreas
+            .OrderByDescending(candidate =>
+            {
+                var overlapWidth = Math.Max(0, Math.Min(widgetRight, candidate.X + candidate.Width) - Math.Max(widgetLeft, candidate.X));
+                var overlapHeight = Math.Max(0, Math.Min(widgetBottom, candidate.Y + candidate.Height) - Math.Max(widgetTop, candidate.Y));
+                return overlapWidth * overlapHeight;
+            })
+            .First();
+
+        var dpiScale = System.Windows.Media.VisualTreeHelper.GetDpi(this);
+        var dialogWidth = dialog.Width * dpiScale.DpiScaleX;
+        var dialogHeight = dialog.Height * dpiScale.DpiScaleY;
+        const double gap = 12;
+        var rightSpace = area.X + area.Width - widgetRight;
+        var leftSpace = widgetLeft - area.X;
+
+        var placeRight = rightSpace >= dialogWidth + gap || rightSpace >= leftSpace;
+        var targetLeft = placeRight ? widgetRight + gap : widgetLeft - dialogWidth - gap;
+        var targetTop = widgetCenterY - dialogHeight / 2;
+        targetLeft = Math.Clamp(targetLeft, area.X, Math.Max(area.X, area.X + area.Width - dialogWidth));
+        targetTop = Math.Clamp(targetTop, area.Y, Math.Max(area.Y, area.Y + area.Height - dialogHeight));
+
+        // Convert the physical screen offset back to WPF's device-independent
+        // coordinates using the widget's per-monitor scale.
+        dialog.Left = Left + (targetLeft - widgetLeft) / dpiScale.DpiScaleX;
+        dialog.Top = Top + (targetTop - widgetTop) / dpiScale.DpiScaleY;
+    }
 
     // Display names for the same keys ComputeIconRects/IconOrder use —
     // separate from that array since menu labels need to be human-readable
