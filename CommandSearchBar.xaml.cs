@@ -12,7 +12,9 @@ namespace CloCloWidget;
 public enum WidgetSearchActionKind
 {
     OpenWindow,
+    OpenMenu,
     OpenFolder,
+    Watch,
     Toggle,
     Set,
     Run,
@@ -21,12 +23,17 @@ public enum WidgetSearchActionKind
     Exit,
 }
 
-public sealed record WidgetSearchAction(string Label, string Keywords, WidgetSearchActionKind Kind, Action Execute, Func<bool>? IsOn = null)
+public sealed record WidgetSearchAction(
+    string Label, string Keywords, WidgetSearchActionKind Kind, Action Execute,
+    Func<bool?>? IsOn = null, string? OnLabel = null, string? OffLabel = null,
+    bool IconSetting = false, Func<WidgetSearchBadge>? CurrentBadge = null)
 {
     public string KindLabel => Kind switch
     {
         WidgetSearchActionKind.OpenWindow => "Open window",
+        WidgetSearchActionKind.OpenMenu => "Open menu",
         WidgetSearchActionKind.OpenFolder => "Open folder",
+        WidgetSearchActionKind.Watch => "Watch",
         WidgetSearchActionKind.Toggle => "Toggle",
         WidgetSearchActionKind.Set => "Set",
         WidgetSearchActionKind.CreateFile => "Create file",
@@ -35,6 +42,8 @@ public sealed record WidgetSearchAction(string Label, string Keywords, WidgetSea
         _ => "Run",
     };
 }
+
+public sealed record WidgetSearchBadge(string Label, string Color);
 
 public sealed record WidgetSearchSuggestion(WidgetSearchAction Action, string BadgeLabel, string BadgeColor)
 {
@@ -76,10 +85,19 @@ public partial class CommandSearchBar : UserControl
     private void RefreshSuggestions()
     {
         var query = SearchText.Text.Trim();
+        var terms = query.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var lookingForIconSettings = terms.Any(term =>
+            term.TrimEnd(':').Equals("icon", StringComparison.OrdinalIgnoreCase) ||
+            term.TrimEnd(':').Equals("icons", StringComparison.OrdinalIgnoreCase));
         var matches = _actions.Where(command =>
-            command.Label.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-            command.Keywords.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-            command.KindLabel.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+            (!command.IconSetting || lookingForIconSettings) &&
+            terms.All(term =>
+            {
+                var word = term.TrimEnd(':');
+                return command.Label.Contains(word, StringComparison.OrdinalIgnoreCase) ||
+                    command.Keywords.Contains(word, StringComparison.OrdinalIgnoreCase) ||
+                    command.KindLabel.Contains(word, StringComparison.OrdinalIgnoreCase);
+            })).ToArray();
         if (query.Length == 0) matches = matches.Take(6).ToArray();
         Suggestions.ItemsSource = matches.Select(CreateSuggestion).ToArray();
         Suggestions.SelectedIndex = matches.Length > 0 ? 0 : -1;
@@ -88,14 +106,33 @@ public partial class CommandSearchBar : UserControl
 
     private static WidgetSearchSuggestion CreateSuggestion(WidgetSearchAction action)
     {
-        var isOn = action.Kind == WidgetSearchActionKind.Toggle && action.IsOn?.Invoke() == true;
+        if (action.CurrentBadge is { } badgeProvider)
+        {
+            var badge = badgeProvider();
+            return new WidgetSearchSuggestion(action, badge.Label, badge.Color);
+        }
+
+        var toggleState = action.Kind == WidgetSearchActionKind.Toggle ? action.IsOn?.Invoke() : null;
         var badgeLabel = action.Kind == WidgetSearchActionKind.Toggle
-            ? $"Toggle · {(isOn ? "On" : "Off")}" : action.KindLabel;
+            ? toggleState switch
+            {
+                true => $"Toggle · {action.OnLabel ?? "On"}",
+                false => $"Toggle · {action.OffLabel ?? "Off"}",
+                _ => "Toggle · Unavailable",
+            }
+            : action.KindLabel;
         var badgeColor = action.Kind switch
         {
             WidgetSearchActionKind.OpenWindow => "#FF285D99",
+            WidgetSearchActionKind.OpenMenu => "#FF68528F",
             WidgetSearchActionKind.OpenFolder => "#FF79509A",
-            WidgetSearchActionKind.Toggle => isOn ? "#FF237A48" : "#FF59636B",
+            WidgetSearchActionKind.Watch => "#FF176D83",
+            WidgetSearchActionKind.Toggle => toggleState switch
+            {
+                true => "#FF237A48",
+                false => "#FF59636B",
+                _ => "#FF8A5A1A",
+            },
             WidgetSearchActionKind.Set => "#FF146F78",
             WidgetSearchActionKind.CreateFile => "#FF4E60B2",
             WidgetSearchActionKind.Hide => "#FF4D6273",

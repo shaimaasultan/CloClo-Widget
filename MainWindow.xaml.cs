@@ -502,11 +502,35 @@ public partial class MainWindow : Window
             new("Start new dictation file", "dictate speech recording", WidgetSearchActionKind.CreateFile, StartNewDictationFile),
             new("Hide widget (restore from tray)", "visibility tray hide", WidgetSearchActionKind.Hide, ToggleVisible),
             new("Always on top", "toggle floating", WidgetSearchActionKind.Toggle, ToggleAlwaysOnTop, () => _settings.AlwaysOnTop),
-            new("Start with Windows", "startup login toggle", WidgetSearchActionKind.Toggle, ToggleStartWithWindows, StartupRegistration.IsEnabled),
+            new("Start with Windows", "startup login toggle", WidgetSearchActionKind.Toggle, ToggleStartWithWindows, () => StartupRegistration.IsEnabled()),
             new("Privacy: Hide from screen sharing", "capture screenshots toggle", WidgetSearchActionKind.Toggle, ToggleHideFromScreenCapture, () => _settings.HideFromScreenCapture),
             new("Privacy: Show notification text", "notifications privacy toggle", WidgetSearchActionKind.Toggle, ToggleNotificationText, () => _settings.ShowNotificationText),
             new("Privacy: Speak greeting", "account name startup voice toggle", WidgetSearchActionKind.Toggle, ToggleSpeakGreeting, () => _settings.SpeakGreeting),
         };
+
+        // All icon actions remain available here even when their icon is hidden.
+        // These are the same handlers the icon hit targets call, never text commands.
+        actions.AddRange(new WidgetSearchAction[]
+        {
+            new("Watch YouTube", "youtube media playing", WidgetSearchActionKind.Watch, () => WatchApp(YoutubeAumids)),
+            new("Watch Spotify", "spotify media playing", WidgetSearchActionKind.Watch, () => WatchApp(SpotifyAumids)),
+            new("Watch notifications", "bell latest notification", WidgetSearchActionKind.Watch, WatchNotifications),
+            new("Choose media session", "search other apps media picker", WidgetSearchActionKind.OpenMenu, ShowAppPickerFromSearch),
+            new("GPU info", "graphics card hardware", WidgetSearchActionKind.Watch, WatchGpus),
+            new("Read selection aloud", "speak selected text", WidgetSearchActionKind.Run, ReadSelection),
+            new("Selection details", "selected text words characters lines", WidgetSearchActionKind.OpenWindow, ShowSelectionDetails),
+            new("Dictate to file", "mic voice typing speech", WidgetSearchActionKind.CreateFile, OpenDictationCapture),
+            new("Convert units", "selected text measurement temperature", WidgetSearchActionKind.OpenWindow, ConvertSelection),
+            new("Color picker", "eyedropper screen color", WidgetSearchActionKind.Run, StartColorPicking),
+            new("QR code from selection", "selected text link", WidgetSearchActionKind.OpenWindow, ShowQrCode),
+            new("Mute or unmute volume", "sound audio speaker", WidgetSearchActionKind.Toggle,
+                ToggleVolume, () => VolumeControl.GetState()?.Muted, OnLabel: "Muted", OffLabel: "Sound on"),
+            new("Clipboard history", "copied text", WidgetSearchActionKind.OpenWindow, ShowClipboardHistory),
+            new("Stopwatch: start, pause or stop", "timer elapsed toggle", WidgetSearchActionKind.Run,
+                ToggleStopwatch, CurrentBadge: StopwatchSearchBadge),
+            new("Daily quote, word, joke and fact", "bubble today", WidgetSearchActionKind.Toggle, ToggleDailyBubble, () => _dailyBubble != null),
+            new("Layer Sudoku", "daily game puzzle", WidgetSearchActionKind.OpenWindow, OpenSudoku),
+        });
 
         foreach (var opt in AvatarOptions)
             actions.Add(new WidgetSearchAction($"Avatar: {opt.Label}", "character theme", WidgetSearchActionKind.Set, () => SetAvatar(opt.Value)));
@@ -521,8 +545,9 @@ public partial class MainWindow : Window
         foreach (var opt in WorkoutOptions)
             actions.Add(new WidgetSearchAction($"Workout reminder: {opt.Label}", "exercise break", WidgetSearchActionKind.Set, () => SetWorkoutAfter(opt.Minutes)));
         foreach (var opt in IconOptions)
-            actions.Add(new WidgetSearchAction($"Icons: {opt.Label}", "toggle show hide icon", WidgetSearchActionKind.Toggle,
-                () => ToggleIcon(opt.Key), () => _settings.EnabledIcons.Contains(opt.Key)));
+            actions.Add(new WidgetSearchAction($"Show/hide icon: {opt.Label}", "icons icon bar visibility toggle",
+                WidgetSearchActionKind.Toggle, () => ToggleIcon(opt.Key),
+                () => _settings.EnabledIcons.Contains(opt.Key), IconSetting: true));
 
         actions.Add(new WidgetSearchAction("Exit CloClo", "quit close app", WidgetSearchActionKind.Exit, () => System.Windows.Application.Current.Shutdown()));
         return actions;
@@ -810,7 +835,11 @@ public partial class MainWindow : Window
 
     // Lists media sessions for viewing only. Selecting an entry starts
     // polling its title and artist; it never activates the other app.
-    private async void ShowAppPicker()
+    private void ShowAppPicker() => _ = ShowAppPickerAsync(placeAtSearch: false);
+
+    private void ShowAppPickerFromSearch() => _ = ShowAppPickerAsync(placeAtSearch: true);
+
+    private async Task ShowAppPickerAsync(bool placeAtSearch)
     {
         var menu = new ContextMenu();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -842,7 +871,7 @@ public partial class MainWindow : Window
         {
             menu.Items.Add(Item("No media sessions found", null, enabled: false));
         }
-        OpenMenu(menu);
+        OpenMenu(menu, placeAtSearch);
     }
 
     private DispatcherTimer CreateNowPlayingTimer()
@@ -1044,6 +1073,12 @@ public partial class MainWindow : Window
         SaveWindowPosition();
     }
 
+    private WidgetSearchBadge StopwatchSearchBadge() => _stopwatch.IsRunning
+        ? new WidgetSearchBadge("Pause", "#FF94620F")
+        : _stopwatch.Elapsed > TimeSpan.Zero
+            ? new WidgetSearchBadge("Stop", "#FF9A3737")
+            : new WidgetSearchBadge("Start", "#FF237A48");
+
     private void ToggleStopwatch()
     {
         if (_stopwatch.IsRunning)
@@ -1051,13 +1086,13 @@ public partial class MainWindow : Window
             _stopwatch.Stop();
             _stopwatchTimer?.Stop();
             Keeper.SetStopwatch(_stopwatch.Elapsed);
-            ShowOneShotLabel("Stopwatch stopped at " + KeeperView.FormatElapsed(_stopwatch.Elapsed), "Click the stopwatch again to reset it.");
+            ShowOneShotLabel("Stopwatch paused at " + KeeperView.FormatElapsed(_stopwatch.Elapsed), "Click the stopwatch again to stop and reset it.");
         }
         else if (_stopwatch.Elapsed > TimeSpan.Zero)
         {
             _stopwatch.Reset();
             Keeper.SetStopwatch(null);
-            ShowOneShotLabel("Stopwatch reset", "Click the stopwatch to start it.");
+            ShowOneShotLabel("Stopwatch stopped", "Click the stopwatch to start it.");
         }
         else
         {
@@ -1069,7 +1104,7 @@ public partial class MainWindow : Window
             _stopwatch.Start();
             _stopwatchTimer.Start();
             Keeper.SetStopwatch(TimeSpan.Zero);
-            ShowOneShotLabel("Stopwatch started", "Click the stopwatch again to stop it.");
+            ShowOneShotLabel("Stopwatch started", "Click the stopwatch again to pause it.");
         }
     }
 
@@ -1499,9 +1534,14 @@ public partial class MainWindow : Window
         return menu;
     }
 
-    private void OpenMenu(ContextMenu menu)
+    private void OpenMenu(ContextMenu menu, bool placeAtSearch = false)
     {
-        menu.Placement = PlacementMode.MousePoint;
+        if (placeAtSearch && _commandSearchBar != null)
+        {
+            menu.PlacementTarget = _commandSearchBar;
+            menu.Placement = PlacementMode.Right;
+        }
+        else menu.Placement = PlacementMode.MousePoint;
         _activeContextMenu = menu;
         menu.Closed += (_, _) =>
         {

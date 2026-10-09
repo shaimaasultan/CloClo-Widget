@@ -78,7 +78,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   | QR code from selection | Makes a QR code of the highlighted text or link |
   | Volume/mute toggle | Mutes or unmutes the system sound |
   | Clipboard history | Lists Windows' clipboard history (Win+V); click one to copy it again |
-  | Stopwatch | One click starts it, the next stops it, the next resets it; the time shows top-left, under the battery |
+  | Stopwatch | One click starts it, the next pauses it, the next stops and resets it; the time shows top-left, under the battery |
   | Daily quote, word, joke & fact | A speech bubble with today's quote, an English → Arabic word (with an example), a joke and a "did you know" fact; click it for the next one, × or Esc to close. All built in - nothing is fetched |
   | Layer Sudoku (daily game) | Opens the Layer Sudoku game - today's daily puzzle (the same one the HTML version gives, with a streak), or 6×6 to 16×16 at four levels; layer view, method-following hints, notes, undo, timer and pause. Progress is saved |
 
@@ -89,6 +89,11 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   including **Windows status**, **Scientific calculator**, **Custom reminders**, **Open dictation folder**,
   and the avatar, weather, privacy and icon choices. Suggestions open below
   or beside the box; choose with the mouse or arrow keys and Enter. Esc closes them.
+  Icon-bar actions such as **Read selection aloud**, **Convert units**, **Clipboard history**,
+  and **Layer Sudoku** are also searchable even when their icons are hidden.
+  To change which icons appear in the bar, search for **icon** plus the tool name
+  (for example, **icon stopwatch**). A plain **stopwatch** search runs the stopwatch.
+  Its badge shows the next action: green **Start**, amber **Pause**, or red **Stop**.
   The right-click menu remains available.
 
   The label under the icons only displays metadata; its pause button stops
