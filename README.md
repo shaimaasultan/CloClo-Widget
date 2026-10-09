@@ -6,6 +6,16 @@ default it stays above other windows near your taskbar clock. Windows doesn't
 allow an app to draw directly on the system clock itself, so CloClo sits just
 above the taskbar instead.
 
+## Screenshots
+
+These examples show the Lady Keeper avatar in everyday mode and briefly posing
+with a camera for a screenshot notification. The outfit, weather, location and
+visible icons depend on your settings and current conditions.
+
+| Everyday widget | Screenshot notification pose |
+|---|---|
+| <img src="docs/screenshots/widget-light.png" alt="CloClo widget with Lady Keeper, clock, battery, sunny weather and icon bar" width="280"> | <img src="docs/screenshots/notification-camera.png" alt="Lady Keeper holding a camera while a screenshot notification is shown" width="280"> |
+
 ## Getting started
 
 1. **Double-click `Install-CloClo.cmd`** in the `cloclo-widget` folder — as
