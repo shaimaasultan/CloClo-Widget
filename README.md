@@ -1,10 +1,10 @@
 # CloClo Desktop Widget
 
-A small always-on-top floating widget for Windows: the Keeper avatar from the
-CloClo app, dressed for the real current weather at a location you set,
-sitting near your taskbar clock (Windows doesn't allow any app to draw
-directly on the system clock itself, so this is the closest a normal app can
-get — the bottom-right corner, just above the taskbar).
+A small floating widget for Windows with a Keeper or Lady Keeper avatar,
+local time and battery information, weather, reminders and quick tools. By
+default it stays above other windows near your taskbar clock. Windows doesn't
+allow an app to draw directly on the system clock itself, so CloClo sits just
+above the taskbar instead.
 
 ## Getting started
 
@@ -21,9 +21,9 @@ get — the bottom-right corner, just above the taskbar).
    - recording a fingerprint of the source it was built from, for
      `Check-Source.cmd`.
 
-   Windows asks you to confirm the signing twice (once for the DLLs, once for
-   the exe), then shows the administrator prompt. The window stays open at
-   the end so you can read the result.
+   Windows may ask you to confirm code signing, then shows the administrator
+   prompt for the Program Files copy. The window stays open at the end so you
+   can read the result.
 2. CloClo starts by itself afterwards; next time, use the Start Menu or
    desktop shortcut. It appears in the bottom-right corner, just above the
    taskbar.
@@ -60,7 +60,28 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   already running".
 - **Top line:** the time and date, in Windows' own formats (12- or 24-hour,
   day/month order), e.g. "9:41 PM · Tue, Oct 6". The sky in words sits with
-  the temperature: "12° Clear".
+  the temperature: "12° Clear". The battery shows its charge and, when Windows
+  provides it, an estimate of time remaining.
+- **Location:** type a city under **Set location…**, or choose **Use my
+  location** and grant Windows' location permission. The stored and requested
+  coordinates are rounded to two decimal places.
+- **Avatar:** choose Keeper or Lady Keeper and a separate everyday outfit colour
+  for each. Weather changes the sky and clothing; **Weather** can follow the
+  live forecast or use a sky you pick. The avatar sleeps after your chosen idle
+  interval and wears workout clothes during a stretch-break reminder. The
+  **Motion** menu offers full, gentle and still modes. Time of day adds small
+  visual details; the clock and weather text adapt to the desktop background.
+- **Reminders:** **Workout reminder** offers a fixed activity interval.
+  **Custom reminders…** lets you keep up to five messages, each with a
+  choice of 15, 30, 45, 60, 90 or 120 minutes, active hours, an on/off switch
+  and optional speech. They use your PC's local time and show while the avatar
+  is awake; the reminder outfit returns to normal after the message. The optional startup
+  greeting speaks the local account name and briefly salutes; turn it off
+  under **Privacy**.
+- **Scientific calculator:** open it from the search box or right-click menu.
+  It supports typed expressions, a keypad, degree/radian mode, trigonometry,
+  logarithms, roots, powers, factorials and `Ans`. Calculations use a bounded
+  local arithmetic parser, not a scripting engine or network service.
 - **Icon bar** under the temperature — up to 7 of these at a time, picked in
   right-click → **Icons**:
 
@@ -68,7 +89,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   |---|---|
   | YouTube / Spotify | Shows what's playing there, and keeps it updated |
   | Notifications | Shows your latest notification; the list button opens Windows' notification panel |
-  | Search other apps | Lists apps with media sessions; selecting one watches its media metadata without activating it |
+  | Search other apps | Lists current media sessions; selecting one watches its metadata without activating its app |
   | GPU info | Shows the graphics cards in this PC |
   | Read selection aloud | Reads the text you highlighted in another app (up to 5,000 characters) |
   | Selection details | Shows word, character and line counts and a short preview of highlighted text; nothing is saved (the fallback briefly copies selected text) |
@@ -85,37 +106,47 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   Turn on **Selection details** under right-click → **Icons**; the icon bar
   holds up to seven choices at once.
 
-  The search box below the widget finds the actions in the right-click menu,
-  including **Windows status**, **Scientific calculator**, **Custom reminders**, **Open dictation folder**,
-  and the avatar, weather, privacy and icon choices. Suggestions open below
-  or beside the box; choose with the mouse or arrow keys and Enter. Esc closes them.
-  Icon-bar actions such as **Read selection aloud**, **Convert units**, **Clipboard history**,
-  and **Layer Sudoku** are also searchable even when their icons are hidden.
-  To change which icons appear in the bar, search for **icon** plus the tool name
-  (for example, **icon stopwatch**). A plain **stopwatch** search runs the stopwatch.
-  Its badge shows the next action: green **Start**, amber **Pause**, or red **Stop**.
-  The right-click menu remains available.
+  The search box below the widget finds right-click menu actions, including
+  **Windows status**, **Scientific calculator**, **Custom reminders**,
+  **Open dictation folder**, and avatar, weather and privacy settings.
+  Suggestions open below or beside the box; choose with the mouse or arrow
+  keys and Enter. Esc closes them. Coloured badges distinguish windows,
+  menus, watchers, file actions and settings; toggles show their current state.
+  Icon-bar actions such as **Read selection aloud**, **Convert units**,
+  **Clipboard history** and **Layer Sudoku** remain searchable when their
+  icons are hidden. To change which icons appear, search for **icon** plus
+  the tool name (for example, **icon stopwatch**). A plain **stopwatch**
+  search runs the stopwatch; its badge shows the next action: green **Start**,
+  amber **Pause** or red **Stop**.
+  The right-click menu remains available. Notification watching also gives the
+  avatar a brief camera, newspaper, maintenance, ChatGPT or Claude pose when
+  the sender and title match those categories and motion is enabled. It does
+  not read notifications until you choose **Notifications** from the icon bar
+  or search.
 
   The label under the icons only displays metadata; its pause button stops
   monitoring. The app picker also only selects a media session to watch and
   never activates the source app.
-- **Right-click** (or double-click) for the menu: **Set location…**,
-  **Avatar** (Keeper or Lady Keeper, and each one's outfit colour), **Weather** (follow the live forecast, or pick a sky by hand), **Icons**,
-  **Sleep after** (Keeper dozes off when you're away), **Workout reminder**
-  (a stretch-break nudge after a long stretch at the keyboard), **Windows
-  status** (local connection and fixed-drive free space), **Refresh weather**,
-  **Start new dictation file**, **Open dictation folder**,
-  **Privacy**, **Always on top**, **Start with Windows** and **Exit**.
+- **Right-click** (or double-click) for the menu: **Set location…**, **Avatar**,
+  **Weather**, **Icons**, **Motion**, **Sleep after**, **Workout reminder**,
+  **Custom reminders…**, **Windows status** (local connection and fixed-drive
+  free space), **Scientific calculator…**, **Refresh weather**, **Start new
+  dictation file**, **Open dictation folder**, **Privacy**, **Always on top**,
+  **Start with Windows** and **Exit**.
 - A **tray icon** (near the clock, in the hidden-icons area) has the same
   menu. Double-click it to show or hide the widget. If the widget is hidden,
   right-click the tray icon and choose **Show widget**, or launch CloClo again.
-- **Privacy:** the widget, and the clipboard-history, QR, selection-details and Windows-status windows, are
-  hidden from screenshots, recordings and screen sharing by default.
+- **Privacy:** by default, CloClo requests Windows capture exclusion for the
+  widget and several tool windows that show private content, including
+  clipboard history, QR codes, selection details, Windows status and the
+  calculator. This helps with supported Windows capture paths; it is not a
+  guarantee against every recorder or a camera pointed at the screen.
   Notification text can be switched off so only the sending app's name shows.
 - **Weather** refreshes every 20 minutes from
   [Open-Meteo](https://open-meteo.com) (no API key, no account).
 - **Where things are kept:**
   - Settings: `%AppData%\CloCloWidget\settings.json`
+  - Sudoku progress: `%AppData%\CloCloWidget\sudoku.json`
   - Dictation: `%LocalAppData%\CloCloWidget\Dictation`
   - Error log: `%LocalAppData%\CloCloWidget\errors.log`
 
@@ -240,8 +271,9 @@ Which certificates can sign:
   mid-signing, the next signing with the same `.pfx` removes the leftover
   certificate. Prefer a protected certificate from your store.
 
-Any Authenticode code-signing certificate works; Azure Trusted Signing is the
-cheapest option for an individual developer.
+An Authenticode code-signing certificate can also come from a trusted signing
+provider; check that provider's current availability and terms before choosing
+one.
 
 **Updates keep the certificate.** The installer only replaces an installed
 CloClo with a build signed by the same certificate. If it differs — or the
@@ -289,8 +321,8 @@ Then build, sign and install:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -ProgramFiles -CertThumbprint $cert.Thumbprint -DesktopShortcut
 ```
 
-Windows asks you to confirm the signing twice — once for the DLLs, once for
-the exe. The build prints "signed, but the certificate isn't trusted on this
+Windows may ask you to approve signing while it handles the DLLs and finished
+exe. The build prints "signed, but the certificate isn't trusted on this
 machine" for each file, and the last line reads "signed, but this PC doesn't
 trust the certificate yet". Both are expected.
 
@@ -322,7 +354,8 @@ with its key.
 Double-click **`Build-Setup.cmd`**. It builds CloClo, wraps it in a Windows
 Installer package and a setup program, signs all three with your CN=CloClo
 certificate (Windows asks you to confirm each signing), and leaves
-`dist\CloClo-Setup-<version>.exe` (~50 MB, compressed) with its SHA-256.
+`dist\CloClo-Setup-<version>.exe` (compressed; size varies by build) with its
+SHA-256.
 
 That one file installs CloClo on any 64-bit Windows 10/11 PC — no .NET SDK
 or source folder needed there:
@@ -346,7 +379,7 @@ Send the SHA-256 with the file, so the person installing it can check
 On other PCs your self-signed certificate isn't trusted, so Windows shows the
 publisher as unknown and SmartScreen warns before it runs. For a clean
 install elsewhere, sign with a publicly trusted code-signing certificate
-(Azure Trusted Signing is the cheapest for an individual) and pass it:
+and pass it:
 `Build-Setup.cmd -CertThumbprint <thumbprint>`.
 
 Use either the setup or `Install-CloClo.cmd` on a PC, not both: they're
@@ -424,15 +457,16 @@ password in `SIGN_CERT_PASSWORD`.
 
 ## How it's built
 
-A WPF host window (transparent, borderless, topmost, no taskbar entry,
-click-through) hosts `KeeperView` — a native WPF drawing of the app's Keeper
-avatar (same paths, same weather-conditional clothing: raincoat, wool hat,
-sunglasses, storm blanket, held umbrella) with its breathing, blinking,
-fidgets and sky effects as WPF animations. There's no embedded browser:
-`WeatherService` fetches the current temperature and WMO weather code from
-Open-Meteo on the host and maps it to a sky (clear/cloudy/rain/snow/storm…).
+A WPF host window (transparent, borderless, topmost by default, no taskbar
+entry, click-through) hosts `KeeperView` — a native WPF drawing of the app's
+Keeper or Lady Keeper avatar with weather, sleep, workout and custom-reminder
+outfits, time-of-day details, notification poses and adjustable motion. There
+is no embedded browser. `WeatherService` fetches the current temperature and
+WMO weather code from Open-Meteo on the host and maps it to a sky
+(clear/cloudy/rain/snow/storm…).
 A second, invisible window sized to the avatar takes the clicks — dragging,
-the icon bar and the right-click menu.
+the icon bar, search box and the right-click menu. The calculator evaluates a
+fixed arithmetic grammar in memory; text entered there cannot run commands.
 
 `Program.Main` runs `NativeLibraryCheck` before WPF loads anything (see
 Security below). The build itself, through targets in `CloCloWidget.csproj`,
@@ -453,10 +487,11 @@ files are double-click launchers for those scripts.
   1 MB response limit.
 - **Location stays coarse.** Coordinates are rounded to about 1 km before
   they're saved or sent anywhere; a precise GPS fix never leaves the machine.
-- **Out of screen sharing.** The widget and the clipboard-history and QR
-  windows are hidden from screenshots, recordings and screen sharing by
-  default (right-click → Privacy). Notification text can be switched off so
-  only the sending app's name shows.
+- **Capture exclusion request.** By default, CloClo asks Windows to exclude
+  the widget and selected tool windows from supported capture APIs
+  (right-click → Privacy). [Windows documents this as a capture aid](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowdisplayaffinity),
+  not a security boundary or a guarantee against every way to record a screen.
+  Notification text can be switched off so only the sending app's name shows.
 - **Careful with your selection.** "Read selection", "Selection details", "Convert" and "QR" first
   ask the app for highlighted text through UI Automation. If the app does not
   expose it, the widget refocuses that app, sends Ctrl+C, reads the copied text,
@@ -465,12 +500,11 @@ files are double-click launchers for those scripts.
   history or cloud sync; restoring the previous contents cannot undo that.
   The spoken text is limited to 5,000 characters; the selection-details preview
   is cleared on close. Text that cannot be selected and copied is unavailable.
-- **Doesn't crash on errors.** Unexpected errors are logged to
-  `errors.log` (error type and code location only, never any text) and the
-  widget keeps running — a crash would also hand Windows Error Reporting a
-  memory dump that could contain clipboard or notification text. An error on
-  a background thread, which can't be survived, ends the process right after
-  logging, before Windows collects a dump.
+- **Error handling.** Unexpected UI-thread errors are logged to `errors.log`
+  (exception type and stack trace, not the exception message) and the widget
+  attempts to continue. An unhandled background-thread error ends the process
+  after logging, before Windows Error Reporting can collect a dump containing
+  clipboard or notification text.
 - **Settings written safely.** `settings.json` is written to a new file with
   a random name (which must not exist yet) and then swapped in, so a crash
   can't corrupt it and nothing can pre-place a file to redirect the write.
@@ -479,7 +513,9 @@ files are double-click launchers for those scripts.
 - **Saved content is data, not code.** Dictation is appended as plain text;
   Sudoku saves are bounded JSON deserialized into fixed data classes and
   validated before use. Neither file is passed to a script host, evaluator,
-  shell command or dynamic assembly loader.
+  shell command or dynamic assembly loader. Calculator expressions use only
+  a fixed set of arithmetic operators and functions, with a 256-character
+  limit and no file, process or network access.
 - **Startup greeting stays local.** The optional welcome uses Windows' local
   speech synthesis and the local account's full name when one is set. Domain
   accounts use the short logon name without contacting a domain controller. Names are filtered and
