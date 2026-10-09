@@ -284,9 +284,6 @@ public partial class MainWindow : Window
     {
         var displayName = UserAccountName.GetDisplayName();
         var userName = UserAccountName.GetUserName();
-        if (displayName != null && userName != null &&
-            !string.Equals(displayName, userName, StringComparison.OrdinalIgnoreCase))
-            return $"Hi, {displayName}, also known as {userName}.";
         return $"Hi, {displayName ?? userName ?? "there"}.";
     }
 
