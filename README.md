@@ -12,9 +12,9 @@ These examples show the Lady Keeper avatar in everyday mode and briefly posing
 with a camera for a screenshot notification. The outfit, weather, location and
 visible icons depend on your settings and current conditions.
 
-| Everyday widget | Screenshot notification pose |
-|---|---|
-| <img src="docs/screenshots/widget-light.png" alt="CloClo widget with Lady Keeper, clock, battery, sunny weather and icon bar" width="280"> | <img src="docs/screenshots/notification-camera.png" alt="Lady Keeper holding a camera while a screenshot notification is shown" width="280"> |
+| Everyday widget | Screenshot notification pose | Actions pose |
+|---|---|---|
+| <img src="docs/screenshots/Screenshot2026-10-08234236.png" alt="CloClo widget with Lady Keeper, clock, battery, sunny weather and icon bar" width="280"> | <img src="docs/screenshots/notification-camera.png" alt="Lady Keeper holding a camera while a screenshot notification is shown" width="280"> | <img src="docs/screenshots/Screenshot2026-10-08234415.png" alt="Lady Keeper holding a camera while a screenshot notification is shown" width="280"> |
 
 ## Getting started
 
