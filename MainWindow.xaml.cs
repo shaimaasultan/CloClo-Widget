@@ -469,36 +469,37 @@ public partial class MainWindow : Window
     {
         var actions = new List<WidgetSearchAction>
         {
-            new("Windows status", "storage connection drive disk network wifi", ShowWindowsStatus),
-            new("Custom reminders", "reminder remainder schedule message", OpenCustomReminders),
-            new("Open dictation folder", "dictation files recordings", OpenDictationFolder),
-            new("Set location", "city place weather gps", OpenLocationDialog),
-            new("Refresh weather", "forecast update", () => _ = RefreshWeatherAsync()),
-            new("Start new dictation file", "dictate speech recording", StartNewDictationFile),
-            new("Hide widget (restore from tray)", "visibility tray hide", ToggleVisible),
-            new("Always on top", "toggle floating", ToggleAlwaysOnTop),
-            new("Start with Windows", "startup login toggle", ToggleStartWithWindows),
-            new("Privacy: Hide from screen sharing", "capture screenshots toggle", ToggleHideFromScreenCapture),
-            new("Privacy: Show notification text", "notifications privacy toggle", ToggleNotificationText),
-            new("Privacy: Speak greeting", "account name startup voice toggle", ToggleSpeakGreeting),
+            new("Windows status", "storage connection drive disk network wifi", WidgetSearchActionKind.OpenWindow, ShowWindowsStatus),
+            new("Custom reminders", "reminder remainder schedule message", WidgetSearchActionKind.OpenWindow, OpenCustomReminders),
+            new("Open dictation folder", "dictation files recordings", WidgetSearchActionKind.OpenFolder, OpenDictationFolder),
+            new("Set location", "city place weather gps", WidgetSearchActionKind.OpenWindow, OpenLocationDialog),
+            new("Refresh weather", "forecast update", WidgetSearchActionKind.Run, () => _ = RefreshWeatherAsync()),
+            new("Start new dictation file", "dictate speech recording", WidgetSearchActionKind.CreateFile, StartNewDictationFile),
+            new("Hide widget (restore from tray)", "visibility tray hide", WidgetSearchActionKind.Hide, ToggleVisible),
+            new("Always on top", "toggle floating", WidgetSearchActionKind.Toggle, ToggleAlwaysOnTop, () => _settings.AlwaysOnTop),
+            new("Start with Windows", "startup login toggle", WidgetSearchActionKind.Toggle, ToggleStartWithWindows, StartupRegistration.IsEnabled),
+            new("Privacy: Hide from screen sharing", "capture screenshots toggle", WidgetSearchActionKind.Toggle, ToggleHideFromScreenCapture, () => _settings.HideFromScreenCapture),
+            new("Privacy: Show notification text", "notifications privacy toggle", WidgetSearchActionKind.Toggle, ToggleNotificationText, () => _settings.ShowNotificationText),
+            new("Privacy: Speak greeting", "account name startup voice toggle", WidgetSearchActionKind.Toggle, ToggleSpeakGreeting, () => _settings.SpeakGreeting),
         };
 
         foreach (var opt in AvatarOptions)
-            actions.Add(new WidgetSearchAction($"Avatar: {opt.Label}", "character theme", () => SetAvatar(opt.Value)));
+            actions.Add(new WidgetSearchAction($"Avatar: {opt.Label}", "character theme", WidgetSearchActionKind.Set, () => SetAvatar(opt.Value)));
         foreach (var outfit in KeeperView.Outfits)
-            actions.Add(new WidgetSearchAction($"Outfit colour: {outfit.Label}", "avatar clothing theme", () => SetOutfit(outfit.Key)));
+            actions.Add(new WidgetSearchAction($"Outfit colour: {outfit.Label}", "avatar clothing theme", WidgetSearchActionKind.Set, () => SetOutfit(outfit.Key)));
         foreach (var opt in SkyOptions)
-            actions.Add(new WidgetSearchAction($"Weather: {opt.Label}", "sky theme forecast", () => SetSky(opt.Value)));
+            actions.Add(new WidgetSearchAction($"Weather: {opt.Label}", "sky theme forecast", WidgetSearchActionKind.Set, () => SetSky(opt.Value)));
         foreach (var opt in MotionOptions)
-            actions.Add(new WidgetSearchAction($"Motion: {opt.Label}", "animation reduced motion", () => SetMotionMode(opt.Value)));
+            actions.Add(new WidgetSearchAction($"Motion: {opt.Label}", "animation reduced motion", WidgetSearchActionKind.Set, () => SetMotionMode(opt.Value)));
         foreach (var opt in SleepOptions)
-            actions.Add(new WidgetSearchAction($"Sleep after: {opt.Label}", "idle sleep", () => SetSleepAfter(opt.Minutes)));
+            actions.Add(new WidgetSearchAction($"Sleep after: {opt.Label}", "idle sleep", WidgetSearchActionKind.Set, () => SetSleepAfter(opt.Minutes)));
         foreach (var opt in WorkoutOptions)
-            actions.Add(new WidgetSearchAction($"Workout reminder: {opt.Label}", "exercise break", () => SetWorkoutAfter(opt.Minutes)));
+            actions.Add(new WidgetSearchAction($"Workout reminder: {opt.Label}", "exercise break", WidgetSearchActionKind.Set, () => SetWorkoutAfter(opt.Minutes)));
         foreach (var opt in IconOptions)
-            actions.Add(new WidgetSearchAction($"Icons: {opt.Label}", "toggle show hide icon", () => ToggleIcon(opt.Key)));
+            actions.Add(new WidgetSearchAction($"Icons: {opt.Label}", "toggle show hide icon", WidgetSearchActionKind.Toggle,
+                () => ToggleIcon(opt.Key), () => _settings.EnabledIcons.Contains(opt.Key)));
 
-        actions.Add(new WidgetSearchAction("Exit CloClo", "quit close app", () => System.Windows.Application.Current.Shutdown()));
+        actions.Add(new WidgetSearchAction("Exit CloClo", "quit close app", WidgetSearchActionKind.Exit, () => System.Windows.Application.Current.Shutdown()));
         return actions;
     }
 

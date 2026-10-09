@@ -9,7 +9,37 @@ using System.Windows.Interop;
 
 namespace CloCloWidget;
 
-public sealed record WidgetSearchAction(string Label, string Keywords, Action Execute);
+public enum WidgetSearchActionKind
+{
+    OpenWindow,
+    OpenFolder,
+    Toggle,
+    Set,
+    Run,
+    CreateFile,
+    Hide,
+    Exit,
+}
+
+public sealed record WidgetSearchAction(string Label, string Keywords, WidgetSearchActionKind Kind, Action Execute, Func<bool>? IsOn = null)
+{
+    public string KindLabel => Kind switch
+    {
+        WidgetSearchActionKind.OpenWindow => "Open window",
+        WidgetSearchActionKind.OpenFolder => "Open folder",
+        WidgetSearchActionKind.Toggle => "Toggle",
+        WidgetSearchActionKind.Set => "Set",
+        WidgetSearchActionKind.CreateFile => "Create file",
+        WidgetSearchActionKind.Hide => "Hide",
+        WidgetSearchActionKind.Exit => "Exit",
+        _ => "Run",
+    };
+}
+
+public sealed record WidgetSearchSuggestion(WidgetSearchAction Action, string BadgeLabel, string BadgeColor)
+{
+    public string Label => Action.Label;
+}
 
 public partial class CommandSearchBar : UserControl
 {
@@ -48,11 +78,31 @@ public partial class CommandSearchBar : UserControl
         var query = SearchText.Text.Trim();
         var matches = _actions.Where(command =>
             command.Label.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-            command.Keywords.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+            command.Keywords.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+            command.KindLabel.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
         if (query.Length == 0) matches = matches.Take(6).ToArray();
-        Suggestions.ItemsSource = matches;
+        Suggestions.ItemsSource = matches.Select(CreateSuggestion).ToArray();
         Suggestions.SelectedIndex = matches.Length > 0 ? 0 : -1;
         SuggestionsPopup.IsOpen = SearchText.IsKeyboardFocusWithin && matches.Length > 0;
+    }
+
+    private static WidgetSearchSuggestion CreateSuggestion(WidgetSearchAction action)
+    {
+        var isOn = action.Kind == WidgetSearchActionKind.Toggle && action.IsOn?.Invoke() == true;
+        var badgeLabel = action.Kind == WidgetSearchActionKind.Toggle
+            ? $"Toggle · {(isOn ? "On" : "Off")}" : action.KindLabel;
+        var badgeColor = action.Kind switch
+        {
+            WidgetSearchActionKind.OpenWindow => "#FF285D99",
+            WidgetSearchActionKind.OpenFolder => "#FF79509A",
+            WidgetSearchActionKind.Toggle => isOn ? "#FF237A48" : "#FF59636B",
+            WidgetSearchActionKind.Set => "#FF146F78",
+            WidgetSearchActionKind.CreateFile => "#FF4E60B2",
+            WidgetSearchActionKind.Hide => "#FF4D6273",
+            WidgetSearchActionKind.Exit => "#FFA13737",
+            _ => "#FF8A5A1A",
+        };
+        return new WidgetSearchSuggestion(action, badgeLabel, badgeColor);
     }
 
     private void SearchText_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -87,18 +137,18 @@ public partial class CommandSearchBar : UserControl
     {
         if (e.OriginalSource is not DependencyObject source ||
             ItemsControl.ContainerFromElement(Suggestions, source) is not ListBoxItem item ||
-            item.DataContext is not WidgetSearchAction action) return;
-        Suggestions.SelectedItem = action;
+            item.DataContext is not WidgetSearchSuggestion suggestion) return;
+        Suggestions.SelectedItem = suggestion;
         RunSelected();
     }
 
     private void RunSelected()
     {
-        if (Suggestions.SelectedItem is not WidgetSearchAction selected) return;
+        if (Suggestions.SelectedItem is not WidgetSearchSuggestion selected) return;
         Keyboard.ClearFocus();
         SearchText.Clear();
         SuggestionsPopup.IsOpen = false;
-        CommandRequested?.Invoke(selected);
+        CommandRequested?.Invoke(selected.Action);
     }
 
     public void CloseSuggestions() => SuggestionsPopup.IsOpen = false;

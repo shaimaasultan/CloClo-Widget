@@ -21,15 +21,34 @@
                Placement="Custom" StaysOpen="False" AllowsTransparency="True"
                Opened="SuggestionsPopup_Opened">
             <Border Background="#F21C2935" BorderBrush="#B5FFFFFF" BorderThickness="1"
-                    CornerRadius="8" Padding="4" Width="270">
+                    CornerRadius="8" Padding="4" Width="320">
                 <ListBox x:Name="Suggestions" Background="Transparent" Foreground="White"
-                         FontSize="13" BorderThickness="0" DisplayMemberPath="Label" MaxHeight="264"
+                         FontSize="13" BorderThickness="0" MaxHeight="264"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                          ScrollViewer.VerticalScrollBarVisibility="Auto"
                          PreviewMouseLeftButtonUp="Suggestions_PreviewMouseLeftButtonUp">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid ToolTip="{Binding Label}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding Label}" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" Margin="0,0,8,0" />
+                                <Border Grid.Column="1" Background="{Binding BadgeColor}" CornerRadius="5"
+                                        Padding="6,2" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding BadgeLabel}" Foreground="White"
+                                               FontSize="10" FontWeight="SemiBold" />
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="MinHeight" Value="30" />
                             <Setter Property="Padding" Value="8,4" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                             <Setter Property="VerticalContentAlignment" Value="Center" />
                         </Style>
                     </ListBox.ItemContainerStyle>
