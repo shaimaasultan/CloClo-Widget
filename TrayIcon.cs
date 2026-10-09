@@ -30,6 +30,7 @@ public sealed class TrayIcon : IDisposable
     // foreground before showing the icon's menu, so the menu closes when you
     // click elsewhere.
     public IntPtr Handle => _window.Handle;
+    public bool IsAvailable => _added;
 
     public TrayIcon(string tooltip)
     {

@@ -102,7 +102,8 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   **Start new dictation file**, **Open dictation folder**,
   **Privacy**, **Always on top**, **Start with Windows** and **Exit**.
 - A **tray icon** (near the clock, in the hidden-icons area) has the same
-  menu — double-click it to show or hide the widget.
+  menu. Double-click it to show or hide the widget. If the widget is hidden,
+  right-click the tray icon and choose **Show widget**, or launch CloClo again.
 - **Privacy:** the widget, and the clipboard-history, QR, selection-details and Windows-status windows, are
   hidden from screenshots, recordings and screen sharing by default.
   Notification text can be switched off so only the sending app's name shows.

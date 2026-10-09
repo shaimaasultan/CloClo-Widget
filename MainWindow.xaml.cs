@@ -475,7 +475,7 @@ public partial class MainWindow : Window
             new("Set location", "city place weather gps", OpenLocationDialog),
             new("Refresh weather", "forecast update", () => _ = RefreshWeatherAsync()),
             new("Start new dictation file", "dictate speech recording", StartNewDictationFile),
-            new("Show or hide widget", "visibility tray", ToggleVisible),
+            new("Hide widget (restore from tray)", "visibility tray hide", ToggleVisible),
             new("Always on top", "toggle floating", ToggleAlwaysOnTop),
             new("Start with Windows", "startup login toggle", ToggleStartWithWindows),
             new("Privacy: Hide from screen sharing", "capture screenshots toggle", ToggleHideFromScreenCapture),
@@ -1450,7 +1450,8 @@ public partial class MainWindow : Window
     private ContextMenu BuildMenu(bool includeShowHide)
     {
         var menu = new ContextMenu();
-        if (includeShowHide) menu.Items.Add(Item("Show / hide", ToggleVisible));
+        if (includeShowHide)
+            menu.Items.Add(Item(Visibility == Visibility.Visible ? "Hide widget" : "Show widget", ToggleVisible));
         menu.Items.Add(Item("Set location…", OpenLocationDialog));
         menu.Items.Add(BuildAvatarMenu());
         menu.Items.Add(BuildSkyMenu());
@@ -1846,6 +1847,11 @@ public partial class MainWindow : Window
 
     private void ToggleVisible()
     {
+        if (Visibility == Visibility.Visible && _trayIcon?.IsAvailable != true)
+        {
+            ShowOneShotLabel("Can't hide the widget", "The tray icon is unavailable. Try again after Windows Explorer recovers.");
+            return;
+        }
         Visibility = Visibility == Visibility.Visible ? Visibility.Hidden : Visibility.Visible;
         if (Visibility != Visibility.Visible) _commandSearchBar?.CloseSuggestions();
         if (_avatarWindow != null) _avatarWindow.Visibility = Visibility;
