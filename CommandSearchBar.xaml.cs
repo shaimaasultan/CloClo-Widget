@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 
@@ -21,8 +22,18 @@ public partial class CommandSearchBar : UserControl
     {
         _actions = actions;
         InitializeComponent();
+        SuggestionsPopup.CustomPopupPlacementCallback = PlaceSuggestions;
         System.Windows.Automation.AutomationProperties.SetName(SearchText, "Search widget actions");
     }
+
+    // Place the action list below input when it fits, otherwise beside it.
+    // Windows word suggestions occupy the space directly above the text box.
+    private static CustomPopupPlacement[] PlaceSuggestions(Size popupSize, Size targetSize, Point offset) =>
+    [
+        new(new Point(0, targetSize.Height + 5), PopupPrimaryAxis.Horizontal),
+        new(new Point(-popupSize.Width - 6, targetSize.Height - popupSize.Height), PopupPrimaryAxis.Vertical),
+        new(new Point(targetSize.Width + 6, targetSize.Height - popupSize.Height), PopupPrimaryAxis.Vertical),
+    ];
 
     private void SearchText_TextChanged(object sender, TextChangedEventArgs e)
     {

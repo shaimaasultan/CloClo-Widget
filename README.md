@@ -87,8 +87,8 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
 
   The search box below the widget finds the actions in the right-click menu,
   including **Windows status**, **Custom reminders**, **Open dictation folder**,
-  and the avatar, weather, privacy and icon choices. Suggestions open above
-  the box; choose with the mouse or arrow keys and Enter. Esc closes them.
+  and the avatar, weather, privacy and icon choices. Suggestions open below
+  or beside the box; choose with the mouse or arrow keys and Enter. Esc closes them.
   The right-click menu remains available.
 
   The label under the icons only displays metadata; its pause button stops

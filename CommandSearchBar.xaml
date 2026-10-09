@@ -18,14 +18,22 @@
             </Grid>
         </Border>
         <Popup x:Name="SuggestionsPopup" PlacementTarget="{Binding ElementName=SearchFrame}"
-               Placement="Top" VerticalOffset="-3" StaysOpen="False" AllowsTransparency="True"
+               Placement="Custom" StaysOpen="False" AllowsTransparency="True"
                Opened="SuggestionsPopup_Opened">
             <Border Background="#F21C2935" BorderBrush="#B5FFFFFF" BorderThickness="1"
-                    CornerRadius="8" Padding="3" Width="174">
+                    CornerRadius="8" Padding="4" Width="270">
                 <ListBox x:Name="Suggestions" Background="Transparent" Foreground="White"
-                         BorderThickness="0" DisplayMemberPath="Label" MaxHeight="210"
+                         FontSize="13" BorderThickness="0" DisplayMemberPath="Label" MaxHeight="264"
                          ScrollViewer.VerticalScrollBarVisibility="Auto"
-                         PreviewMouseLeftButtonUp="Suggestions_PreviewMouseLeftButtonUp" />
+                         PreviewMouseLeftButtonUp="Suggestions_PreviewMouseLeftButtonUp">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="MinHeight" Value="30" />
+                            <Setter Property="Padding" Value="8,4" />
+                            <Setter Property="VerticalContentAlignment" Value="Center" />
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                </ListBox>
             </Border>
         </Popup>
     </Grid>
