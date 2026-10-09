@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:CloCloWidget"
         Title="CloClo"
-        Width="195" Height="351"
+        Width="195" Height="395"
         WindowStyle="None"
         AllowsTransparency="True"
         Background="Transparent"
@@ -23,6 +23,6 @@
       in the code-behind), so there's no click-through trickery needed here.
     -->
     <Grid>
-        <local:KeeperView x:Name="Keeper" />
+        <local:KeeperView x:Name="Keeper" HorizontalAlignment="Left" VerticalAlignment="Top" />
     </Grid>
 </Window>

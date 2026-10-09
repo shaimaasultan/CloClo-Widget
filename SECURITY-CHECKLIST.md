@@ -16,7 +16,10 @@ evidence is stated in the item where available. `[ ]` = still awaiting the real-
 - [x] **Location stays coarse:** coordinates rounded to ~1 km when saved, when loaded from older settings and before any request (`65ffb7a`, `90e33d8`)
 - [x] **Out of screen sharing:** the widget and the clipboard-history and QR windows are excluded from screenshots, recordings and screen sharing by default (`WDA_EXCLUDEFROMCAPTURE`), with a Privacy toggle (`5236a1d`)
 - [x] Notification text can be switched off so only the sending app's name shows (`5236a1d`)
-- [x] Selection read only through UI Automation; no Ctrl+C fallback, synthetic keystrokes, or clipboard access (`9af38cd`)
+- [x] Selection first uses UI Automation, then a guarded Ctrl+C clipboard fallback for apps without a text provider; foreground target is checked, terminals and password fields are skipped, and previous clipboard contents are restored where possible. Temporary copies can still reach clipboard history or cloud sync.
+- [x] Selection details uses the same selection path, refuses fields marked as passwords, keeps only a short preview in its window and follows the screen-capture Privacy setting; speech is limited to 5,000 characters
+- [x] Windows status reads fixed-drive capacity and local network availability only when opened or refreshed; it does not scan files, connect to a host or change Windows settings
+- [x] Widget action search filters a fixed list of existing menu actions; typed text is never used as a shell command, file path or executable name
 - [x] "Read selection" refuses password fields (`486804f`)
 - [x] Clipboard writes retry briefly and report "Clipboard busy" instead of crashing (`486804f`)
 - [x] Read-aloud capped at 5,000 characters (`486804f`)

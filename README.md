@@ -71,6 +71,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   | Search other apps | Lists apps with media sessions; selecting one watches its media metadata without activating it |
   | GPU info | Shows the graphics cards in this PC |
   | Read selection aloud | Reads the text you highlighted in another app (up to 5,000 characters) |
+  | Selection details | Shows word, character and line counts and a short preview of highlighted text; nothing is saved (the fallback briefly copies selected text) |
   | Dictate | Opens Windows voice typing; the text is saved to a file |
   | Convert units | Converts a highlighted "5 km", "98 F"… (km/mi/m/ft, kg/lb, °C/°F/K) |
   | Color picker | Pick any color on screen; its hex code is copied (Esc cancels) |
@@ -81,18 +82,28 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   | Daily quote, word, joke & fact | A speech bubble with today's quote, an English → Arabic word (with an example), a joke and a "did you know" fact; click it for the next one, × or Esc to close. All built in - nothing is fetched |
   | Layer Sudoku (daily game) | Opens the Layer Sudoku game - today's daily puzzle (the same one the HTML version gives, with a streak), or 6×6 to 16×16 at four levels; layer view, method-following hints, notes, undo, timer and pause. Progress is saved |
 
+  Turn on **Selection details** under right-click → **Icons**; the icon bar
+  holds up to seven choices at once.
+
+  The search box below the widget finds the actions in the right-click menu,
+  including **Windows status**, **Custom reminders**, **Open dictation folder**,
+  and the avatar, weather, privacy and icon choices. Suggestions open above
+  the box; choose with the mouse or arrow keys and Enter. Esc closes them.
+  The right-click menu remains available.
+
   The label under the icons only displays metadata; its pause button stops
   monitoring. The app picker also only selects a media session to watch and
   never activates the source app.
 - **Right-click** (or double-click) for the menu: **Set location…**,
   **Avatar** (Keeper or Lady Keeper, and each one's outfit colour), **Weather** (follow the live forecast, or pick a sky by hand), **Icons**,
   **Sleep after** (Keeper dozes off when you're away), **Workout reminder**
-  (a stretch-break nudge after a long stretch at the keyboard), **Refresh
-  weather**, **Start new dictation file**, **Open dictation folder**,
+  (a stretch-break nudge after a long stretch at the keyboard), **Windows
+  status** (local connection and fixed-drive free space), **Refresh weather**,
+  **Start new dictation file**, **Open dictation folder**,
   **Privacy**, **Always on top**, **Start with Windows** and **Exit**.
 - A **tray icon** (near the clock, in the hidden-icons area) has the same
   menu — double-click it to show or hide the widget.
-- **Privacy:** the widget, and the clipboard-history and QR windows, are
+- **Privacy:** the widget, and the clipboard-history, QR, selection-details and Windows-status windows, are
   hidden from screenshots, recordings and screen sharing by default.
   Notification text can be switched off so only the sending app's name shows.
 - **Weather** refreshes every 20 minutes from
@@ -440,10 +451,14 @@ files are double-click launchers for those scripts.
   windows are hidden from screenshots, recordings and screen sharing by
   default (right-click → Privacy). Notification text can be switched off so
   only the sending app's name shows.
-- **Careful with your selection.** "Read selection", "Convert" and "QR" read
-  highlighted text only through UI Automation. They never send Ctrl+C or read
-  or write the clipboard. Apps that don't expose selected text through UI
-  Automation won't provide text to these features.
+- **Careful with your selection.** "Read selection", "Selection details", "Convert" and "QR" first
+  ask the app for highlighted text through UI Automation. If the app does not
+  expose it, the widget refocuses that app, sends Ctrl+C, reads the copied text,
+  and restores the previous clipboard contents. This fallback skips terminals
+  and password fields. A temporary copy may still appear in Windows clipboard
+  history or cloud sync; restoring the previous contents cannot undo that.
+  The spoken text is limited to 5,000 characters; the selection-details preview
+  is cleared on close. Text that cannot be selected and copied is unavailable.
 - **Doesn't crash on errors.** Unexpected errors are logged to
   `errors.log` (error type and code location only, never any text) and the
   widget keeps running — a crash would also hand Windows Error Reporting a
@@ -460,9 +475,8 @@ files are double-click launchers for those scripts.
   validated before use. Neither file is passed to a script host, evaluator,
   shell command or dynamic assembly loader.
 - **Startup greeting stays local.** The optional welcome uses Windows' local
-  speech synthesis and the local account's full name when one is set; if it
-  differs, the short logon name is spoken too. Domain accounts use the short
-  logon name without contacting a domain controller. Names are filtered and
+  speech synthesis and the local account's full name when one is set. Domain
+  accounts use the short logon name without contacting a domain controller. Names are filtered and
   never stored. Turn it off under right-click → Privacy if speaking names
   aloud isn't appropriate.
 - **No global input hooks.** The tray icon uses a WPF message callback on its

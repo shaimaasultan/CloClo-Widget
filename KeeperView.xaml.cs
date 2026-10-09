@@ -98,7 +98,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         _iconsByKey = new()
         {
             ["youtube"] = IconYoutube, ["spotify"] = IconSpotify, ["bell"] = IconBell, ["search"] = IconSearch,
-            ["gpu"] = IconGpu, ["read"] = IconRead, ["mic"] = IconMic, ["convert"] = IconConvert,
+            ["gpu"] = IconGpu, ["read"] = IconRead, ["details"] = IconDetails, ["mic"] = IconMic, ["convert"] = IconConvert,
             ["color"] = IconColor, ["qr"] = IconQr, ["volume"] = IconVolume, ["clipboard"] = IconClipboard,
             ["stopwatch"] = IconStopwatch, ["daily"] = IconDaily, ["sudoku"] = IconSudoku,
         };

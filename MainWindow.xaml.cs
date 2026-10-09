@@ -44,6 +44,8 @@ public partial class MainWindow : Window
     private DateTime? _workoutCountdownEnd;
     private static readonly TimeSpan BreakThreshold = TimeSpan.FromMinutes(2);
     private Window? _avatarWindow;
+    private CommandSearchBar? _commandSearchBar;
+    private ContextMenu? _activeContextMenu;
 
     private const int GWL_EXSTYLE = -20;
     private const int WS_EX_TRANSPARENT = 0x00000020;
@@ -69,7 +71,8 @@ public partial class MainWindow : Window
     private const double AvatarOffsetX = 10 * Scale;
     private const double AvatarOffsetY = 21 * Scale;
     private const double AvatarWidth = 140 * Scale;
-    private const double AvatarHeight = 245 * Scale;
+    private const double AvatarHeight = 280 * Scale;
+    private const double CommandSearchTop = 324;
     // How much of the widget (in physical pixels, each axis) has to land on a
     // monitor's working area before its position counts as usable.
     private const int MinVisiblePixels = 80;
@@ -83,7 +86,7 @@ public partial class MainWindow : Window
     // currently enabled.
     private static readonly string[] IconOrder =
     {
-        "youtube", "spotify", "bell", "search", "gpu", "read", "mic", "convert", "color", "qr", "volume", "clipboard", "stopwatch", "daily", "sudoku",
+        "youtube", "spotify", "bell", "search", "gpu", "read", "details", "mic", "convert", "color", "qr", "volume", "clipboard", "stopwatch", "daily", "sudoku",
     };
     private const double IconWidth = 18, IconGap = 2, IconTop = 187, IconHeight = 20;
     // Matches #mediaBar's own left:10px anchor (stage x=10, i.e. relative
@@ -151,6 +154,9 @@ public partial class MainWindow : Window
     private DailyBubbleWindow? _dailyBubble;
     // The Layer Sudoku window, while it's open (one at a time).
     private SudokuWindow? _sudoku;
+    private SelectionDetailsWindow? _selectionDetailsWindow;
+    private int _selectionDetailsRequest;
+    private WindowsStatusWindow? _windowsStatusWindow;
     // The avatar's head, in this window's units: where the bubble's tail points.
     private const double HeadY = 52 * Scale;
     private DispatcherTimer? _stopwatchTimer;
@@ -206,7 +212,9 @@ public partial class MainWindow : Window
             if (_customReminderTimer != null) _customReminderTimer.Tick -= CustomReminderTimer_Tick;
             _customReminderTimer = null;
             StopCustomReminderDisplayTimer();
+            _commandSearchBar?.CloseSuggestions();
             _avatarWindow?.Close();
+            _commandSearchBar = null;
         };
     }
 
@@ -372,8 +380,8 @@ public partial class MainWindow : Window
 
     // A one-shot action, not a watch — grabs whatever's currently
     // highlighted in whichever app had focus before this click, shows it in
-    // the label, and has Keeper read it aloud. Selection is obtained only
-    // through UI Automation; unsupported apps return no text. Deliberately
+    // the label, and has Keeper read it aloud. Selection comes from UI
+    // Automation or a guarded Ctrl+C clipboard fallback. Deliberately
     // doesn't go through Watch()/the polling timer the way GPU info does.
     private void ReadSelection()
     {
@@ -389,7 +397,7 @@ public partial class MainWindow : Window
         var text = await TextSelectionReader.ReadSelectedTextAsync(target);
         if (string.IsNullOrWhiteSpace(text))
         {
-            ShowOneShotLabel("Selection unavailable", "Highlight text in an app that supports UI Automation, then try again.");
+            ShowOneShotLabel("Selection unavailable", "Highlight copyable text in another app, then try again.");
             return;
         }
 
@@ -399,6 +407,99 @@ public partial class MainWindow : Window
         var subtitle = text.Length > titleLimit ? text : "";
         ShowOneShotLabel(title, subtitle);
         SpeechReader.Speak(text);
+    }
+
+    private void ShowSelectionDetails()
+    {
+        _watchingNotifications = false;
+        _selectionDetailsWindow?.Close();
+        _ = ShowSelectionDetailsAsync(++_selectionDetailsRequest);
+    }
+
+    private async Task ShowSelectionDetailsAsync(int requestId)
+    {
+        var target = _lastExternalForegroundWindow;
+        var text = target == IntPtr.Zero ? null : await TextSelectionReader.ReadSelectedTextAsync(target);
+        if (requestId != _selectionDetailsRequest) return;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            ShowOneShotLabel("Selection unavailable", "Highlight copyable text in another app, then try again.");
+            return;
+        }
+
+        var window = new SelectionDetailsWindow(text)
+        {
+            Owner = this,
+            Topmost = _settings.AlwaysOnTop,
+        };
+        _selectionDetailsWindow = window;
+        window.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_selectionDetailsWindow, window)) _selectionDetailsWindow = null;
+        };
+        PositionBesideWidget(window);
+        ShowSensitive(window);
+    }
+
+    private void ShowWindowsStatus()
+    {
+        if (_windowsStatusWindow != null)
+        {
+            _windowsStatusWindow.Activate();
+            return;
+        }
+
+        var window = new WindowsStatusWindow
+        {
+            Owner = this,
+            Topmost = _settings.AlwaysOnTop,
+        };
+        _windowsStatusWindow = window;
+        window.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_windowsStatusWindow, window)) _windowsStatusWindow = null;
+        };
+        PositionBesideWidget(window);
+        ShowSensitive(window);
+    }
+
+    // Search runs only these fixed menu actions. Typed text filters labels and
+    // aliases; it is never passed to a process, file path or command parser.
+    private IReadOnlyList<WidgetSearchAction> BuildQuickActions()
+    {
+        var actions = new List<WidgetSearchAction>
+        {
+            new("Windows status", "storage connection drive disk network wifi", ShowWindowsStatus),
+            new("Custom reminders", "reminder remainder schedule message", OpenCustomReminders),
+            new("Open dictation folder", "dictation files recordings", OpenDictationFolder),
+            new("Set location", "city place weather gps", OpenLocationDialog),
+            new("Refresh weather", "forecast update", () => _ = RefreshWeatherAsync()),
+            new("Start new dictation file", "dictate speech recording", StartNewDictationFile),
+            new("Show or hide widget", "visibility tray", ToggleVisible),
+            new("Always on top", "toggle floating", ToggleAlwaysOnTop),
+            new("Start with Windows", "startup login toggle", ToggleStartWithWindows),
+            new("Privacy: Hide from screen sharing", "capture screenshots toggle", ToggleHideFromScreenCapture),
+            new("Privacy: Show notification text", "notifications privacy toggle", ToggleNotificationText),
+            new("Privacy: Speak greeting", "account name startup voice toggle", ToggleSpeakGreeting),
+        };
+
+        foreach (var opt in AvatarOptions)
+            actions.Add(new WidgetSearchAction($"Avatar: {opt.Label}", "character theme", () => SetAvatar(opt.Value)));
+        foreach (var outfit in KeeperView.Outfits)
+            actions.Add(new WidgetSearchAction($"Outfit colour: {outfit.Label}", "avatar clothing theme", () => SetOutfit(outfit.Key)));
+        foreach (var opt in SkyOptions)
+            actions.Add(new WidgetSearchAction($"Weather: {opt.Label}", "sky theme forecast", () => SetSky(opt.Value)));
+        foreach (var opt in MotionOptions)
+            actions.Add(new WidgetSearchAction($"Motion: {opt.Label}", "animation reduced motion", () => SetMotionMode(opt.Value)));
+        foreach (var opt in SleepOptions)
+            actions.Add(new WidgetSearchAction($"Sleep after: {opt.Label}", "idle sleep", () => SetSleepAfter(opt.Minutes)));
+        foreach (var opt in WorkoutOptions)
+            actions.Add(new WidgetSearchAction($"Workout reminder: {opt.Label}", "exercise break", () => SetWorkoutAfter(opt.Minutes)));
+        foreach (var opt in IconOptions)
+            actions.Add(new WidgetSearchAction($"Icons: {opt.Label}", "toggle show hide icon", () => ToggleIcon(opt.Key)));
+
+        actions.Add(new WidgetSearchAction("Exit CloClo", "quit close app", () => System.Windows.Application.Current.Shutdown()));
+        return actions;
     }
 
     // Same one-shot pattern as ReadSelection — grabs whatever's currently
@@ -417,7 +518,7 @@ public partial class MainWindow : Window
         var text = await TextSelectionReader.ReadSelectedTextAsync(target);
         if (string.IsNullOrWhiteSpace(text))
         {
-            ShowOneShotLabel("Selection unavailable", "Highlight text in an app that supports UI Automation, then try again.");
+            ShowOneShotLabel("Selection unavailable", "Highlight copyable text in another app, then try again.");
             return;
         }
 
@@ -762,8 +863,19 @@ public partial class MainWindow : Window
             Left = Left + AvatarOffsetX,
             Top = Top + AvatarOffsetY,
         };
+        var hitSurface = new Canvas();
+        _commandSearchBar = new CommandSearchBar(BuildQuickActions());
+        _commandSearchBar.CommandRequested += action => action.Execute();
+        _commandSearchBar.SuggestionsOpened += ReassertTopmost;
+        Canvas.SetLeft(_commandSearchBar, 4);
+        Canvas.SetTop(_commandSearchBar, CommandSearchTop);
+        hitSurface.Children.Add(_commandSearchBar);
+        _avatarWindow.Content = hitSurface;
         _avatarWindow.PreviewMouseLeftButtonDown += AvatarWindow_MouseLeftButtonDown;
-        _avatarWindow.MouseRightButtonUp += (_, _) => ShowContextMenuAtCursor();
+        _avatarWindow.MouseRightButtonUp += (_, e) =>
+        {
+            if (e.GetPosition(_avatarWindow).Y < CommandSearchTop) ShowContextMenuAtCursor();
+        };
         _avatarWindow.LocationChanged += (_, _) =>
         {
             Left = _avatarWindow.Left - AvatarOffsetX;
@@ -798,6 +910,7 @@ public partial class MainWindow : Window
     private void AvatarWindow_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         var p = e.GetPosition(_avatarWindow);
+        if (p.Y >= CommandSearchTop) return;
         var icons = ComputeIconRects();
 
         if (icons.TryGetValue("youtube", out var youtubeRect) && youtubeRect.Contains(p))
@@ -828,6 +941,11 @@ public partial class MainWindow : Window
         if (icons.TryGetValue("read", out var readRect) && readRect.Contains(p))
         {
             ReadSelection();
+            return;
+        }
+        if (icons.TryGetValue("details", out var detailsRect) && detailsRect.Contains(p))
+        {
+            ShowSelectionDetails();
             return;
         }
         if (icons.TryGetValue("mic", out var micRect) && micRect.Contains(p))
@@ -1183,6 +1301,9 @@ public partial class MainWindow : Window
     private void ReassertTopmost()
     {
         if (!_settings.AlwaysOnTop) return;
+        // Context menus (including their submenus) have separate popup HWNDs.
+        // Reasserting the widget while one is open would cover the menu.
+        if (_activeContextMenu?.IsOpen == true) return;
         var hwnd = new WindowInteropHelper(this).Handle;
         if (hwnd != IntPtr.Zero)
         {
@@ -1198,6 +1319,11 @@ public partial class MainWindow : Window
                 SetWindowPos(avatarHwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
             }
         }
+        // Popup uses its own HWND. Put it last so the interactive avatar
+        // window does not cover suggestions on the next topmost refresh.
+        var suggestionsHwnd = _commandSearchBar?.SuggestionsWindowHandle ?? IntPtr.Zero;
+        if (suggestionsHwnd != IntPtr.Zero)
+            SetWindowPos(suggestionsHwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
     }
 
     private void ApplyDisplaySettings()
@@ -1333,6 +1459,7 @@ public partial class MainWindow : Window
         menu.Items.Add(BuildSleepMenu());
         menu.Items.Add(BuildWorkoutMenu());
         menu.Items.Add(Item("Custom reminders…", OpenCustomReminders));
+        menu.Items.Add(Item("Windows status…", ShowWindowsStatus));
         menu.Items.Add(Item("Refresh weather", () => _ = RefreshWeatherAsync()));
         menu.Items.Add(Item("Start new dictation file", StartNewDictationFile));
         menu.Items.Add(Item("Open dictation folder", OpenDictationFolder));
@@ -1344,9 +1471,14 @@ public partial class MainWindow : Window
         return menu;
     }
 
-    private static void OpenMenu(ContextMenu menu)
+    private void OpenMenu(ContextMenu menu)
     {
         menu.Placement = PlacementMode.MousePoint;
+        _activeContextMenu = menu;
+        menu.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_activeContextMenu, menu)) _activeContextMenu = null;
+        };
         menu.IsOpen = true;
     }
 
@@ -1377,12 +1509,14 @@ public partial class MainWindow : Window
     };
 
     private MenuItem BuildMotionMenu() =>
-        SubMenu("Motion", MotionOptions.Select(opt => Item(opt.Label, () =>
-        {
-            _settings.MotionMode = opt.Value;
-            _settings.Save();
-            Keeper.SetMotionMode(opt.Value);
-        }, isChecked: _settings.MotionMode == opt.Value)));
+        SubMenu("Motion", MotionOptions.Select(opt => Item(opt.Label, () => SetMotionMode(opt.Value), isChecked: _settings.MotionMode == opt.Value)));
+
+    private void SetMotionMode(string mode)
+    {
+        _settings.MotionMode = mode;
+        _settings.Save();
+        Keeper.SetMotionMode(mode);
+    }
 
     private static readonly (string Value, string Label)[] AvatarOptions =
     {
@@ -1395,25 +1529,30 @@ public partial class MainWindow : Window
         var items = new List<object>();
         foreach (var opt in AvatarOptions)
         {
-            items.Add(Item(opt.Label, () =>
-            {
-                _settings.Avatar = opt.Value;
-                _settings.Save();
-                Keeper.SetAvatar(opt.Value);
-                Keeper.SetOutfit(CurrentOutfit);
-            }, isChecked: _settings.Avatar == opt.Value));
+            items.Add(Item(opt.Label, () => SetAvatar(opt.Value), isChecked: _settings.Avatar == opt.Value));
         }
 
         // The colours of the avatar shown now; each avatar keeps its own.
         var name = AvatarOptions.First(o => o.Value == (_settings.Avatar == "lady" ? "lady" : "keeper")).Label;
         items.Add(new Separator());
-        items.Add(SubMenu($"Outfit colour ({name})", KeeperView.Outfits.Select(outfit => Item(outfit.Label, () =>
-        {
-            CurrentOutfit = outfit.Key;
-            _settings.Save();
-            Keeper.SetOutfit(outfit.Key);
-        }, isChecked: CurrentOutfit == outfit.Key, icon: Swatch(outfit.Top)))));
+        items.Add(SubMenu($"Outfit colour ({name})", KeeperView.Outfits.Select(outfit => Item(outfit.Label, () => SetOutfit(outfit.Key),
+            isChecked: CurrentOutfit == outfit.Key, icon: Swatch(outfit.Top)))));
         return SubMenu("Avatar", items);
+    }
+
+    private void SetAvatar(string avatar)
+    {
+        _settings.Avatar = avatar;
+        _settings.Save();
+        Keeper.SetAvatar(avatar);
+        Keeper.SetOutfit(CurrentOutfit);
+    }
+
+    private void SetOutfit(string outfit)
+    {
+        CurrentOutfit = outfit;
+        _settings.Save();
+        Keeper.SetOutfit(outfit);
     }
 
     private string CurrentOutfit
@@ -1443,12 +1582,15 @@ public partial class MainWindow : Window
     };
 
     private MenuItem BuildSleepMenu() =>
-        SubMenu("Sleep after", SleepOptions.Select(opt => Item(opt.Label, () =>
-        {
-            _settings.SleepAfterMinutes = opt.Minutes;
-            _settings.Save();
-            UpdateActivityState(); // e.g. picking "Never" wakes it right away
-        }, isChecked: _settings.SleepAfterMinutes == opt.Minutes)));
+        SubMenu("Sleep after", SleepOptions.Select(opt => Item(opt.Label, () => SetSleepAfter(opt.Minutes),
+            isChecked: _settings.SleepAfterMinutes == opt.Minutes)));
+
+    private void SetSleepAfter(int minutes)
+    {
+        _settings.SleepAfterMinutes = minutes;
+        _settings.Save();
+        UpdateActivityState(); // e.g. picking "Never" wakes it right away
+    }
 
     private static readonly (int Minutes, string Label)[] WorkoutOptions =
     {
@@ -1460,13 +1602,16 @@ public partial class MainWindow : Window
     };
 
     private MenuItem BuildWorkoutMenu() =>
-        SubMenu("Workout reminder", WorkoutOptions.Select(opt => Item(opt.Label, () =>
-        {
-            _settings.WorkoutAfterMinutes = opt.Minutes;
-            _settings.Save();
-            _activeStreakStart = DateTime.Now; // start the new threshold's countdown fresh, not mid-streak
-            UpdateActivityState();
-        }, isChecked: _settings.WorkoutAfterMinutes == opt.Minutes)));
+        SubMenu("Workout reminder", WorkoutOptions.Select(opt => Item(opt.Label, () => SetWorkoutAfter(opt.Minutes),
+            isChecked: _settings.WorkoutAfterMinutes == opt.Minutes)));
+
+    private void SetWorkoutAfter(int minutes)
+    {
+        _settings.WorkoutAfterMinutes = minutes;
+        _settings.Save();
+        _activeStreakStart = DateTime.Now; // start the new threshold's countdown fresh, not mid-streak
+        UpdateActivityState();
+    }
 
     private void OpenCustomReminders()
     {
@@ -1517,7 +1662,6 @@ public partial class MainWindow : Window
         var widgetTop = screenOrigin.Y;
         var widgetRight = screenBottomRight.X;
         var widgetBottom = screenBottomRight.Y;
-        var widgetCenterX = (widgetLeft + widgetRight) / 2;
         var widgetCenterY = (widgetTop + widgetBottom) / 2;
         var area = workAreas
             .OrderByDescending(candidate =>
@@ -1558,6 +1702,7 @@ public partial class MainWindow : Window
         ("search", "Search other apps"),
         ("gpu", "GPU info"),
         ("read", "Read selection aloud"),
+        ("details", "Selection details"),
         ("mic", "Dictate"),
         ("convert", "Convert units"),
         ("color", "Color picker"),
@@ -1612,7 +1757,8 @@ public partial class MainWindow : Window
         if (_avatarWindow != null) ScreenCapture.SetExcluded(_avatarWindow, _settings.HideFromScreenCapture);
         foreach (Window owned in OwnedWindows)
         {
-            if (owned is QrCodeWindow or ClipboardHistoryWindow or DailyBubbleWindow) ScreenCapture.SetExcluded(owned, _settings.HideFromScreenCapture);
+            if (owned is QrCodeWindow or ClipboardHistoryWindow or DailyBubbleWindow or SelectionDetailsWindow or WindowsStatusWindow)
+                ScreenCapture.SetExcluded(owned, _settings.HideFromScreenCapture);
         }
     }
 
@@ -1701,6 +1847,7 @@ public partial class MainWindow : Window
     private void ToggleVisible()
     {
         Visibility = Visibility == Visibility.Visible ? Visibility.Hidden : Visibility.Visible;
+        if (Visibility != Visibility.Visible) _commandSearchBar?.CloseSuggestions();
         if (_avatarWindow != null) _avatarWindow.Visibility = Visibility;
         if (Visibility != Visibility.Visible) _dailyBubble?.Close();
     }

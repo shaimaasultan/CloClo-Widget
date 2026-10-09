@@ -17,7 +17,7 @@ public class WidgetSettings
     };
     private static readonly HashSet<string> AllowedIcons = new(StringComparer.Ordinal)
     {
-        "youtube", "spotify", "bell", "search", "gpu", "read", "mic", "convert", "color", "qr", "volume", "clipboard", "stopwatch", "daily", "sudoku",
+        "youtube", "spotify", "bell", "search", "gpu", "read", "details", "mic", "convert", "color", "qr", "volume", "clipboard", "stopwatch", "daily", "sudoku",
     };
     private static readonly HashSet<int> AllowedSleepIntervals = new() { 0, 2, 5, 15 };
     private static readonly HashSet<int> AllowedWorkoutIntervals = new() { 0, 15, 30, 45, 60 };

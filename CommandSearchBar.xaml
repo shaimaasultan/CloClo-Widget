@@ -1,0 +1,32 @@
+<UserControl x:Class="CloCloWidget.CommandSearchBar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Width="174" Height="30">
+    <Grid>
+        <Border x:Name="SearchFrame" CornerRadius="9" Background="#EB1C2935"
+                BorderBrush="#B5FFFFFF" BorderThickness="1">
+            <Grid Margin="9,0">
+                <TextBlock x:Name="SearchHint" Text="⌕  Search widget actions"
+                           Foreground="#FFE5ECF2" FontSize="11"
+                           VerticalAlignment="Center" IsHitTestVisible="False" />
+                <TextBox x:Name="SearchText" MaxLength="80" FontSize="11"
+                         Foreground="White" CaretBrush="White" Background="Transparent"
+                         BorderThickness="0" VerticalContentAlignment="Center"
+                         TextChanged="SearchText_TextChanged"
+                         GotKeyboardFocus="SearchText_GotKeyboardFocus"
+                         PreviewKeyDown="SearchText_PreviewKeyDown" />
+            </Grid>
+        </Border>
+        <Popup x:Name="SuggestionsPopup" PlacementTarget="{Binding ElementName=SearchFrame}"
+               Placement="Top" VerticalOffset="-3" StaysOpen="False" AllowsTransparency="True"
+               Opened="SuggestionsPopup_Opened">
+            <Border Background="#F21C2935" BorderBrush="#B5FFFFFF" BorderThickness="1"
+                    CornerRadius="8" Padding="3" Width="174">
+                <ListBox x:Name="Suggestions" Background="Transparent" Foreground="White"
+                         BorderThickness="0" DisplayMemberPath="Label" MaxHeight="210"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         PreviewMouseLeftButtonUp="Suggestions_PreviewMouseLeftButtonUp" />
+            </Border>
+        </Popup>
+    </Grid>
+</UserControl>

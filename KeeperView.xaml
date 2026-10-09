@@ -505,6 +505,7 @@
             <Grid x:Name="IconSearch" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="13" Text="🔍" /></Grid>
             <Grid x:Name="IconGpu" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="🖥️" /></Grid>
             <Grid x:Name="IconRead" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="🗣️" /></Grid>
+            <Grid x:Name="IconDetails" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="📊" /></Grid>
             <Grid x:Name="IconMic" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="🎤" /></Grid>
             <Grid x:Name="IconConvert" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="💱" /></Grid>
             <Grid x:Name="IconColor" Style="{StaticResource MediaIcon}"><TextBlock Style="{StaticResource IconGlyph}" FontSize="12" Text="🎨" /></Grid>
