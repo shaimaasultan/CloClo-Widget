@@ -30,9 +30,8 @@
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="CloClo">
-        <!-- The signed, self-contained CloClo and the native WPF DLLs that
-             sit beside it in a Program Files build (all pinned by SHA-256
-             inside the exe). -->
+        <!-- The signed, self-contained CloClo, native WPF DLLs and four
+             pinned local transcription CPU DLLs. All sit beside the exe. -->
         <Files Include="$(AppDir)\*.exe" />
         <Files Include="$(AppDir)\*.dll" />
       </Directory>

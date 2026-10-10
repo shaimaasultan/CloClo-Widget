@@ -25,6 +25,7 @@ evidence is stated in the item where available. `[ ]` = still awaiting the real-
 - [x] Read-aloud capped at 5,000 characters (`486804f`)
 - [x] Dictation files in `%LocalAppData%\CloCloWidget\Dictation`, not next to the exe; a dictation path outside that folder is never appended to (`5236a1d`)
 - [x] The shared speech editor opens a file only after the user chooses it, reads at most 256 KiB through one file handle, treats it as text only, and still saves solely through the restricted dictation-file append path. Voice Typing stops when the editor loses focus.
+- [x] Playback transcription uses a bounded WASAPI loopback queue and an optional local model. The model download has an exact size and SHA-256 pin; the exact bytes supplied to Whisper are reverified from one read handle, avoiding a second path lookup after verification. Audio is never sent over the network. Four native Whisper CPU DLLs are pinned in the executable; signed builds sign those copies before compiling their hashes into the exe.
 - [x] Win+H sent with `SendInput`; the input language it switches is restored (`90e33d8`)
 - [x] "Open dictation folder" starts Explorer by full path with the folder as an argument (no shell-execute of a path) (`35b2e84`)
 - [x] Colour-picker overlay cancels itself when it loses focus or after a minute, so it can never trap the screen (`90e33d8`)

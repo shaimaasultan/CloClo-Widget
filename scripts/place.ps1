@@ -21,12 +21,13 @@
 #   only administrators can change, and checked there - so what was checked
 #   is exactly what gets installed: the same set of files, the same SHA-256,
 #   the exe signed by the same certificate as the installed copy (unless the
-#   user accepted the change), every DLL intact and signed by Microsoft;
+#   user accepted the change), each WPF DLL signed by Microsoft and each
+#   Whisper CPU DLL signed by the new exe's signer;
 # - then the folders are swapped by renaming, which fails as a whole while
 #   the old copy is in use; on any failure the previous copy is put back.
 # It writes no registry keys and no log files. The result is the exit code:
 #   0 done, 2 the exe's signature is broken, 3 signed by another certificate
-#   than the installed copy, 4 a DLL isn't intact and Microsoft-signed,
+#   than the installed copy, 4 a DLL has an invalid or unexpected signer,
 #   5 a source file is a link or has an unexpected name, 6 in use / other,
 #   7 a copied file differs from the build or the file set doesn't match,
 #   8 (from the bootstrap) this file changed after the installer checked it.
@@ -71,10 +72,17 @@ if (Test-Path -LiteralPath $installed) {
 $oldSigner = (Get-AuthenticodeSignature -LiteralPath $installed).SignerCertificate
 if ($oldSigner -and $oldSigner.Thumbprint -ne $newThumb -and $newThumb -ne $AcceptThumbprint) { Fail 3 }
 }
-# Every DLL here is one of WPF's native runtime files: intact and signed by Microsoft.
+# WPF DLLs are Microsoft-signed. The four optional local transcription DLLs
+# are pinned during the build and signed by CloClo's own protected key.
+$whisperDlls = @('ggml-base-whisper.dll', 'ggml-cpu-whisper.dll', 'ggml-whisper.dll', 'whisper.dll')
 foreach ($f in @($staged | Where-Object { $_.Extension -eq '.dll' })) {
 $s = Get-AuthenticodeSignature -LiteralPath $f.FullName
-if ($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation,') { Fail 4 }
+if ($f.Name -in $whisperDlls) {
+    if ($newThumb -eq 'unsigned') {
+        if ($s.Status -ne 'NotSigned') { Fail 4 }
+    } elseif (-not $s.SignerCertificate -or $s.SignerCertificate.Thumbprint -ne $newThumb -or
+            $s.Status -in 'HashMismatch', 'NotSupportedFileFormat', 'Incompatible', 'NotSigned') { Fail 4 }
+} elseif ($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation,') { Fail 4 }
 }
 # Swap the folders; renaming fails as a whole while the old copy is in use.
 if (Test-Path -LiteralPath $dest) { Rename-Item -LiteralPath $dest -NewName (Split-Path $old -Leaf) }

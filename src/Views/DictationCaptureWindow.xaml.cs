@@ -49,6 +49,8 @@ public partial class DictationCaptureWindow : Window
     private bool _voiceTypingStarted;
     private HashSet<IntPtr> _textInputWindowsBefore = new();
     private bool _readActive;
+    private PlaybackAudioTranscriber? _playback;
+    private bool _playbackStarting;
     private string? _lastSavedText;
 
     // The parent retains the existing restricted append-to-dictation-folder flow.
@@ -68,11 +70,12 @@ public partial class DictationCaptureWindow : Window
             Instructions.Text = "Dictation paused because this window lost focus. Turn it on again to continue.";
         };
         Closing += (_, _) => StopMicrophone();
-        Closed += (_, _) =>
+        Closed += async (_, _) =>
         {
             _lifetime.Cancel();
             SpeechReader.Finished -= OnSpeechFinished;
             StopMicrophone();
+            await StopPlaybackAsync();
             StopReading();
             try { InputLanguageManager.Current.CurrentInputLanguage = _originalInputLanguage; }
             catch { /* the original layout may have been removed */ }
@@ -147,8 +150,122 @@ public partial class DictationCaptureWindow : Window
 
     private async void MicToggle_Click(object sender, RoutedEventArgs e)
     {
-        if (MicToggle.IsChecked == true) await StartMicrophoneAsync();
+        if (MicToggle.IsChecked == true)
+        {
+            await StopPlaybackAsync();
+            await StartMicrophoneAsync();
+        }
         else StopMicrophone();
+    }
+
+    private async void PlaybackToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (PlaybackToggle.IsChecked == true) await StartPlaybackAsync();
+        else await StopPlaybackAsync();
+    }
+
+    private async Task StartPlaybackAsync()
+    {
+        if (_playback != null || _playbackStarting) return;
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000) ||
+            !System.Runtime.Intrinsics.X86.Avx2.IsSupported ||
+            !System.Runtime.Intrinsics.X86.Fma.IsSupported ||
+            (System.Runtime.Intrinsics.X86.X86Base.CpuId(1, 0).Ecx & (1 << 29)) == 0)
+        {
+            PlaybackToggle.IsChecked = false;
+            Instructions.Text = "Local playback transcription needs Windows 11 and a CPU with AVX2, FMA, and F16C support.";
+            return;
+        }
+        _playbackStarting = true;
+        StopMicrophone();
+        PlaybackToggle.IsEnabled = false;
+        PlaybackToggle.Content = "Transcribe playing audio: Preparing";
+        Instructions.Text = "Checking the local speech model. The first use downloads about 142 MiB; playback audio stays on this PC.";
+        try
+        {
+            var progress = new Progress<long>(bytes =>
+            {
+                if (IsLoaded)
+                    Instructions.Text = $"Downloading local speech model: {bytes / 1048576} of 142 MiB. Audio capture has not started yet.";
+            });
+            await PlaybackModelStore.EnsureDownloadedAsync(progress, _lifetime.Token);
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+            PlaybackToggle.IsChecked = false;
+            return;
+        }
+        catch (Exception ex)
+        {
+            PlaybackToggle.IsChecked = false;
+            PlaybackToggle.Content = "Transcribe playing audio: Off";
+            Instructions.Text = $"Could not prepare the local speech model: {ex.Message}";
+            return;
+        }
+        finally
+        {
+            _playbackStarting = false;
+            PlaybackToggle.IsEnabled = true;
+        }
+        if (!IsLoaded || PlaybackToggle.IsChecked != true) return;
+        var session = new PlaybackAudioTranscriber();
+        _playback = session;
+        PlaybackToggle.Content = "Transcribe playing audio: Starting";
+        Instructions.Text = "Starting capture of the default Windows speaker output.";
+        session.TextRecognized += text => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (_playback != session || !IsLoaded) return;
+            var separator = CaptureBox.Text.Length > 0 && !char.IsWhiteSpace(CaptureBox.Text[^1]) ? " " : "";
+            if (CaptureBox.Text.Length + separator.Length + text.Length > CaptureBox.MaxLength)
+            {
+                _ = StopPlaybackWithMessageAsync("The editor is full. Save or clear text before transcribing more audio.");
+                return;
+            }
+            CaptureBox.AppendText(separator + text);
+        }));
+        session.ProgressChanged += (recognized, _, bytes) => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (_playback != session || !IsLoaded) return;
+            Instructions.Text = $"Listening to speaker output: {recognized} segments transcribed, {bytes / 32000} seconds of audio received. Only Save writes text to a file.";
+        }));
+        session.Failed += message => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (_playback == session) _ = StopPlaybackWithMessageAsync(message);
+        }));
+        try
+        {
+            await session.StartAsync(_currentLanguageTag);
+            if (_playback != session) return;
+            PlaybackToggle.Content = "Transcribe playing audio: On";
+            Instructions.Text = "Transcribing locally in 10-second chunks from the default output device. Turn this off to stop; only Save writes text to a file.";
+        }
+        catch (Exception ex)
+        {
+            if (_playback != session) return;
+            var message = ex switch
+            {
+                InvalidDataException => ex.Message,
+                DllNotFoundException or BadImageFormatException =>
+                    "Could not load the local speech runtime. Check that CloClo is fully installed and the Visual C++ 2022 x64 runtime is present.",
+                _ => $"Could not start local playback transcription ({ex.GetType().Name}). Check the model and output device."
+            };
+            await StopPlaybackWithMessageAsync(message);
+        }
+    }
+
+    private async Task StopPlaybackWithMessageAsync(string message)
+    {
+        await StopPlaybackAsync();
+        if (IsLoaded) Instructions.Text = message;
+    }
+
+    private async Task StopPlaybackAsync()
+    {
+        var session = _playback;
+        _playback = null;
+        PlaybackToggle.IsChecked = false;
+        PlaybackToggle.Content = "Transcribe playing audio: Off";
+        if (session != null) await session.DisposeAsync();
     }
 
     private async Task StartMicrophoneAsync()
@@ -204,12 +321,21 @@ public partial class DictationCaptureWindow : Window
     private async Task SwitchLanguageAsync(string cultureTag)
     {
         if (cultureTag == _currentLanguageTag) return;
+        var restartPlayback = _playback != null;
+        if (restartPlayback) await StopPlaybackAsync();
         _currentLanguageTag = cultureTag;
         UpdateLanguageHighlight();
-        if (MicToggle.IsChecked != true) return;
-        StopMicrophone();
-        MicToggle.IsChecked = true;
-        await StartMicrophoneAsync();
+        if (MicToggle.IsChecked == true)
+        {
+            StopMicrophone();
+            MicToggle.IsChecked = true;
+            await StartMicrophoneAsync();
+        }
+        if (restartPlayback)
+        {
+            PlaybackToggle.IsChecked = true;
+            await StartPlaybackAsync();
+        }
     }
 
     private void UpdateLanguageHighlight()
@@ -218,9 +344,10 @@ public partial class DictationCaptureWindow : Window
         ArabicButton.Background = _currentLanguageTag == ArabicLanguageTag ? ActiveLangBrush : InactiveLangBrush;
     }
 
-    private void Load_Click(object sender, RoutedEventArgs e)
+    private async void Load_Click(object sender, RoutedEventArgs e)
     {
         StopMicrophone();
+        await StopPlaybackAsync();
         StopReading();
         var picker = new OpenFileDialog
         {
@@ -258,9 +385,10 @@ public partial class DictationCaptureWindow : Window
         }
     }
 
-    private void Save_Click(object sender, RoutedEventArgs e)
+    private async void Save_Click(object sender, RoutedEventArgs e)
     {
         StopMicrophone();
+        await StopPlaybackAsync();
         var text = CaptureBox.Text.Trim();
         if (text.Length == 0)
         {

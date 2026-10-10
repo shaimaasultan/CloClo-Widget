@@ -33,9 +33,42 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="NAudio.Wasapi" Version="3.1.0" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
     <PackageReference Include="System.Management" Version="10.0.0" />
+    <PackageReference Include="Whisper.net" Version="1.9.1" />
+    <!-- The CPU runtime is copied as four explicit win-x64 files below. Its
+         default build target copies other architectures into subdirectories. -->
+    <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" GeneratePathProperty="true" ExcludeAssets="build" />
   </ItemGroup>
+
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'win-x64'">
+    <Content Include="$(IntermediateOutputPath)whisper-runtime\ggml-base-whisper.dll;$(IntermediateOutputPath)whisper-runtime\ggml-cpu-whisper.dll;$(IntermediateOutputPath)whisper-runtime\ggml-whisper.dll;$(IntermediateOutputPath)whisper-runtime\whisper.dll"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <Target Name="PrepareWhisperRuntime" Condition="'$(RuntimeIdentifier)' == 'win-x64'">
+    <ItemGroup>
+      <_WhisperSource Include="$(PkgWhisper_net_Runtime)\build\win-x64\ggml-base-whisper.dll" ExpectedHash="E6C362421B6D5A5C1B52341F88D3D72764DE29F05141748CC3FAAD2F6348063F" />
+      <_WhisperSource Include="$(PkgWhisper_net_Runtime)\build\win-x64\ggml-cpu-whisper.dll" ExpectedHash="480A23AFC6DEEA301C5CDA66CF462FA2F2EB7FF9BCA63B8F4F933A0E8DC5D4DD" />
+      <_WhisperSource Include="$(PkgWhisper_net_Runtime)\build\win-x64\ggml-whisper.dll" ExpectedHash="2E0AC238C2BC178A5C1F09B3BDE2421904B191BCE1CC1C13DC64309CA3B9CB36" />
+      <_WhisperSource Include="$(PkgWhisper_net_Runtime)\build\win-x64\whisper.dll" ExpectedHash="07EC2FAC4946005BA7380F2C2E9CCFA3AD23007592D074AA698ED5DF6BFB4938" />
+    </ItemGroup>
+    <GetFileHash Files="@(_WhisperSource)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_WhisperSourceHash" />
+    </GetFileHash>
+    <Error Condition="'%(_WhisperSourceHash.FileHash)' != '%(_WhisperSourceHash.ExpectedHash)'"
+           Text="Whisper CPU runtime differs from the pinned 1.9.1 package: %(_WhisperSourceHash.Identity)" />
+    <PropertyGroup><_WhisperOut>$(IntermediateOutputPath)whisper-runtime\</_WhisperOut></PropertyGroup>
+    <RemoveDir Directories="$(_WhisperOut)" />
+    <MakeDir Directories="$(_WhisperOut)" />
+    <Copy SourceFiles="@(_WhisperSource)" DestinationFolder="$(_WhisperOut)" />
+    <ItemGroup>
+      <_WhisperCopy Include="$(_WhisperOut)ggml-base-whisper.dll;$(_WhisperOut)ggml-cpu-whisper.dll;$(_WhisperOut)ggml-whisper.dll;$(_WhisperOut)whisper.dll" />
+    </ItemGroup>
+    <Exec Condition="'$(_SignEnabled)' == 'true'"
+          Command="$(_SignCommand) -Path &quot;%(_WhisperCopy.FullPath)&quot;" />
+  </Target>
 
   <!--
     Pins the exact native runtime files this build ships: every native DLL
@@ -45,7 +78,7 @@
     identifier (plain dotnet build) get an empty list, and don't extract
     anything anyway.
   -->
-  <Target Name="GenerateNativeLibraryPins" BeforeTargets="CoreCompile" DependsOnTargets="ProcessFrameworkReferences;ResolveRuntimePackAssets">
+  <Target Name="GenerateNativeLibraryPins" BeforeTargets="CoreCompile" DependsOnTargets="ProcessFrameworkReferences;ResolveRuntimePackAssets;PrepareWhisperRuntime">
     <ItemGroup>
       <_NativePinCandidate Include="@(RuntimePackAsset)" Condition="'%(RuntimePackAsset.AssetType)' == 'native' and '%(RuntimePackAsset.Extension)' == '.dll'" />
     </ItemGroup>
@@ -63,6 +96,9 @@
     <GetFileHash Files="@(_NativePinCandidate)" Algorithm="SHA256" Condition="'@(_NativePinCandidate)' != ''">
       <Output TaskParameter="Items" ItemName="_NativePin" />
     </GetFileHash>
+    <GetFileHash Files="@(_WhisperCopy)" Algorithm="SHA256" Condition="'@(_WhisperCopy)' != ''">
+      <Output TaskParameter="Items" ItemName="_WhisperPin" />
+    </GetFileHash>
     <PropertyGroup>
       <_NativePinsFile>$(IntermediateOutputPath)NativeLibraryPins.g.cs</_NativePinsFile>
     </PropertyGroup>
@@ -74,6 +110,10 @@
       <_NativePinLine Include="    private static readonly System.Collections.Generic.HashSet&lt;string&gt; PinnedLibraries = new(System.StringComparer.OrdinalIgnoreCase)" />
       <_NativePinLine Include="    {" />
       <_NativePinLine Include="@(_NativePin->'        &quot;%(Filename)%(Extension)|%(FileHash)&quot;,')" />
+      <_NativePinLine Include="    }%3B" />
+      <_NativePinLine Include="    private static readonly System.Collections.Generic.HashSet&lt;string&gt; PinnedWhisperLibraries = new(System.StringComparer.OrdinalIgnoreCase)" />
+      <_NativePinLine Include="    {" />
+      <_NativePinLine Include="@(_WhisperPin->'        &quot;%(Filename)%(Extension)|%(FileHash)&quot;,')" />
       <_NativePinLine Include="    }%3B" />
       <_NativePinLine Include="}" />
     </ItemGroup>
@@ -118,6 +158,12 @@
       <_SignWorkDir>$(MSBuildProjectDirectory)\$(IntermediateOutputPath)signed\</_SignWorkDir>
     </PropertyGroup>
     <ItemGroup>
+      <!-- These four files are already signed by PrepareWhisperRuntime and
+           copied beside the exe, where startup pins them. Do not also put
+           copies inside the single-file bundle or re-evaluate their locally
+           untrusted self-signed certificate in sign.ps1. -->
+      <_WhisperExternal Include="@(FilesToBundle)" Condition="'%(Filename)%(Extension)' == 'ggml-base-whisper.dll' or '%(Filename)%(Extension)' == 'ggml-cpu-whisper.dll' or '%(Filename)%(Extension)' == 'ggml-whisper.dll' or '%(Filename)%(Extension)' == 'whisper.dll'" />
+      <FilesToBundle Remove="@(_WhisperExternal)" />
       <!-- DLLs only: the one .exe in here is the host stub the bundle gets
            appended to, and a signature on it would be broken by that —
            it's signed once, as the finished exe, by SignPublishedExe. -->
@@ -145,7 +191,16 @@
     </ItemGroup>
   </Target>
 
-  <Target Name="SignPublishedExe" AfterTargets="Publish" Condition="'$(_SignEnabled)' == 'true'">
+  <!-- The bundler consumes Content DLLs unless they are removed above. Copy
+       the already signed and pinned CPU DLLs explicitly beside the exe. This
+       keeps one verified copy in the install rather than a hidden duplicate
+       inside the bundle. -->
+  <Target Name="CopyWhisperRuntimeToPublish" AfterTargets="Publish"
+          Condition="'$(RuntimeIdentifier)' == 'win-x64' and '@(_WhisperCopy)' != ''">
+    <Copy SourceFiles="@(_WhisperCopy)" DestinationFolder="$(PublishDir)" />
+  </Target>
+
+  <Target Name="SignPublishedExe" AfterTargets="Publish" DependsOnTargets="CopyWhisperRuntimeToPublish" Condition="'$(_SignEnabled)' == 'true'">
     <Exec Command="$(_SignCommand) -Path &quot;$([System.IO.Path]::GetFullPath('$(PublishDir)$(AssemblyName).exe'))&quot;" />
   </Target>
 
