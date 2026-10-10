@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Windows.Media.Core;
 using Windows.Media.Playback;
@@ -17,12 +18,14 @@ namespace CloCloWidget;
 public static class SpeechReader
 {
     private static readonly SpeechSynthesizer Synth = new();
+    private static readonly SemaphoreSlim SynthesisGate = new(1, 1);
     private static readonly MediaPlayer Player = new();
     private static readonly object PlaybackLock = new();
     private static PlaybackResources? _playbackResources;
+    private static long _requestVersion;
     // Plenty for a highlighted paragraph; an accidental select-all of a huge
     // document would otherwise be synthesized in full, all in memory.
-    private const int MaxSpokenChars = 5000;
+    public const int MaxSpokenChars = 5000;
 
     // Raised (on a background thread) when reading stops, after the
     // synthesized audio has been let go - a moment to free memory.
@@ -49,49 +52,85 @@ public static class SpeechReader
         Finished?.Invoke();
     }
 
-    public static void Speak(string text, Action? onStarted = null)
+    public static void Speak(string text, Action? onStarted = null, Action? onFailed = null)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
         if (text.Length > MaxSpokenChars) text = text[..MaxSpokenChars];
-        _ = SpeakAsync(text, onStarted);
+        var version = Interlocked.Increment(ref _requestVersion);
+        _ = SpeakAsync(text, onStarted, onFailed, version);
     }
 
     public static void Stop()
     {
+        Interlocked.Increment(ref _requestVersion);
         if (Player.Source == null) return;
         Player.Pause();
         Release();
     }
 
-    private static async Task SpeakAsync(string text, Action? onStarted)
+    private static async Task SpeakAsync(string text, Action? onStarted, Action? onFailed, long version)
     {
         var resources = new PlaybackResources();
         try
         {
             var list = new MediaPlaybackList();
-            foreach (var (runText, voice) in SplitByScript(text))
+            await SynthesisGate.WaitAsync();
+            try
             {
-                Synth.Voice = voice;
-                var stream = await Synth.SynthesizeTextToStreamAsync(runText);
-                resources.Own(stream);
-                var source = MediaSource.CreateFromStream(stream, stream.ContentType);
-                resources.Own(source);
-                var item = new MediaPlaybackItem(source);
-                list.Items.Add(item);
+                if (version != Volatile.Read(ref _requestVersion))
+                {
+                    resources.Dispose();
+                    return;
+                }
+                foreach (var (runText, voice) in SplitByScript(text))
+                {
+                    Synth.Voice = voice;
+                    var stream = await Synth.SynthesizeTextToStreamAsync(runText);
+                    resources.Own(stream);
+                    if (version != Volatile.Read(ref _requestVersion))
+                    {
+                        resources.Dispose();
+                        return;
+                    }
+                    var source = MediaSource.CreateFromStream(stream, stream.ContentType);
+                    resources.Own(source);
+                    var item = new MediaPlaybackItem(source);
+                    list.Items.Add(item);
+                }
             }
+            finally { SynthesisGate.Release(); }
             if (list.Items.Count == 0)
             {
                 resources.Dispose();
+                if (version == Volatile.Read(ref _requestVersion))
+                {
+                    try { onFailed?.Invoke(); }
+                    catch { /* A visual callback must not affect speech playback. */ }
+                }
                 return;
             }
 
             lock (PlaybackLock)
             {
+                if (version != Volatile.Read(ref _requestVersion))
+                {
+                    resources.Dispose();
+                    return;
+                }
                 Player.Source = null;
                 _playbackResources?.Dispose();
                 _playbackResources = resources;
-                Player.Source = list;
-                Player.Play();
+                try
+                {
+                    Player.Source = list;
+                    Player.Play();
+                }
+                catch
+                {
+                    Player.Source = null;
+                    _playbackResources = null;
+                    throw;
+                }
             }
             try { onStarted?.Invoke(); }
             catch { /* A visual callback must not affect speech playback. */ }
@@ -99,6 +138,11 @@ public static class SpeechReader
         catch
         {
             resources.Dispose();
+            if (version == Volatile.Read(ref _requestVersion))
+            {
+                try { onFailed?.Invoke(); }
+                catch { /* A visual callback must not affect speech playback. */ }
+            }
             // No matching voice, no audio device, etc. — reading aloud is a
             // bonus on top of the label already showing the text, not worth
             // surfacing a failure for.

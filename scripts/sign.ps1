@@ -76,7 +76,7 @@ if (-not $SignTool -or -not (Test-Path $SignTool)) {
 # thumbprint as such a leftover and removes it too. (Only for the same .pfx:
 # the marker sits in a folder any program can write to, so it must not be
 # able to make this delete any other certificate.)
-$pfxMarker = $PSScriptRoot + '\obj\pfx-signing.pending'
+$pfxMarker = [IO.Path]::Combine([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..')), 'obj', 'pfx-signing.pending')
 # Removing a certificate from the store leaves its private key behind in the
 # user's key store - this deletes that too.
 function Remove-PrivateKey($cert) {

@@ -155,6 +155,7 @@ public partial class MainWindow : Window
     private DailyBubbleWindow? _dailyBubble;
     // The Layer Sudoku window, while it's open (one at a time).
     private SudokuWindow? _sudoku;
+    private DictationCaptureWindow? _dictationWindow;
     private SelectionDetailsWindow? _selectionDetailsWindow;
     private int _selectionDetailsRequest;
     private WindowsStatusWindow? _windowsStatusWindow;
@@ -393,12 +394,11 @@ public partial class MainWindow : Window
     private async Task ReadSelectionAsync()
     {
         var target = _lastExternalForegroundWindow;
-        if (target == IntPtr.Zero) return;
-
-        var text = await TextSelectionReader.ReadSelectedTextAsync(target);
+        var text = target == IntPtr.Zero ? null : await TextSelectionReader.ReadSelectedTextAsync(target);
         if (string.IsNullOrWhiteSpace(text))
         {
             ShowOneShotLabel("Selection unavailable", "Highlight copyable text in another app, then try again.");
+            OpenSpeechWindow();
             return;
         }
 
@@ -407,7 +407,9 @@ public partial class MainWindow : Window
         var title = text.Length > titleLimit ? text[..titleLimit] + "…" : text;
         var subtitle = text.Length > titleLimit ? text : "";
         ShowOneShotLabel(title, subtitle);
-        SpeechReader.Speak(text);
+        var editor = OpenSpeechWindow();
+        editor.AddSelectedText(text);
+        editor.StartReading();
     }
 
     private void ShowSelectionDetails()
@@ -517,9 +519,9 @@ public partial class MainWindow : Window
             new("Watch notifications", "bell latest notification", WidgetSearchActionKind.Watch, WatchNotifications),
             new("Choose media session", "search other apps media picker", WidgetSearchActionKind.OpenMenu, ShowAppPickerFromSearch),
             new("GPU info", "graphics card hardware", WidgetSearchActionKind.Watch, WatchGpus),
-            new("Read selection aloud", "speak selected text", WidgetSearchActionKind.Run, ReadSelection),
+            new("Read selection aloud", "speech editor selected text", WidgetSearchActionKind.OpenWindow, ReadSelection),
             new("Selection details", "selected text words characters lines", WidgetSearchActionKind.OpenWindow, ShowSelectionDetails),
-            new("Dictate to file", "mic voice typing speech", WidgetSearchActionKind.CreateFile, OpenDictationCapture),
+            new("Speech and dictation", "mic voice typing read aloud load save text", WidgetSearchActionKind.OpenWindow, OpenDictationCapture),
             new("Convert units", "selected text measurement temperature", WidgetSearchActionKind.OpenWindow, ConvertSelection),
             new("Color picker", "eyedropper screen color", WidgetSearchActionKind.Run, StartColorPicking),
             new("QR code from selection", "selected text link", WidgetSearchActionKind.OpenWindow, ShowQrCode),
@@ -653,21 +655,46 @@ public partial class MainWindow : Window
         ShowToolWindow(window);
     }
 
-    // Voice dictation, appended to a running text file rather than just
-    // shown in the label — there's nothing to copy/paste, it's just there
-    // the next time you open the file. Delegates the actual listening to
-    // Windows' own Voice Typing (see DictationCaptureWindow) rather than
+    // Shared editor for dictation and read-aloud. Optional microphone input
+    // delegates listening to Windows' own Voice Typing rather than
     // calling WinRT's SpeechRecognizer directly (still available in
     // SpeechToText.RecognizeAsync) — Voice Typing reliably captured real
     // audio on this machine when SpeechRecognizer did not, traced to which
     // input device held Windows' "Default Device" role.
-    private void OpenDictationCapture()
+    private void OpenDictationCapture() => OpenSpeechWindow();
+
+    private DictationCaptureWindow OpenSpeechWindow()
     {
         _watchingNotifications = false;
-        var dialog = new DictationCaptureWindow { Owner = this };
-        if (ShowToolDialog(dialog) != true || string.IsNullOrWhiteSpace(dialog.CapturedText)) return;
+        if (_dictationWindow?.IsLoaded == true)
+        {
+            _dictationWindow.Activate();
+            return _dictationWindow;
+        }
 
-        var text = dialog.CapturedText;
+        var dialog = new DictationCaptureWindow()
+        {
+            Owner = this,
+            Topmost = _settings.AlwaysOnTop,
+        };
+        _dictationWindow = dialog;
+        dialog.SaveRequested += SaveDictationText;
+        dialog.OpenFolderRequested += OpenDictationFolder;
+        dialog.Closed += (_, _) =>
+        {
+            dialog.SaveRequested -= SaveDictationText;
+            dialog.OpenFolderRequested -= OpenDictationFolder;
+            if (ReferenceEquals(_dictationWindow, dialog)) _dictationWindow = null;
+        };
+        PositionBesideWidget(dialog);
+        ScreenCapture.SetExcluded(dialog, _settings.HideFromScreenCapture);
+        ShowToolWindow(dialog);
+        return dialog;
+    }
+
+    private string? SaveDictationText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
         var path = _settings.DictationFilePath;
         try
         {
@@ -681,12 +708,13 @@ public partial class MainWindow : Window
         catch
         {
             ShowOneShotLabel("Dictation wasn't saved", "Check local app-data storage and try again.");
-            return;
+            return null;
         }
 
         const int titleLimit = 60;
         var title = text.Length > titleLimit ? text[..titleLimit] + "…" : text;
         ShowOneShotLabel(title, $"Saved to {Path.GetFileName(path)}");
+        return path;
     }
 
     // Always opens the converter window — a text selection like "5 km" is

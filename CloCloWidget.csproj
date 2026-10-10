@@ -9,7 +9,7 @@
     <!-- No Windows Forms: the tray icon, menus, screen and power queries are
          WPF or plain Windows calls (TrayIcon.cs, NativeScreen.cs), which
          keeps Windows Forms' ~22 MB out of the build. -->
-    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationManifest>config\app.manifest</ApplicationManifest>
     <AssemblyName>CloCloWidget</AssemblyName>
     <RootNamespace>CloCloWidget</RootNamespace>
     <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
@@ -59,7 +59,7 @@
     </PropertyGroup>
     <WriteLinesToFile File="$(_PinListFile)" Lines="@(_NativePinCandidate->'%(FullPath)')" Overwrite="true" Condition="'@(_NativePinCandidate)' != ''" />
     <Exec Condition="'@(_NativePinCandidate)' != ''"
-          Command="&quot;$(_SignPowerShell)&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\verify-pins.ps1&quot; -ListFile &quot;$(_PinListFile)&quot; -Dotnet &quot;$(_PinDotnet)&quot;" />
+          Command="&quot;$(_SignPowerShell)&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\scripts\verify-pins.ps1&quot; -ListFile &quot;$(_PinListFile)&quot; -Dotnet &quot;$(_PinDotnet)&quot;" />
     <GetFileHash Files="@(_NativePinCandidate)" Algorithm="SHA256" Condition="'@(_NativePinCandidate)' != ''">
       <Output TaskParameter="Items" ItemName="_NativePin" />
     </GetFileHash>
@@ -101,7 +101,7 @@
   -->
   <PropertyGroup>
     <_SignEnabled Condition="'$(SignCertThumbprint)' != '' or '$(SignCertFile)' != ''">true</_SignEnabled>
-    <_SignScript>&quot;$(MSBuildProjectDirectory)\sign.ps1&quot;</_SignScript>
+    <_SignScript>&quot;$(MSBuildProjectDirectory)\scripts\sign.ps1&quot;</_SignScript>
     <_SignCertArgs Condition="'$(SignCertThumbprint)' != ''">-Thumbprint $(SignCertThumbprint)</_SignCertArgs>
     <_SignCertArgs Condition="'$(SignCertThumbprint)' == '' and '$(SignCertFile)' != ''">-PfxFile &quot;$([System.IO.Path]::GetFullPath('$(SignCertFile)'))&quot;</_SignCertArgs>
     <_SignCertArgs Condition="'$(SignToolPath)' != ''">$(_SignCertArgs) -SignTool &quot;$(SignToolPath)&quot;</_SignCertArgs>

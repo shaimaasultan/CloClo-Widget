@@ -10,7 +10,7 @@
   <PropertyGroup Condition="'$(SignCertThumbprint)' != ''">
     <SignOutput>true</SignOutput>
     <_SetupSignPowerShell>$([System.IO.Path]::Combine($([System.Environment]::GetFolderPath(SpecialFolder.System)), 'WindowsPowerShell', 'v1.0', 'powershell.exe'))</_SetupSignPowerShell>
-    <_SetupSignCommand>&quot;$(_SetupSignPowerShell)&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\sign.ps1&quot; -Thumbprint $(SignCertThumbprint)</_SetupSignCommand>
+    <_SetupSignCommand>&quot;$(_SetupSignPowerShell)&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\scripts\sign.ps1&quot; -Thumbprint $(SignCertThumbprint)</_SetupSignCommand>
   </PropertyGroup>
 
   <Target Name="SignMsi">

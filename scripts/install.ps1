@@ -21,19 +21,19 @@
   runtime. An existing per-user copy is removed.
 
 .EXAMPLE
-  .\install.ps1
+  .\scripts\install.ps1
 .EXAMPLE
-  .\install.ps1 -CertThumbprint 0123ABCD... -DesktopShortcut
+  .\scripts\install.ps1 -CertThumbprint 0123ABCD... -DesktopShortcut
 .EXAMPLE
-  .\install.ps1 -PfxPath C:\certs\codesign.pfx     # prompts for its password
+  .\scripts\install.ps1 -PfxPath C:\certs\codesign.pfx     # prompts for its password
 .EXAMPLE
-  .\install.ps1 -ProgramFiles -CertThumbprint 0123ABCD...
+  .\scripts\install.ps1 -ProgramFiles -CertThumbprint 0123ABCD...
 .EXAMPLE
-  .\install.ps1 -ProgramFiles -UseCloCloCertificate -DesktopShortcut
+  .\scripts\install.ps1 -ProgramFiles -UseCloCloCertificate -DesktopShortcut
   # what Install-CloClo.cmd runs: signs with your newest protected CloClo
   # certificate, offering to create one if there is none
 .EXAMPLE
-  .\install.ps1 -Uninstall     # removes either kind of install
+  .\scripts\install.ps1 -Uninstall     # removes either kind of install
 #>
 param(
     [string]$CertThumbprint,
@@ -276,9 +276,9 @@ if ((Test-Elevated) -and $uacOn) {
 
 # $PSScriptRoot is empty when the script's text is pasted into a console
 # rather than run as a file - fall back to the current folder then.
-$root = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+$root = if ($PSScriptRoot) { [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..')) } else { (Get-Location).Path }
 if (-not (Test-Path (Join-Path $root 'CloCloWidget.csproj'))) {
-    throw "CloCloWidget.csproj not found in $root - run this from the cloclo-widget folder: .\install.ps1"
+    throw "CloCloWidget.csproj not found in $root - run this from the cloclo-widget folder: .\scripts\install.ps1"
 }
 
 # --- pre-check: has the source changed since the last install? ------------
@@ -400,7 +400,7 @@ if ($CertThumbprint) {
 # again right after the build (so the record matches what was actually
 # built) and then installed next to the program, where Check-Source.cmd
 # compares the project folder against it later.
-$checkSource = Join-Path $root 'check-source.ps1'
+$checkSource = Join-Path $root 'scripts\check-source.ps1'
 $sourceRecord = Join-Path $root 'obj\source-manifest.json'
 New-Item -ItemType Directory -Force -Path (Split-Path $sourceRecord) | Out-Null
 & $checkSource -Create $sourceRecord -Root $root -Quiet
@@ -458,7 +458,7 @@ Stop-RunningWidget   # again, in case one was started while building
 # Everything that gets installed is gathered in publish\ first: the build,
 # the uninstaller (so Settings > Apps can remove CloClo without this project
 # folder), and the source record with its checker (for Check-Source.cmd).
-Copy-Item -LiteralPath (Join-Path $root 'uninstall.ps1'), $checkSource, $sourceRecord -Destination $publishDir -Force
+Copy-Item -LiteralPath (Join-Path $root 'scripts\uninstall.ps1'), $checkSource, $sourceRecord -Destination $publishDir -Force
 $files = @(Get-ChildItem -LiteralPath $publishDir -File | Where-Object Extension -in '.exe', '.dll', '.ps1', '.json')
 $version = (Get-Item -LiteralPath $builtExe).VersionInfo.ProductVersion -replace '\+.*$', ''
 $totalBytes = ($files | Measure-Object Length -Sum).Sum
@@ -472,7 +472,7 @@ if ($ProgramFiles) {
     # the data. As administrator it reads place.ps1's bytes once, checks them
     # against that SHA-256 and runs exactly those bytes from memory, so a
     # place.ps1 swapped at any moment after this point never runs (exit 8).
-    $placeFile = Join-Path $root 'place.ps1'
+    $placeFile = Join-Path $root 'scripts\place.ps1'
     $placeHash = (Get-FileHash -LiteralPath $placeFile -Algorithm SHA256).Hash
     $bootstrap = @(
         "`$codeFile = $(Quote $placeFile)"
@@ -572,7 +572,7 @@ if ($ProgramFiles) {
         catch { Write-Warning "The new install is active, but the old backup remains at ${backupDir}: $($_.Exception.Message)" }
     }
     if (Test-Path $machineDir) {
-        Write-Warning "A Program Files copy also exists in $machineDir. Remove it with: .\install.ps1 -Uninstall"
+        Write-Warning "A Program Files copy also exists in $machineDir. Remove it with: .\scripts\install.ps1 -Uninstall"
     }
 }
 

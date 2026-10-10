@@ -12,9 +12,9 @@ rem  for administrator rights itself, only when it copies into Program Files.
 rem  Extra options are passed on to install.ps1, e.g.  Install-CloClo.cmd -NoLaunch
 rem ---------------------------------------------------------------------------
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0.."
 if not exist "%~dp0install.ps1" (
-    echo install.ps1 wasn't found next to this file. Keep Install-CloClo.cmd in the cloclo-widget folder.
+    echo install.ps1 wasn't found next to this file. Keep both files in the scripts folder.
     goto :done
 )
 

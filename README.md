@@ -16,9 +16,23 @@ visible icons depend on your settings and current conditions.
 |---|---|---|
 | <img src="docs/screenshots/Screenshot2026-10-08234236.png" alt="CloClo widget with Lady Keeper, clock, battery, sunny weather and icon bar" width="280"> | <img src="docs/screenshots/notification-camera.png" alt="Lady Keeper holding a camera while a screenshot notification is shown" width="280"> | <img src="docs/screenshots/Screenshot2026-10-08234415.png" alt="Lady Keeper holding a camera while a screenshot notification is shown" width="280"> |
 
+## Project layout
+
+- `src/Views/` contains the WPF windows, avatar and search interface.
+- `src/Services/` contains weather, speech, reminders, calculator, Sudoku and
+  other feature logic.
+- `src/Platform/` contains Windows integration and process safeguards.
+- `installer/` contains the WiX setup projects; `Assets/` contains the app icon.
+- `docs/screenshots/`, `docs/security/` and `docs/notes/` hold visual and
+  reference material, including the [security checklist](docs/security/SECURITY-CHECKLIST.md).
+- `scripts/` contains the double-click `.cmd` launchers and the PowerShell
+  build, install, signing and source-check scripts.
+- `config/` contains the app manifest. The project file, `nuget.config` and
+  Git configuration files remain at the top level so their tools find them.
+
 ## Getting started
 
-1. **Double-click `Install-CloClo.cmd`** in the `cloclo-widget` folder — as
+1. **Double-click `scripts/Install-CloClo.cmd`** from the project folder — as
    yourself, not with "Run as administrator". It builds, signs and installs
    CloClo the recommended way:
    - into `C:\Program Files\CloClo`, where no other program running as you can
@@ -29,7 +43,7 @@ visible icons depend on your settings and current conditions.
    - with Start Menu and desktop shortcuts, and listed in **Settings → Apps →
      Installed apps**;
    - recording a fingerprint of the source it was built from, for
-     `Check-Source.cmd`.
+     `scripts/Check-Source.cmd`.
 
    Windows may ask you to confirm code signing, then shows the administrator
    prompt for the Program Files copy. The window stays open at the end so you
@@ -39,15 +53,15 @@ visible icons depend on your settings and current conditions.
    taskbar.
 3. Right-click it → **Set location…** to pick your city.
 
-To remove it, double-click `Uninstall-CloClo.cmd`, or use **Settings → Apps →
+To remove it, double-click `scripts/Uninstall-CloClo.cmd`, or use **Settings → Apps →
 Installed apps → CloClo → Uninstall**.
 
 To see whether anything in the project folder changed since the last
-install, double-click **`Check-Source.cmd`** — see
+install, double-click **`scripts/Check-Source.cmd`** — see
 [Checking the source](#checking-the-source).
 
 To choose differently (a per-user install, a `.pfx`, no signing…), run
-`install.ps1` yourself — see [Installing](#installing).
+`scripts/install.ps1` yourself — see [Installing](#installing).
 
 Always start the installed copy, not `publish\CloCloWidget.exe`: every install
 empties and rebuilds `publish\`, and a copy running from there gets in the way.
@@ -101,9 +115,9 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   | Notifications | Shows your latest notification; the list button opens Windows' notification panel |
   | Search other apps | Lists current media sessions; selecting one watches its metadata without activating its app |
   | GPU info | Shows the graphics cards in this PC |
-  | Read selection aloud | Reads the text you highlighted in another app (up to 5,000 characters) |
+  | Read selection aloud | Opens the shared speech editor, adds highlighted text, and reads it from the editor (up to 5,000 characters per reading) |
   | Selection details | Shows word, character and line counts and a short preview of highlighted text; nothing is saved (the fallback briefly copies selected text) |
-  | Dictate | Opens Windows voice typing; the text is saved to a file |
+  | Dictate | Opens the same speech editor. **Dictate** and **Read aloud** are separate toggles for the microphone and the editor's text. Load a text file (up to 256 KiB) to read it, save text to the private dictation file, or open that folder from the window. Unchanged repeat saves are skipped; continued dictation saves only newly added text. Microphone typing pauses when the editor loses focus |
   | Convert units | Converts a highlighted "5 km", "98 F"… (km/mi/m/ft, kg/lb, °C/°F/K) |
   | Color picker | Pick any color on screen; its hex code is copied (Esc cancels) |
   | QR code from selection | Makes a QR code of the highlighted text or link |
@@ -162,24 +176,24 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
 
 ## Installing
 
-`install.ps1` builds, signs (optional) and installs CloClo with a Start Menu
-shortcut; run it again any time to upgrade. `Install-CloClo.cmd` is simply
-`install.ps1 -ProgramFiles -UseCloCloCertificate -DesktopShortcut`. All the
+`scripts/install.ps1` builds, signs (optional) and installs CloClo with a Start Menu
+shortcut; run it again any time to upgrade. `scripts/Install-CloClo.cmd` is simply
+`scripts/install.ps1 -ProgramFiles -UseCloCloCertificate -DesktopShortcut`. All the
 options:
 
 ```powershell
-.\install.ps1                                   # per-user install, unsigned
-.\install.ps1 -ProgramFiles                     # install to Program Files instead (recommended)
-.\install.ps1 -CertThumbprint <thumbprint>      # sign with a certificate from your store
-.\install.ps1 -PfxPath C:\certs\codesign.pfx    # sign with a .pfx (asks for its password)
-.\install.ps1 -UseCloCloCertificate             # sign with your newest protected CloClo certificate (offers to create one)
-.\install.ps1 -DesktopShortcut                  # also put a shortcut on the desktop
-.\install.ps1 -NoLaunch                         # don't start CloClo afterwards
-.\install.ps1 -Uninstall                        # removes either kind of install
+.\scripts\install.ps1                                   # per-user install, unsigned
+.\scripts\install.ps1 -ProgramFiles                     # install to Program Files instead (recommended)
+.\scripts\install.ps1 -CertThumbprint <thumbprint>      # sign with a certificate from your store
+.\scripts\install.ps1 -PfxPath C:\certs\codesign.pfx    # sign with a .pfx (asks for its password)
+.\scripts\install.ps1 -UseCloCloCertificate             # sign with your newest protected CloClo certificate (offers to create one)
+.\scripts\install.ps1 -DesktopShortcut                  # also put a shortcut on the desktop
+.\scripts\install.ps1 -NoLaunch                         # don't start CloClo afterwards
+.\scripts\install.ps1 -Uninstall                        # removes either kind of install
 ```
 
 The options combine. If Windows says running scripts is disabled, start it as
-`powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1` (plus any options) —
+`powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1` (plus any options) —
 that allows this one run without changing any system setting. Keep
 `-NoProfile` in it: your PowerShell profile is a script any program running
 as you can edit, and without it that script would run first, inside the
@@ -199,7 +213,7 @@ own account's registry, for both kinds of install), and can be uninstalled
 from there. That runs the `uninstall.ps1` installed next to the
 exe, which removes the program, its shortcuts and its "Start with Windows"
 entry (asking for administrator rights for a Program Files copy) but leaves
-your settings and dictation files in AppData. `.\install.ps1 -Uninstall`
+your settings and dictation files in AppData. `.\scripts\install.ps1 -Uninstall`
 from the project folder does the same.
 
 ### Per-user or Program Files
@@ -218,7 +232,7 @@ only data — the `publish\` folder, the SHA-256 of every built file, and a
 certificate change you confirmed with `YES`. What the administrator prompt
 starts is a short bootstrap, and that's all its **Show more details** shows:
 `place.ps1`'s full path and SHA-256 (compare it with
-`Get-FileHash .\place.ps1` if you like), the `publish\` folder and every file
+`Get-FileHash .\scripts\place.ps1` if you like), the `publish\` folder and every file
 with its SHA-256. As administrator, the bootstrap reads `place.ps1` once,
 checks it against that SHA-256 and runs exactly those bytes from memory, so a
 `place.ps1` swapped after the installer checked it never runs. Running as
@@ -241,7 +255,7 @@ checks, as you, that Program Files holds exactly the files that were built,
 and removes the per-user copy, if any. CloClo itself always starts as your
 normal user.
 
-To switch back to a per-user install, run `.\install.ps1 -Uninstall` first
+To switch back to a per-user install, run `.\scripts\install.ps1 -Uninstall` first
 (it asks for administrator rights to remove the Program Files copy), then
 install without `-ProgramFiles`.
 
@@ -299,7 +313,7 @@ difference is that no Windows PC trusts it, so the publisher still shows as
 unverified. It stays that way on purpose — it's never added to Windows'
 trusted roots.
 
-**The easy way:** double-click `Install-CloClo.cmd`. It uses your newest
+**The easy way:** double-click `scripts/Install-CloClo.cmd`. It uses your newest
 certificate named `CN=CloClo…` (for example `CN=CloClo` or
 `CN=CloClo_yourname`) whose key is protected, and if there's none it asks
 whether to create one — nothing else to type.
@@ -328,7 +342,7 @@ $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Where-Object Subje
 Then build, sign and install:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -ProgramFiles -CertThumbprint $cert.Thumbprint -DesktopShortcut
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1 -ProgramFiles -CertThumbprint $cert.Thumbprint -DesktopShortcut
 ```
 
 Windows may ask you to approve signing while it handles the DLLs and finished
@@ -339,7 +353,7 @@ trust the certificate yet". Both are expected.
 **Replacing the certificate** — for example one made before key protection
 was required, which the build now refuses. Delete every CloClo certificate
 together with its private key (other certificates aren't touched), then
-either double-click `Install-CloClo.cmd` (it offers to create the new one) or
+either double-click `scripts/Install-CloClo.cmd` (it offers to create the new one) or
 create it and install by hand as below. Either way the installer asks for
 `YES` once, because the certificate changed:
 
@@ -352,7 +366,7 @@ $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=CloClo" -Ce
 ```
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -ProgramFiles -CertThumbprint $cert.Thumbprint -DesktopShortcut
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1 -ProgramFiles -CertThumbprint $cert.Thumbprint -DesktopShortcut
 ```
 
 Deleting the key is permanent, and already-signed copies keep their
@@ -361,7 +375,7 @@ with its key.
 
 ### An installer for other PCs (CloClo-Setup.exe)
 
-Double-click **`Build-Setup.cmd`**. It builds CloClo, wraps it in a Windows
+Double-click **`scripts/Build-Setup.cmd`**. It builds CloClo, wraps it in a Windows
 Installer package and a setup program, signs all three with your CN=CloClo
 certificate (Windows asks you to confirm each signing), and leaves
 `dist\CloClo-Setup-<version>.exe` (compressed; size varies by build) with its
@@ -390,11 +404,11 @@ On other PCs your self-signed certificate isn't trusted, so Windows shows the
 publisher as unknown and SmartScreen warns before it runs. For a clean
 install elsewhere, sign with a publicly trusted code-signing certificate
 and pass it:
-`Build-Setup.cmd -CertThumbprint <thumbprint>`.
+`.\scripts\Build-Setup.cmd -CertThumbprint <thumbprint>`.
 
-Use either the setup or `Install-CloClo.cmd` on a PC, not both: they're
+Use either the setup or `scripts/Install-CloClo.cmd` on a PC, not both: they're
 separate installs of the same folder. To switch to the setup, first remove
-the Install-CloClo.cmd install (Settings > Apps > CloClo > Uninstall).
+the script-based install (Settings > Apps > CloClo > Uninstall).
 Uninstalling leaves your settings (%AppData%\CloCloWidget); if "Start with
 Windows" was on, turn it off in CloClo before uninstalling.
 
@@ -408,7 +422,7 @@ The record and its checker, `check-source.ps1`, are installed next to the
 program; in Program Files only administrators can change them, so whatever
 might change the code can't also rewrite the record.
 
-Double-click **`Check-Source.cmd`** to compare the project folder with the
+Double-click **`scripts/Check-Source.cmd`** to compare the project folder with the
 last install. It runs the *installed* checker and lists every file that was
 changed, added or removed since then — or says that all of them still match.
 Right after an install it reports no changes; any change you then make
@@ -426,7 +440,7 @@ folder you can write to, so the check is weaker; the script says so.)
 
 | What you see | What to do |
 |---|---|
-| "running scripts is disabled on this system" | Start it as `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 …` |
+| "running scripts is disabled on this system" | Start it as `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1 …` |
 | "Run this from a normal PowerShell window" | You're in an administrator window — open a regular one |
 | It stops with "Can't ask for YES here" | You're in PowerShell ISE — use Windows PowerShell or Windows Terminal |
 | "has an unprotected software key" | Replace the certificate (see [Replacing the certificate](#signing-with-your-own-certificate-left-untrusted)) |
@@ -437,9 +451,9 @@ folder you can write to, so the check is weaker; the script says so.)
 | CloClo says it "won't start while these files are next to it" or "found native files it can't verify" | Something placed files beside or into CloClo — delete the files it names, consider a malware scan, and reinstall |
 | CloClo "won't run with a .NET profiler attached" | Remove the listed environment variables (System Properties → Environment Variables), sign out and back in |
 | CloClo doesn't start at sign-in | Check **Settings → Apps → Startup** has CloClo switched on; otherwise right-click it → **Start with Windows** off and on again |
-| "Source files … changed while building" | Something edited the project during the build — run the install again, and use `Check-Source.cmd` if you didn't expect changes |
-| `Check-Source.cmd`: "isn't installed with a source record yet" | The installed copy predates source records — run `Install-CloClo.cmd` once |
-| `Check-Source.cmd` lists changes you didn't make | Don't build or install; look at the listed files first (`git diff` shows what changed) |
+| "Source files … changed while building" | Something edited the project during the build — run the install again, and use `scripts/Check-Source.cmd` if you didn't expect changes |
+| `scripts/Check-Source.cmd`: "isn't installed with a source record yet" | The installed copy predates source records — run `scripts/Install-CloClo.cmd` once |
+| `scripts/Check-Source.cmd` lists changes you didn't make | Don't build or install; look at the listed files first (`git diff` shows what changed) |
 | The installer lists source changes and asks for `YES` | Expected after you edited code or pulled; if you didn't, answer anything else and check the files |
 | Restore fails with NU3004 / NU3018 | A package isn't signed by nuget.org (or nuget.org renewed its certificate) — if it's genuinely from nuget.org, re-run `dotnet nuget trust source nuget.org` with the configfile option pointing at `nuget.config` |
 
@@ -481,10 +495,10 @@ fixed arithmetic grammar in memory; text entered there cannot run commands.
 `Program.Main` runs `NativeLibraryCheck` before WPF loads anything (see
 Security below). The build itself, through targets in `CloCloWidget.csproj`,
 records the SHA-256 of every native runtime DLL it ships
-(`NativeLibraryPins.g.cs`) and, with a certificate, calls `sign.ps1`;
-`install.ps1` drives the whole build-sign-install sequence, and
-`check-source.ps1` records and checks the source fingerprint. The `.cmd`
-files are double-click launchers for those scripts.
+(`NativeLibraryPins.g.cs`) and, with a certificate, calls `scripts/sign.ps1`;
+`scripts/install.ps1` drives the whole build-sign-install sequence, and
+`scripts/check-source.ps1` records and checks the source fingerprint. The
+`.cmd` files in `scripts/` are double-click launchers for those scripts.
 
 ## Security
 
@@ -509,7 +523,11 @@ files are double-click launchers for those scripts.
   and password fields. A temporary copy may still appear in Windows clipboard
   history or cloud sync; restoring the previous contents cannot undo that.
   The spoken text is limited to 5,000 characters; the selection-details preview
-  is cleared on close. Text that cannot be selected and copied is unavailable.
+  is cleared on close. The shared speech editor reads its own text; the read
+  icon adds selected text to that editor without recording speaker output or
+  other apps' audio. Text that cannot be selected and copied is unavailable.
+  Loading a file reads text only from the user-chosen file, with a 256 KiB
+  limit; saving still writes only to CloClo's private dictation folder.
 - **Error handling.** Unexpected UI-thread errors are logged to `errors.log`
   (exception type and stack trace, not the exception message) and the widget
   attempts to continue. An unhandled background-thread error ends the process
@@ -616,12 +634,12 @@ loads anything)
   updates.
 - **The source is fingerprinted** at every install, checked unchanged across
   the build, and the record is kept where only administrators can change it
-  (Program Files), so `Check-Source.cmd` can tell whether the code changed
+  (Program Files), so `scripts/Check-Source.cmd` can tell whether the code changed
   since. The checker never follows folder links (a link is recorded as a
   link, so adding or retargeting one shows up), never runs git - it reads
   the commit straight from the `.git` folder, because git would read
   settings from files any program running as you can edit, some of which
-  name a program for git to start - and `Check-Source.cmd` finds the installed checker through Windows'
+  name a program for git to start - and `scripts/Check-Source.cmd` finds the installed checker through Windows'
   known-folder API rather than environment variables. `.gitattributes` fixes
   every text file's line endings, so a checkout never changes file bytes and
   shows up as changes nobody made.

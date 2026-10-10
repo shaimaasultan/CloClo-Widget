@@ -7,9 +7,9 @@ rem  rights only if a Program Files copy is installed.
 rem  (Settings > Apps > Installed apps > CloClo > Uninstall does the same.)
 rem ---------------------------------------------------------------------------
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0.."
 if not exist "%~dp0install.ps1" (
-    echo install.ps1 wasn't found next to this file. Keep Uninstall-CloClo.cmd in the cloclo-widget folder.
+    echo install.ps1 wasn't found next to this file. Keep both files in the scripts folder.
     goto :done
 )
 

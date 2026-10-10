@@ -37,7 +37,7 @@ param(
 $env:PSModulePath = $PSHOME + '\Modules'
 $ErrorActionPreference = 'Stop'
 
-$root = $PSScriptRoot
+$root = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..'))
 # Full paths, never bare names that PATH or App Paths could redirect.
 $dotnetExe = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'dotnet\dotnet.exe'
 $appDir = Join-Path $root 'obj\setup\app'

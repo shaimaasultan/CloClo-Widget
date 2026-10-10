@@ -4,8 +4,8 @@ Every hardening point in CloClo, where it lives and how it was checked. `[x]` = 
 evidence is stated in the item where available. `[ ]` = still awaiting the real-run confirmation described
 (these steps need a Windows administrator or signing prompt). Commit ids show where each point was added.
 
-**How to re-check:** `Check-Source.cmd` (project files unchanged since the last install), the README's
-[Security](README.md#security) section, and the tests described in each commit.
+**How to re-check:** `scripts/Check-Source.cmd` (project files unchanged since the last install), the README's
+[Security](../../README.md#security) section, and the tests described in each commit.
 
 ---
 
@@ -24,6 +24,7 @@ evidence is stated in the item where available. `[ ]` = still awaiting the real-
 - [x] Clipboard writes retry briefly and report "Clipboard busy" instead of crashing (`486804f`)
 - [x] Read-aloud capped at 5,000 characters (`486804f`)
 - [x] Dictation files in `%LocalAppData%\CloCloWidget\Dictation`, not next to the exe; a dictation path outside that folder is never appended to (`5236a1d`)
+- [x] The shared speech editor opens a file only after the user chooses it, reads at most 256 KiB through one file handle, treats it as text only, and still saves solely through the restricted dictation-file append path. Voice Typing stops when the editor loses focus.
 - [x] Win+H sent with `SendInput`; the input language it switches is restored (`90e33d8`)
 - [x] "Open dictation folder" starts Explorer by full path with the folder as an argument (no shell-execute of a path) (`35b2e84`)
 - [x] Colour-picker overlay cancels itself when it loses focus or after a minute, so it can never trap the screen (`90e33d8`)
@@ -67,14 +68,14 @@ step is elevated.
 | What | Runs as | How it's enforced |
 |---|---|---|
 | `CloCloWidget.exe` - the program | signed-in user's token | Its manifest asks for `asInvoker`; when UAC is enabled it refuses to continue if launched elevated |
-| CloClo started by an installer (Launch button, after `Install-CloClo.cmd`) | **you** | The setup's screens - which own Launch - run as you; `install.ps1` starts CloClo after the elevated step has ended |
-| Building and signing (`Install-CloClo.cmd`, `Build-Setup.cmd`) | **you** | Both refuse an administrator window when UAC is enabled |
-| `Install-CloClo.cmd`'s copy into Program Files | administrator (one UAC prompt) | Only `place.ps1`, read and hash-checked by a short inline bootstrap |
+| CloClo started by an installer (Launch button, after `scripts/Install-CloClo.cmd`) | **you** | The setup's screens - which own Launch - run as you; `install.ps1` starts CloClo after the elevated step has ended |
+| Building and signing (`scripts/Install-CloClo.cmd`, `scripts/Build-Setup.cmd`) | **you** | Both refuse an administrator window when UAC is enabled |
+| `scripts/Install-CloClo.cmd`'s copy into Program Files | administrator (one UAC prompt) | Only `place.ps1`, read and hash-checked by a short inline bootstrap |
 | `CloClo-Setup.exe` | **you**, until you click Install | Its manifest asks for `asInvoker`; the setup screens run as you |
 | The setup's install, update or uninstall step | administrator (one UAC prompt) | Only Burn's helper (keeps the signed package in `C:\ProgramData\Package Cache`) and Windows Installer (writes Program Files\CloClo and the all-users Start menu shortcut) |
 | Uninstall from Settings › Apps | administrator for removing the Program Files folder | Same steps as above |
 
-- [x] `app.manifest`: `requestedExecutionLevel level="asInvoker" uiAccess="false"` - CloClo never asks for administrator rights
+- [x] `config/app.manifest`: `requestedExecutionLevel level="asInvoker" uiAccess="false"` - CloClo never asks for administrator rights
 - [x] CloClo refuses to run elevated while UAC is on (`9b99169`)
 - [x] The Program Files installers never leave CloClo running as administrator (`2f3b7f9`, `3f70ae5`, `477810a`)
 - [x] `CloClo-Setup.exe` starts as you (`asInvoker`, checked in the built exe); the setup screens and Launch run as you; only the install step is elevated (`477810a`) — confirmed in the install log of 1.26.41913: "Product installation will be elevated because user is admin and product is being installed per-machine", after Windows checked the package: "has a digital signature ... is permitted to run"
@@ -88,7 +89,7 @@ step is elevated.
 - [x] **Only a protected key can sign:** store certificates need strong key protection (confirmation or password each use) or a smart card; an unprotected key is refused (`975d534`)
 - [x] `.pfx` password passed through the environment, never on a command line; the certificate is in the store only while signing (`b537a9c`)
 - [x] **No `.pfx` key left behind:** a killed build's leftover certificate and its private key are removed at the next signing with the same `.pfx` (marker in `obj\`; another `.pfx`'s leftover only gets a warning); no build server outlives the install with the password in its environment (`--disable-build-servers -nodeReuse:false`) (`8631357`) — tested with a throwaway `.pfx` and a simulated killed build: certificate, key and marker all gone
-- [x] `Install-CloClo.cmd` picks the newest protected `CN=CloClo…` certificate or offers to create one with `-KeyProtection Protect` (`2335cf4`)
+- [x] `scripts/Install-CloClo.cmd` picks the newest protected `CN=CloClo…` certificate or offers to create one with `-KeyProtection Protect` (`2335cf4`)
 - [x] **Pinned DLLs come from verified packages:** `verify-pins.ps1` checks each pinned native DLL against its signed `.nupkg` - signatures, author Microsoft Corporation, repository nuget.org, id/version, byte-for-byte match (`9b99169`) — tested: 19 DLLs pass, a one-byte change fails the build
 - [x] **Only signed nuget.org packages** (`nuget.config`: single source, package mapping, `signatureValidationMode=require`) (`22ee3b9`) — tested: unsigned package refused (NU3004)
 - [x] **Dependency updates checked weekly:** Dependabot opens update PRs for app NuGet packages, installer NuGet packages and GitHub Actions (`.github/dependabot.yml`)
@@ -96,7 +97,7 @@ step is elevated.
 - [x] Building refuses an administrator window (`3f70ae5`)
 - [x] A running widget is closed before building (its exe would be locked) (`668795b`)
 - [x] Build warnings fixed rather than hidden; the two suppressed ones are by design and commented (`Assembly.Location` is the single-file test; WPF reads DPI from the manifest) (`47a11af`)
-- [x] **`CloClo-Setup.exe` (`Build-Setup.cmd`):** a Windows Installer package and setup program built with WiX Toolset 5.0.2 from nuget.org, under the same signature-required `nuget.config` (`477810a`)
+- [x] **`CloClo-Setup.exe` (`scripts/Build-Setup.cmd`):** a Windows Installer package and setup program built with WiX Toolset 5.0.2 from nuget.org, under the same signature-required `nuget.config` (`477810a`)
   - CloClo, the package (`CloClo.msi`), the setup's engine and the finished setup are all signed through `sign.ps1` - protected key only, timestamped, verified after signing
   - The package holds only the signed exe and the five native WPF DLLs (checked in the built `.msi`); the exe carries a rising file version so Windows Installer replaces an older one
   - Per-machine into Program Files; a running CloClo is closed first; a failed install rolls back; a newer setup replaces an older install in place
@@ -117,7 +118,7 @@ step is elevated.
 - [x] The installer never leaves CloClo running as administrator (`2f3b7f9`, `3f70ae5`)
 - [x] "Start with Windows" read back after the install, with a warning if it didn't stick (`00b0d61`)
 - [x] Installed apps entry (Settings › Apps) written as you, in HKCU; an older HKLM entry is removed (`a171fbe`, `090a145`)
-- [ ] Confirm on a real run: `Install-CloClo.cmd` → signing confirmation → UAC prompt ("Show more details" lists `place.ps1` and its SHA-256) → installed and checked
+- [ ] Confirm on a real run: `scripts/Install-CloClo.cmd` → signing confirmation → UAC prompt ("Show more details" lists `place.ps1` and its SHA-256) → installed and checked
 
 ## 6. Script hygiene (installer, signer, checker, uninstaller, admin step)
 
@@ -132,7 +133,7 @@ step is elevated.
 - [x] `uninstall.ps1` is copied (hash-checked) into the install folder, so Settings › Apps can remove CloClo without the project folder (`a171fbe`)
 - [x] It removes only what points at its own copy (shortcuts, "Start with Windows", the entry, the folder) (`a171fbe`)
 - [x] For Program Files it re-runs itself elevated from Program Files, with module loading limited (`a171fbe`)
-- [x] `Uninstall-CloClo.cmd` double-click uninstaller (`2335cf4`)
+- [x] `scripts/Uninstall-CloClo.cmd` double-click uninstaller (`2335cf4`)
 - [x] A successful uninstall is no longer reported as failed: each removal is conditional and the elevated step ends with `exit 0`, so only a real failure (files in use) stops it (`477810a`) — reproduced the false exit 1, then confirmed exit 0
 - [x] **Setup installs:** Settings › Apps › CloClo › Uninstall, or run the setup again - it opens on an Uninstall page; settings, Sudoku progress and dictation files are kept (`477810a`)
 - [ ] Confirm on a real run: the setup's Uninstall page
@@ -143,11 +144,11 @@ step is elevated.
 - [x] **Source record:** the SHA-256 of every project file is recorded before the build and checked again after it; a change while building stops the install (`e2ebb63`)
 - [x] The record and the checker are installed beside the program (Program Files: administrators only) (`e2ebb63`)
 - [x] **Checked before every build:** the installed checker compares the folder with the last install's record; changes are listed and built only after `YES` (`22ee3b9`)
-- [x] `Check-Source.cmd` finds the installed checker through Windows' known-folder lookup, never `%ProgramFiles%` / `%LOCALAPPDATA%` (`9b99169`)
+- [x] `scripts/Check-Source.cmd` finds the installed checker through Windows' known-folder lookup, never `%ProgramFiles%` / `%LOCALAPPDATA%` (`9b99169`)
 - [x] The checker never follows folder links (a link is recorded as `LINK:<target>`) (`9b99169`)
 - [x] **The checker never runs git:** the commit is read from `.git` directly - git would read settings any program running as you can edit, some of which name a program to start (`9a0853f`) — verified it matches `git rev-parse HEAD`
 - [x] **Line endings fixed** (`* text=auto eol=crlf`), so a checkout never changes file bytes and causes false alarms (`3540fc7`)
-- [ ] After the next install, run `Check-Source.cmd` → "No changes"
+- [ ] After the next install, run `scripts/Check-Source.cmd` → "No changes"
 
 ---
 
@@ -161,7 +162,7 @@ step is elevated.
   refuses to continue, but the profiler's code has already run. Shortcuts and the "Start with Windows" entry
   belong to your account too.
 - Windows' administrator prompt is not a security boundary against programs already running as you: they could
-  change the project's scripts or sources before you install. Run `Check-Source.cmd` before installing if in
+  change the project's scripts or sources before you install. Run `scripts/Check-Source.cmd` before installing if in
   doubt, and confirm a signing request only while a build you started is running.
 - Minor: .NET's debug-dump variables (`DOTNET_DbgEnableMiniDump` and related) could make the runtime write a
   memory dump on a crash; only a program already running as you can set them, and it could read CloClo's
@@ -174,7 +175,7 @@ step is elevated.
 - **`CloClo-Setup.exe` on other PCs:** signed with your self-signed CN=CloClo certificate, which other PCs don't
   trust - Windows shows the publisher as unknown and SmartScreen warns. Sign with a publicly trusted
   code-signing certificate for others to install cleanly.
-- Use either `CloClo-Setup.exe` or `Install-CloClo.cmd` on a PC, not both: they're separate installs of the same
+- Use either `CloClo-Setup.exe` or `scripts/Install-CloClo.cmd` on a PC, not both: they're separate installs of the same
   folder.
 - After a setup uninstall, "Start with Windows" (your own HKCU entry) stays if it was on; turn it off in CloClo
   first. Windows keeps a copy of the signed package in `C:\ProgramData\Package Cache` (administrators only) for

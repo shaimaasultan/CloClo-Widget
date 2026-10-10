@@ -16,7 +16,7 @@ rem ---------------------------------------------------------------------------
 setlocal
 rem The project folder goes in through the environment, so a folder name
 rem with quotes or apostrophes can't break the command below.
-set "CLOCLO_ROOT=%~dp0."
+set "CLOCLO_ROOT=%~dp0.."
 
 "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "$env:PSModulePath = $PSHOME + '\Modules'; $pf = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'CloClo\check-source.ps1'; $user = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Programs\CloCloWidget\check-source.ps1'; $checker = @($pf, $user) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1; if (-not $checker) { Write-Host 'CloClo is not installed with a source record yet. Run Install-CloClo.cmd first.'; exit 2 }; if ($checker -ne $pf) { Write-Host 'Note: this is a per-user install - its source record sits in a folder you can write to, so the check is weaker than with a Program Files install.'; Write-Host '' }; & $checker -Root $env:CLOCLO_ROOT; exit $LASTEXITCODE"
 
