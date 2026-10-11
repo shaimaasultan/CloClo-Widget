@@ -371,8 +371,9 @@ with its key.
 Double-click **`scripts/Build-Setup.cmd`**. It builds CloClo, wraps it in a Windows
 Installer package and a setup program, signs all three with your CN=CloClo
 certificate (Windows asks you to confirm each signing), and leaves
-`dist\CloClo-Setup-<version>.exe` (compressed; size varies by build) with its
-SHA-256.
+`dist\CloClo-Setup-<version>.exe` (compressed; size varies by build) and a
+matching `CloClo-Setup-<version>.txt` build log containing that exact EXE's
+SHA-256. Signing approvals happen in Windows dialogs and are not logged.
 
 That one file installs CloClo on any 64-bit Windows 10/11 PC — no .NET SDK
 or source folder needed there:
