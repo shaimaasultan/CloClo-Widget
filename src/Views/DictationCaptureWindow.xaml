@@ -51,7 +51,9 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <WrapPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
-            <ToggleButton x:Name="MicToggle" Content="Dictate: Off" Click="MicToggle_Click" />
+            <ToggleButton x:Name="MicToggle" Content="Dictate: Off"
+                          ToolTip="Captures the default microphone while on and transcribes locally with CloClo's bundled Whisper model. Saves only when you choose Save."
+                          Click="MicToggle_Click" />
             <ToggleButton x:Name="ReadToggle" Content="Read aloud: Off" Click="ReadToggle_Click" />
             <ToggleButton x:Name="PlaybackToggle" Content="Transcribe playing audio: Off"
                           ToolTip="Captures all audio playing through the default Windows output device while on. Uses CloClo's bundled local speech model. Saves only when you choose Save."
@@ -63,7 +65,7 @@
             <Button x:Name="ArabicButton" Content="AR" Style="{StaticResource LangButton}" Click="Arabic_Click" />
         </StackPanel>
         <TextBlock x:Name="Instructions" Grid.Row="2" Foreground="#f3ecdd" TextWrapping="Wrap" Margin="0,0,0,8"
-                   Text="Type or load text, then turn on Read aloud. Dictate uses the microphone; Transcribe playing audio listens to the default speaker output." />
+                   Text="Type or load text, then turn on Read aloud. Dictate transcribes the default microphone locally; Transcribe playing audio listens to the default speaker output." />
         <TextBox x:Name="CaptureBox" Grid.Row="3" Padding="8" Background="#1e1610" Foreground="#f3ecdd"
                  BorderBrush="#8a6a2f" CaretBrush="#f3ecdd" AcceptsReturn="True" TextWrapping="Wrap"
                  VerticalScrollBarVisibility="Auto" MaxLength="262144" />

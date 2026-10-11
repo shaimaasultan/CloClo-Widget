@@ -11,9 +11,12 @@ using Whisper.net.LibraryLoader;
 
 namespace CloCloWidget;
 
-// Playback PCM stays in a bounded memory queue. The local model is loaded only
-// for a session and disposed when the toggle is turned off or the window closes.
-internal sealed class PlaybackAudioTranscriber : IAsyncDisposable
+internal enum AudioCaptureSource { Microphone, Playback }
+
+// Captured PCM stays in a bounded memory queue. The local model is loaded only
+// for a session and disposed when its toggle is turned off or the window closes.
+// Recognition text is emitted as data; this service cannot execute actions.
+internal sealed class LocalAudioTranscriber(AudioCaptureSource source) : IAsyncDisposable
 {
     private const int SampleRate = 16000;
     private const int ChunkSeconds = 10;
@@ -25,13 +28,18 @@ internal sealed class PlaybackAudioTranscriber : IAsyncDisposable
     private static IntPtr[]? runtimeHandles;
     private readonly CancellationTokenSource _stop = new();
     private Task? _worker;
+    private volatile PcmQueueStream? _input;
+    private volatile WasapiRecorder? _recorder;
     private long _capturedBytes;
     private long _lastProgressBytes;
     private int _recognizedPhrases;
+    private int _finishing;
+    private string? _deviceName;
 
     public event Action<string>? TextRecognized;
     public event Action<int, int, long>? ProgressChanged;
     public event Action<string>? Failed;
+    public string? DeviceName => Volatile.Read(ref _deviceName);
 
     public Task StartAsync(string languageTag)
     {
@@ -43,6 +51,7 @@ internal sealed class PlaybackAudioTranscriber : IAsyncDisposable
     private async Task RunAsync(string languageTag, TaskCompletionSource started)
     {
         using var input = new PcmQueueStream(MaxQueuedPackets, _stop.Token);
+        _input = input;
         WasapiRecorder? recorder = null;
         try
         {
@@ -53,38 +62,85 @@ internal sealed class PlaybackAudioTranscriber : IAsyncDisposable
                 .WithLanguage(languageTag.StartsWith("ar", StringComparison.OrdinalIgnoreCase) ? "ar" : "en")
                 .Build();
 
-            recorder = new WasapiRecorderBuilder()
-                .WithLoopbackCapture()
-                .WithFormat(new WaveFormat(SampleRate, 16, 1))
-                .Build();
-            recorder.DataAvailable += (buffer, _, _, _) =>
+            _stop.Token.ThrowIfCancellationRequested();
+            void AttachRecorderEvents(WasapiRecorder capture)
             {
-                if (buffer.Length == 0) return;
-                if (buffer.Length > 65536 || !input.TryWrite(buffer))
+                capture.DataAvailable += (buffer, _, _, _) =>
                 {
-                    Failed?.Invoke("Playback transcription cannot keep up with the audio. Turn it off and try again.");
+                    if (Volatile.Read(ref _finishing) != 0) return;
+                    if (buffer.Length == 0) return;
+                    if (buffer.Length > 65536 || !input.TryWrite(buffer))
+                    {
+                        Failed?.Invoke("Local transcription cannot keep up with the audio. Turn it off and try again.");
+                        _stop.Cancel();
+                        return;
+                    }
+                    var captured = Interlocked.Add(ref _capturedBytes, buffer.Length);
+                    var last = Interlocked.Read(ref _lastProgressBytes);
+                    if (captured - last >= SampleRate * 2 * 5 &&
+                        Interlocked.CompareExchange(ref _lastProgressBytes, captured, last) == last)
+                        ReportProgress();
+                };
+                capture.RecordingStopped += (_, _) =>
+                {
+                    if (_stop.IsCancellationRequested || Volatile.Read(ref _finishing) != 0) return;
+                    Failed?.Invoke(source == AudioCaptureSource.Microphone
+                        ? "Microphone capture stopped. Check the default input device and microphone permission."
+                        : "Playback audio capture stopped. Check the default output device.");
                     _stop.Cancel();
-                    return;
-                }
-                var captured = Interlocked.Add(ref _capturedBytes, buffer.Length);
-                var last = Interlocked.Read(ref _lastProgressBytes);
-                if (captured - last >= SampleRate * 2 * 5 &&
-                    Interlocked.CompareExchange(ref _lastProgressBytes, captured, last) == last)
-                    ReportProgress();
-            };
-            recorder.RecordingStopped += (_, _) =>
+                };
+            }
+
+            WasapiRecorder BuildRecorder(bool communicationsMode)
             {
-                if (_stop.IsCancellationRequested) return;
-                Failed?.Invoke("Playback audio capture stopped. Check the default output device.");
-                _stop.Cancel();
-            };
-            recorder.StartRecording();
+                var builder = new WasapiRecorderBuilder()
+                    .WithFormat(new WaveFormat(SampleRate, 16, 1));
+                if (source == AudioCaptureSource.Playback) builder.WithLoopbackCapture();
+                else if (communicationsMode) builder.WithCommunicationsMode();
+                // Without loopback the recorder uses the default capture device.
+                return builder.Build();
+            }
+
+            _stop.Token.ThrowIfCancellationRequested();
+            try
+            {
+                recorder = BuildRecorder(source == AudioCaptureSource.Microphone);
+                AttachRecorderEvents(recorder);
+                recorder.StartRecording();
+            }
+            catch (Exception ex) when (source == AudioCaptureSource.Microphone &&
+                                       ex is NotSupportedException or InvalidOperationException &&
+                                       !_stop.IsCancellationRequested)
+            {
+                // Some input devices reject communications processing. Retain
+                // the original local capture mode rather than losing dictation.
+                Interlocked.Exchange(ref _finishing, 1);
+                if (recorder != null) await recorder.DisposeAsync();
+                recorder = null;
+                Interlocked.Exchange(ref _finishing, 0);
+                _stop.Token.ThrowIfCancellationRequested();
+                recorder = BuildRecorder(false);
+                AttachRecorderEvents(recorder);
+                recorder.StartRecording();
+            }
+            Volatile.Write(ref _deviceName, recorder.DeviceFriendlyName);
+            _recorder = recorder;
+            _stop.Token.ThrowIfCancellationRequested();
             started.TrySetResult();
 
             var pcm = new byte[SampleRate * 2 * ChunkSeconds];
             while (!_stop.IsCancellationRequested)
             {
-                if (input.Read(pcm, 0, pcm.Length) != pcm.Length) break;
+                var count = input.Read(pcm, 0, pcm.Length);
+                if (count == 0) break;
+                if (count < pcm.Length)
+                {
+                    // A stopped microphone still has the last spoken phrase.
+                    // Whisper accepts a zero-padded final chunk; very short
+                    // fragments are skipped to avoid silence hallucinations.
+                    if (source != AudioCaptureSource.Microphone || count < SampleRate * 2) break;
+                    Array.Clear(pcm, count, pcm.Length - count);
+                }
                 var samples = new float[SampleRate * ChunkSeconds];
                 for (var i = 0; i < samples.Length; i++)
                     samples[i] = BinaryPrimitives.ReadInt16LittleEndian(pcm.AsSpan(i * 2, 2)) / 32768f;
@@ -101,29 +157,39 @@ internal sealed class PlaybackAudioTranscriber : IAsyncDisposable
                     TextRecognized?.Invoke(text);
                     ReportProgress();
                 }
+                if (count < pcm.Length) break;
             }
         }
         catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
         catch (Exception ex)
         {
             if (!started.TrySetException(ex) && !_stop.IsCancellationRequested)
-                Failed?.Invoke($"Local playback transcription stopped ({ex.GetType().Name}).");
+                Failed?.Invoke($"Local transcription stopped ({ex.GetType().Name}).");
         }
         finally
         {
+            _recorder = null;
             input.Complete();
             if (recorder != null)
             {
                 try { recorder.StopRecording(); } catch { /* output device may have gone away */ }
                 try { await recorder.DisposeAsync(); } catch { /* output device may have gone away */ }
             }
+            _input = null;
             if (!started.Task.IsCompleted) started.TrySetCanceled();
         }
     }
 
     public async ValueTask DisposeAsync()
     {
-        _stop.Cancel();
+        var recorder = _recorder;
+        if (source == AudioCaptureSource.Microphone && recorder != null)
+        {
+            Interlocked.Exchange(ref _finishing, 1);
+            try { recorder.StopRecording(); } catch { /* input device may have gone away */ }
+            _input?.Complete();
+        }
+        else _stop.Cancel();
         if (_worker != null) await _worker;
         _stop.Dispose();
     }

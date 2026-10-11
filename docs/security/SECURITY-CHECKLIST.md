@@ -24,9 +24,8 @@ evidence is stated in the item where available. `[ ]` = still awaiting the real-
 - [x] Clipboard writes retry briefly and report "Clipboard busy" instead of crashing (`486804f`)
 - [x] Read-aloud capped at 5,000 characters (`486804f`)
 - [x] Dictation files in `%LocalAppData%\CloCloWidget\Dictation`, not next to the exe; a dictation path outside that folder is never appended to (`5236a1d`)
-- [x] The shared speech editor opens a file only after the user chooses it, reads at most 256 KiB through one file handle, treats it as text only, and still saves solely through the restricted dictation-file append path. Voice Typing stops when the editor loses focus.
-- [x] Playback transcription uses a bounded WASAPI loopback queue and a bundled local model. The exact model bytes supplied to Whisper are checked against a pinned size and SHA-256 through one read handle, avoiding a second path lookup after verification. No model download or audio upload occurs at runtime. Four native Whisper CPU DLLs are pinned in the executable; signed builds sign those copies before compiling their hashes into the exe.
-- [x] Win+H sent with `SendInput`; the input language it switches is restored (`90e33d8`)
+- [x] The shared speech editor opens a file only after the user chooses it, reads at most 256 KiB through one file handle, treats it as text only, and saves solely through the restricted dictation-file append path when Save is clicked.
+- [x] Microphone and playback transcription are mutually exclusive and use bounded WASAPI capture queues with a bundled local model. Capture stops when its toggle is turned off or the editor closes. The exact model bytes supplied to Whisper are checked against a pinned size and SHA-256 through one read handle, avoiding a second path lookup after verification. No model download or audio upload occurs at runtime. Four native Whisper CPU DLLs are pinned in the executable; signed builds sign those copies before compiling their hashes into the exe.
 - [x] "Open dictation folder" starts Explorer by full path with the folder as an argument (no shell-execute of a path) (`35b2e84`)
 - [x] Colour-picker overlay cancels itself when it loses focus or after a minute, so it can never trap the screen (`90e33d8`)
 - [x] Notification logos decoded only when PNG (no third-party image codecs) and ignored over 512 KB (`90e33d8`, `35b2e84`)

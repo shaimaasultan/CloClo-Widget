@@ -117,7 +117,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   | GPU info | Shows the graphics cards in this PC |
   | Read selection aloud | Opens the shared speech editor, adds highlighted text, and reads it from the editor (up to 5,000 characters per reading) |
   | Selection details | Shows word, character and line counts and a short preview of highlighted text; nothing is saved (the fallback briefly copies selected text) |
-  | Dictate | Opens the shared speech editor. **Dictate** uses the microphone; **Read aloud** speaks the editor's text; **Transcribe playing audio** captures the default speaker output and adds locally recognized words to the editor using the bundled local model, with no first-use download. Load a text file (up to 256 KiB), save text to the private dictation file, or open that folder from the window. Microphone typing pauses when the editor loses focus |
+  | Dictate | Opens the shared speech editor. **Dictate** uses the default microphone and bundled local Whisper model; **Read aloud** speaks the editor's text; **Transcribe playing audio** captures the default speaker output with the same local model. Microphone and playback capture are mutually exclusive. Load a text file (up to 256 KiB), explicitly save text to the private dictation file, or open that folder from the window. Capture continues until its toggle is turned off or the window closes |
   | Convert units | Converts a highlighted "5 km", "98 F"… (km/mi/m/ft, kg/lb, °C/°F/K) |
   | Color picker | Pick any color on screen; its hex code is copied (Esc cancels) |
   | QR code from selection | Makes a QR code of the highlighted text or link |
@@ -517,16 +517,21 @@ records the SHA-256 of every native runtime DLL it ships
   history or cloud sync; restoring the previous contents cannot undo that.
   The spoken text is limited to 5,000 characters; the selection-details preview
   is cleared on close. The shared speech editor reads its own text; the read
-  icon adds selected text to that editor. The separate **Transcribe playing
-  audio** toggle captures all sound on the default output device, including
-  other apps and system sounds, only while enabled. Audio stays in a bounded
-  memory queue for local recognition and is discarded when capture stops.
-  The playback recognizer uses Whisper's CPU runtime in ten-second chunks.
-  This optional mode requires Windows 11, the Visual C++ 2022 x64 runtime,
+  icon adds selected text to that editor. **Dictate** captures the default
+  microphone; **Transcribe playing audio** captures all sound on the default
+  output device, including other apps and system sounds. Only one capture
+  toggle can run at a time. Audio stays in a bounded memory queue for local
+  recognition and is discarded when capture stops. Both use Whisper's CPU
+  runtime in ten-second chunks and keep capturing until turned off or the
+  editor closes. The mic mode shows the selected input device and requests
+  Windows' local communications processing where that device supports it;
+  otherwise it uses ordinary mic capture. Playback audio is usually cleaner
+  than a microphone recording, so accuracy can still differ. Local
+  transcription requires Windows 11, the Visual C++ 2022 x64 runtime,
   and an AVX2/FMA/F16C-capable CPU; the other widget features retain their
   existing Windows 10 support.
   The multilingual base model is included as `ggml-base.bin` beside the
-  installed executable, so playback transcription works offline after install.
+  installed executable, so microphone and playback transcription work offline after install.
   Its size and SHA-256 are checked before use. The verified model bytes are kept
   in memory during transcription so the native recognizer reads exactly what
   CloClo checked. The model and capture

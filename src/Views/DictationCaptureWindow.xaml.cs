@@ -1,55 +1,31 @@
 using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Globalization;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Input;
 using Microsoft.Win32;
 using Media = System.Windows.Media;
 
 namespace CloCloWidget;
 
-// One editor for microphone dictation, text-to-speech, and user-chosen text
-// files. Windows Voice Typing (Win+H) types only into the focused text box;
-// it is stopped whenever this window loses focus.
+// One editor for local Whisper microphone/playback transcription, text-to-speech,
+// and user-chosen text files. Audio results only append text to this editor.
 public partial class DictationCaptureWindow : Window
 {
-    private const ushort VK_H = 0x48;
     private const int MaxLoadedBytes = 256 * 1024;
     private const string EnglishLanguageTag = "en-US";
     private const string ArabicLanguageTag = "ar-EG";
-    private const uint WM_CLOSE = 0x0010;
-
-    [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
-    [DllImport("user32.dll")] private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
-    [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hWnd);
-    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect rect);
-    [DllImport("user32.dll")] private static extern int GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
-    [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
-    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativeRect
-    {
-        public int Left, Top, Right, Bottom;
-    }
 
     private static readonly Media.Brush ActiveLangBrush = new Media.SolidColorBrush(Media.Color.FromRgb(0xc9, 0xa2, 0x4b));
     private static readonly Media.Brush InactiveLangBrush = new Media.SolidColorBrush(Media.Color.FromRgb(0x3c, 0x2f, 0x1a));
 
-    private readonly CancellationTokenSource _lifetime = new();
-    private readonly CultureInfo _originalInputLanguage = InputLanguageManager.Current.CurrentInputLanguage;
     private string _currentLanguageTag = EnglishLanguageTag;
-    private int _micVersion;
-    private bool _voiceTypingStarted;
-    private HashSet<IntPtr> _textInputWindowsBefore = new();
     private bool _readActive;
-    private PlaybackAudioTranscriber? _playback;
+    private LocalAudioTranscriber? _microphone;
+    private LocalAudioTranscriber? _drainingMicrophone;
+    private LocalAudioTranscriber? _playback;
+    private Task _microphoneStop = Task.CompletedTask;
+    private Task _playbackStop = Task.CompletedTask;
     private string? _lastSavedText;
 
     // The parent retains the existing restricted append-to-dictation-folder flow.
@@ -62,23 +38,12 @@ public partial class DictationCaptureWindow : Window
         UpdateLanguageHighlight();
         SpeechReader.Finished += OnSpeechFinished;
         Loaded += (_, _) => CaptureBox.Focus();
-        Deactivated += (_, _) =>
-        {
-            if (MicToggle.IsChecked != true) return;
-            StopMicrophone();
-            Instructions.Text = "Dictation paused because this window lost focus. Turn it on again to continue.";
-        };
-        Closing += (_, _) => StopMicrophone();
         Closed += async (_, _) =>
         {
-            _lifetime.Cancel();
             SpeechReader.Finished -= OnSpeechFinished;
-            StopMicrophone();
+            await StopMicrophoneAsync();
             await StopPlaybackAsync();
             StopReading();
-            try { InputLanguageManager.Current.CurrentInputLanguage = _originalInputLanguage; }
-            catch { /* the original layout may have been removed */ }
-            _lifetime.Dispose();
         };
     }
 
@@ -152,9 +117,9 @@ public partial class DictationCaptureWindow : Window
         if (MicToggle.IsChecked == true)
         {
             await StopPlaybackAsync();
-            await StartMicrophoneAsync();
+            if (MicToggle.IsChecked == true && IsLoaded) await StartMicrophoneAsync();
         }
-        else StopMicrophone();
+        else await StopMicrophoneAsync();
     }
 
     private async void PlaybackToggle_Click(object sender, RoutedEventArgs e)
@@ -166,31 +131,21 @@ public partial class DictationCaptureWindow : Window
     private async Task StartPlaybackAsync()
     {
         if (_playback != null) return;
-        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000) ||
-            !System.Runtime.Intrinsics.X86.Avx2.IsSupported ||
-            !System.Runtime.Intrinsics.X86.Fma.IsSupported ||
-            (System.Runtime.Intrinsics.X86.X86Base.CpuId(1, 0).Ecx & (1 << 29)) == 0)
+        if (!CanRunLocalTranscription())
         {
             PlaybackToggle.IsChecked = false;
             Instructions.Text = "Local playback transcription needs Windows 11 and a CPU with AVX2, FMA, and F16C support.";
             return;
         }
-        StopMicrophone();
+        await StopMicrophoneAsync();
+        await _playbackStop;
+        if (_playback != null) return;
+        if (PlaybackToggle.IsChecked != true || !IsLoaded) return;
         PlaybackToggle.Content = "Transcribe playing audio: Preparing";
         Instructions.Text = "Verifying the bundled speech model. Playback audio stays on this PC.";
-        var session = new PlaybackAudioTranscriber();
+        var session = new LocalAudioTranscriber(AudioCaptureSource.Playback);
         _playback = session;
-        session.TextRecognized += text => Dispatcher.BeginInvoke(new Action(() =>
-        {
-            if (_playback != session || !IsLoaded) return;
-            var separator = CaptureBox.Text.Length > 0 && !char.IsWhiteSpace(CaptureBox.Text[^1]) ? " " : "";
-            if (CaptureBox.Text.Length + separator.Length + text.Length > CaptureBox.MaxLength)
-            {
-                _ = StopPlaybackWithMessageAsync("The editor is full. Save or clear text before transcribing more audio.");
-                return;
-            }
-            CaptureBox.AppendText(separator + text);
-        }));
+        AttachRecognizedText(session);
         session.ProgressChanged += (recognized, _, bytes) => Dispatcher.BeginInvoke(new Action(() =>
         {
             if (_playback != session || !IsLoaded) return;
@@ -234,54 +189,111 @@ public partial class DictationCaptureWindow : Window
         _playback = null;
         PlaybackToggle.IsChecked = false;
         PlaybackToggle.Content = "Transcribe playing audio: Off";
-        if (session != null) await session.DisposeAsync();
+        if (session != null) _playbackStop = session.DisposeAsync().AsTask();
+        await _playbackStop;
     }
+
+    private static bool CanRunLocalTranscription() =>
+        OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000) &&
+        System.Runtime.Intrinsics.X86.Avx2.IsSupported &&
+        System.Runtime.Intrinsics.X86.Fma.IsSupported &&
+        (System.Runtime.Intrinsics.X86.X86Base.CpuId(1, 0).Ecx & (1 << 29)) != 0;
+
+    private void AttachRecognizedText(LocalAudioTranscriber session) =>
+        session.TextRecognized += text => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if ((_microphone != session && _drainingMicrophone != session && _playback != session) || !IsLoaded) return;
+            var separator = CaptureBox.Text.Length > 0 && !char.IsWhiteSpace(CaptureBox.Text[^1]) ? " " : "";
+            if (CaptureBox.Text.Length + separator.Length + text.Length > CaptureBox.MaxLength)
+            {
+                const string message = "The editor is full. Save or clear text before transcribing more audio.";
+                if (_microphone == session || _drainingMicrophone == session) _ = StopMicrophoneWithMessageAsync(message);
+                else _ = StopPlaybackWithMessageAsync(message);
+                return;
+            }
+            CaptureBox.AppendText(separator + text);
+        }));
 
     private async Task StartMicrophoneAsync()
     {
-        var version = ++_micVersion;
-        MicToggle.Content = "Dictate: Starting";
-        CaptureBox.Focus();
+        if (_microphone != null) return;
+        if (!CanRunLocalTranscription())
+        {
+            MicToggle.IsChecked = false;
+            Instructions.Text = "Local microphone dictation needs Windows 11 and a CPU with AVX2, FMA, and F16C support.";
+            return;
+        }
+        await StopPlaybackAsync();
+        await _microphoneStop;
+        if (_microphone != null) return;
+        if (MicToggle.IsChecked != true || !IsLoaded) return;
+        MicToggle.Content = "Dictate: Preparing";
+        Instructions.Text = "Verifying the bundled speech model. Microphone audio stays on this PC.";
+        var session = new LocalAudioTranscriber(AudioCaptureSource.Microphone);
+        _microphone = session;
+        AttachRecognizedText(session);
+        session.ProgressChanged += (recognized, _, bytes) => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (_microphone != session || !IsLoaded) return;
+            Instructions.Text = $"Listening to {MicrophoneLabel(session)}: {recognized} segments transcribed, {bytes / 32000} seconds of audio received. Only Save writes text to a file.";
+        }));
+        session.Failed += message => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (_microphone == session) _ = StopMicrophoneWithMessageAsync(message);
+        }));
         try
         {
-            await Task.Delay(300, _lifetime.Token);
-            if (!IsLoaded || !IsActive || MicToggle.IsChecked != true || version != _micVersion) return;
-            InputLanguageManager.Current.CurrentInputLanguage = CultureInfo.GetCultureInfo(_currentLanguageTag);
-            _textInputWindowsBefore = VisibleTextInputWindows();
-            OpenVoiceTyping();
-            _voiceTypingStarted = true;
+            await session.StartAsync(_currentLanguageTag);
+            if (_microphone != session) return;
             MicToggle.Content = "Dictate: On";
-            Instructions.Text = "Windows Voice Typing is listening. Keep this text box active, or turn Dictate off to stop.";
+            Instructions.Text = $"Transcribing locally from {MicrophoneLabel(session)} in 10-second chunks. Turn this off to stop; only Save writes text to a file.";
         }
-        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            if (_microphone != session) return;
+            var message = ex switch
+            {
+                FileNotFoundException => "The bundled speech model or runtime is missing. Reinstall CloClo.",
+                InvalidDataException => ex.Message,
+                DllNotFoundException or BadImageFormatException =>
+                    "Could not load the local speech runtime. Check that CloClo is fully installed and the Visual C++ 2022 x64 runtime is present.",
+                UnauthorizedAccessException => "Microphone access was denied. Check Windows microphone privacy settings.",
+                _ => $"Could not start local microphone dictation ({ex.GetType().Name}). Check the default input device and microphone permission."
+            };
+            await StopMicrophoneWithMessageAsync(message);
+        }
     }
 
-    private void StopMicrophone()
+    private static string MicrophoneLabel(LocalAudioTranscriber session) =>
+        string.IsNullOrWhiteSpace(session.DeviceName) ? "the default microphone" : session.DeviceName;
+
+    private async Task StopMicrophoneWithMessageAsync(string message)
     {
-        if (!_voiceTypingStarted && MicToggle.IsChecked != true) return;
-        var stopVersion = ++_micVersion;
-        if (_voiceTypingStarted)
-        {
-            var windowsBefore = new HashSet<IntPtr>(_textInputWindowsBefore);
-            CloseVoiceTyping(windowsBefore, includeExisting: true);
-            _ = CloseVoiceTypingWhenShownAsync(windowsBefore, stopVersion);
-        }
-        _voiceTypingStarted = false;
-        _textInputWindowsBefore.Clear();
+        await StopMicrophoneAsync();
+        if (IsLoaded) Instructions.Text = message;
+    }
+
+    private async Task StopMicrophoneAsync()
+    {
+        var session = _microphone;
+        _microphone = null;
         MicToggle.IsChecked = false;
         MicToggle.Content = "Dictate: Off";
+        if (session != null)
+        {
+            _drainingMicrophone = session;
+            _microphoneStop = DrainMicrophoneAsync(session);
+        }
+        await _microphoneStop;
     }
 
-    private async Task CloseVoiceTypingWhenShownAsync(HashSet<IntPtr> windowsBefore, int stopVersion)
+    private async Task DrainMicrophoneAsync(LocalAudioTranscriber session)
     {
-        // Windows may create the Win+H toolbar after our close event. Only
-        // retry for text-input windows that were absent before this session.
-        await Task.Delay(350);
-        if (stopVersion != Volatile.Read(ref _micVersion)) return;
-        CloseVoiceTyping(windowsBefore, includeExisting: false);
-        await Task.Delay(500);
-        if (stopVersion != Volatile.Read(ref _micVersion)) return;
-        CloseVoiceTyping(windowsBefore, includeExisting: false);
+        await session.DisposeAsync();
+        // Drain text events queued by the final Whisper chunk before Save
+        // reads the editor or another capture session can start.
+        await Dispatcher.InvokeAsync(() => { });
+        if (_drainingMicrophone == session) _drainingMicrophone = null;
     }
 
     private async void English_Click(object sender, RoutedEventArgs e) => await SwitchLanguageAsync(EnglishLanguageTag);
@@ -290,13 +302,14 @@ public partial class DictationCaptureWindow : Window
     private async Task SwitchLanguageAsync(string cultureTag)
     {
         if (cultureTag == _currentLanguageTag) return;
+        var restartMicrophone = _microphone != null;
         var restartPlayback = _playback != null;
+        if (restartMicrophone) await StopMicrophoneAsync();
         if (restartPlayback) await StopPlaybackAsync();
         _currentLanguageTag = cultureTag;
         UpdateLanguageHighlight();
-        if (MicToggle.IsChecked == true)
+        if (restartMicrophone)
         {
-            StopMicrophone();
             MicToggle.IsChecked = true;
             await StartMicrophoneAsync();
         }
@@ -315,7 +328,7 @@ public partial class DictationCaptureWindow : Window
 
     private async void Load_Click(object sender, RoutedEventArgs e)
     {
-        StopMicrophone();
+        await StopMicrophoneAsync();
         await StopPlaybackAsync();
         StopReading();
         var picker = new OpenFileDialog
@@ -356,7 +369,7 @@ public partial class DictationCaptureWindow : Window
 
     private async void Save_Click(object sender, RoutedEventArgs e)
     {
-        StopMicrophone();
+        await StopMicrophoneAsync();
         await StopPlaybackAsync();
         var text = CaptureBox.Text.Trim();
         if (text.Length == 0)
@@ -390,79 +403,9 @@ public partial class DictationCaptureWindow : Window
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
 
-    private void OpenFolder_Click(object sender, RoutedEventArgs e)
+    private async void OpenFolder_Click(object sender, RoutedEventArgs e)
     {
-        StopMicrophone();
+        await StopMicrophoneAsync();
         OpenFolderRequested?.Invoke();
-    }
-
-    private static void OpenVoiceTyping() => KeyboardInput.SendChord(KeyboardInput.VK_LWIN, VK_H);
-
-    // Win+H toggles the floating toolbar, so sending it again can reopen a
-    // session Windows already closed. Prefer the small text-input windows
-    // shown by this session, including the error popup if Windows opened it.
-    private static void CloseVoiceTyping(HashSet<IntPtr> windowsBefore, bool includeExisting)
-    {
-        var visibleWindows = VisibleTextInputWindows();
-        var targets = new HashSet<IntPtr>();
-        foreach (var hWnd in visibleWindows)
-        {
-            if (windowsBefore.Contains(hWnd) || !GetWindowRect(hWnd, out var rect)) continue;
-            var width = rect.Right - rect.Left;
-            var height = rect.Bottom - rect.Top;
-            if (width is >= 80 and <= 550 && height is >= 25 and <= 180)
-                targets.Add(hWnd);
-        }
-
-        // With the Windows voice-typing launcher enabled, Win+H can reuse a
-        // toolbar that was already visible before this editor turned the mic
-        // on. In that case, prefer the same small toolbar shape.
-        if (targets.Count == 0 && includeExisting)
-        {
-            foreach (var hWnd in visibleWindows)
-            {
-                if (!GetWindowRect(hWnd, out var rect)) continue;
-                var width = rect.Right - rect.Left;
-                var height = rect.Bottom - rect.Top;
-                if (width is not (>= 80 and <= 550) || height is not (>= 25 and <= 180)) continue;
-                targets.Add(hWnd);
-                break;
-            }
-        }
-
-        // Older Windows builds used this class for the toolbar. Keep it as
-        // a fallback if its reported size differs from the usual small bar.
-        if (targets.Count == 0)
-        {
-            foreach (var hWnd in visibleWindows)
-            {
-                if (!includeExisting && windowsBefore.Contains(hWnd)) continue;
-                var className = new StringBuilder(256);
-                GetClassName(hWnd, className, className.Capacity);
-                if (className.ToString() != "Windows.UI.Core.CoreWindow") continue;
-                targets.Add(hWnd);
-                break;
-            }
-        }
-        foreach (var target in targets)
-            PostMessage(target, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
-    }
-
-    private static HashSet<IntPtr> VisibleTextInputWindows()
-    {
-        var windows = new HashSet<IntPtr>();
-        EnumWindows((hWnd, _) =>
-        {
-            if (!IsWindowVisible(hWnd)) return true;
-            GetWindowThreadProcessId(hWnd, out var pid);
-            try
-            {
-                using var process = Process.GetProcessById(pid);
-                if (process.ProcessName is "TextInputHost" or "InputApp") windows.Add(hWnd);
-            }
-            catch { /* process exited between enumeration and lookup */ }
-            return true;
-        }, IntPtr.Zero);
-        return windows;
     }
 }

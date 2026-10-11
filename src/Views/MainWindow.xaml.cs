@@ -521,7 +521,7 @@ public partial class MainWindow : Window
             new("GPU info", "graphics card hardware", WidgetSearchActionKind.Watch, WatchGpus),
             new("Read selection aloud", "speech editor selected text", WidgetSearchActionKind.OpenWindow, ReadSelection),
             new("Selection details", "selected text words characters lines", WidgetSearchActionKind.OpenWindow, ShowSelectionDetails),
-            new("Speech and dictation", "mic voice typing read aloud load save text", WidgetSearchActionKind.OpenWindow, OpenDictationCapture),
+            new("Speech and dictation", "mic whisper offline read aloud load save text", WidgetSearchActionKind.OpenWindow, OpenDictationCapture),
             new("Convert units", "selected text measurement temperature", WidgetSearchActionKind.OpenWindow, ConvertSelection),
             new("Color picker", "eyedropper screen color", WidgetSearchActionKind.Run, StartColorPicking),
             new("QR code from selection", "selected text link", WidgetSearchActionKind.OpenWindow, ShowQrCode),
@@ -655,12 +655,8 @@ public partial class MainWindow : Window
         ShowToolWindow(window);
     }
 
-    // Shared editor for dictation and read-aloud. Optional microphone input
-    // delegates listening to Windows' own Voice Typing rather than
-    // calling WinRT's SpeechRecognizer directly (still available in
-    // SpeechToText.RecognizeAsync) — Voice Typing reliably captured real
-    // audio on this machine when SpeechRecognizer did not, traced to which
-    // input device held Windows' "Default Device" role.
+    // Shared editor for dictation and read-aloud. The microphone and playback
+    // toggles feed local Whisper text into the editor; saving remains explicit.
     private void OpenDictationCapture() => OpenSpeechWindow();
 
     private DictationCaptureWindow OpenSpeechWindow()
@@ -799,10 +795,7 @@ public partial class MainWindow : Window
         return window.ShowDialog();
     }
 
-    // "Start new dictation file" menu action — the counterpart to
-    // DictateAsync's default of appending to whatever file is already
-    // current. Deliberately not on the icon bar itself (no room left, and
-    // it's a rare, deliberate action compared to dictating itself).
+    // "Start new dictation file" selects where a later explicit Save appends.
     private void StartNewDictationFile()
     {
         var path = SpeechToText.CreateNewFile();
