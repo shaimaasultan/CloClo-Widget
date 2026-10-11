@@ -25,8 +25,6 @@
 .EXAMPLE
   .\scripts\install.ps1 -CertThumbprint 0123ABCD... -DesktopShortcut
 .EXAMPLE
-  .\scripts\install.ps1 -PfxPath C:\certs\codesign.pfx     # prompts for its password
-.EXAMPLE
   .\scripts\install.ps1 -ProgramFiles -CertThumbprint 0123ABCD...
 .EXAMPLE
   .\scripts\install.ps1 -ProgramFiles -UseCloCloCertificate -DesktopShortcut
@@ -37,8 +35,6 @@
 #>
 param(
     [string]$CertThumbprint,
-    [string]$PfxPath,
-    [SecureString]$PfxPassword,
     [switch]$DesktopShortcut,
     [switch]$NoLaunch,
     [switch]$ProgramFiles,
@@ -328,7 +324,7 @@ function Test-ProtectedKey($cert) {
     $false
 }
 
-if ($UseCloCloCertificate -and -not $CertThumbprint -and -not $PfxPath) {
+if ($UseCloCloCertificate -and -not $CertThumbprint) {
     $candidates = @(Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert |
         Where-Object { $_.Subject -like 'CN=CloClo*' -and $_.HasPrivateKey -and $_.NotAfter -gt (Get-Date) } |
         Sort-Object NotBefore -Descending)
@@ -377,23 +373,14 @@ $publishArgs = @(
     '-p:PublishSingleFile=true', "-p:IncludeNativeLibrariesForSelfExtract=$selfExtract",
     '-o', $publishDir, '-nologo',
     # No build process outlives this install. MSBuild's worker nodes and the
-    # C# compiler server otherwise keep running for minutes afterwards, with
-    # this process's environment - including SIGN_CERT_PASSWORD when signing
-    # with a .pfx, readable by any program running as you for as long as
-    # they live.
+    # C# compiler server otherwise keep running for minutes afterwards.
     '--disable-build-servers', '-nodeReuse:false'
 )
-$signing = [bool]($CertThumbprint -or $PfxPath)
+$signing = [bool]$CertThumbprint
 if ($CertThumbprint) {
     $publishArgs += "-p:SignCertThumbprint=$CertThumbprint"
-} elseif ($PfxPath) {
-    $PfxPath = (Resolve-Path -LiteralPath $PfxPath).Path
-    if (-not $PfxPassword) { $PfxPassword = Read-Host -AsSecureString "Password for $(Split-Path $PfxPath -Leaf) (Enter if none)" }
-    $publishArgs += "-p:SignCertFile=$PfxPath"
-    # Handed to sign.ps1 through the environment, never on a command line.
-    $env:SIGN_CERT_PASSWORD = [Net.NetworkCredential]::new('', $PfxPassword).Password
 } else {
-    Write-Warning "No -CertThumbprint or -PfxPath given: the app will be unsigned (Windows SmartScreen may warn on first run)."
+    Write-Warning "No -CertThumbprint given: the app will be unsigned (Windows SmartScreen may warn on first run)."
 }
 
 # Record every source file's SHA-256 now, before building. It's checked
@@ -406,15 +393,11 @@ New-Item -ItemType Directory -Force -Path (Split-Path $sourceRecord) | Out-Null
 & $checkSource -Create $sourceRecord -Root $root -Quiet
 
 Write-Host "Building$(if ($signing) { ' and signing' })..."
-try {
-    if (-not (Test-Path -LiteralPath $dotnetExe)) {
-        throw "The .NET SDK wasn't found at $dotnetExe. Install it from https://dotnet.microsoft.com/download (it installs there)."
-    }
-    & $dotnetExe @publishArgs
-    if ($LASTEXITCODE -ne 0) { throw "Build failed (dotnet publish exited with $LASTEXITCODE)." }
-} finally {
-    Remove-Item Env:\SIGN_CERT_PASSWORD -ErrorAction SilentlyContinue
+if (-not (Test-Path -LiteralPath $dotnetExe)) {
+    throw "The .NET SDK wasn't found at $dotnetExe. Install it from https://dotnet.microsoft.com/download (it installs there)."
 }
+& $dotnetExe @publishArgs
+if ($LASTEXITCODE -ne 0) { throw "Build failed (dotnet publish exited with $LASTEXITCODE)." }
 
 $builtExe = Join-Path $publishDir $exeName
 if (-not (Test-Path $builtExe)) { throw "Build output not found at $builtExe." }

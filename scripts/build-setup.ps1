@@ -138,20 +138,18 @@ try {
     & $dotnetExe build (Join-Path $root 'installer\CloClo.Package.wixproj') @common "-p:AppDir=$appDir" "-p:SetupVersion=$version" $signArg
     if ($LASTEXITCODE -ne 0) { throw "Building the package failed (exit $LASTEXITCODE)." }
     $msi = Join-Path $root 'bin\installer\CloClo.Package\Release\CloClo.msi'
+    if (-not (Test-Path -LiteralPath $msi -PathType Leaf)) { throw "The package build left no CloClo.msi at $msi." }
 
     # ------------------------------------------------------------ 3. setup
     Write-Host "`n3/3 Building CloClo-Setup.exe..." -ForegroundColor Cyan
     & $dotnetExe build (Join-Path $root 'installer\CloClo.Bundle.wixproj') @common "-p:MsiPath=$msi" "-p:SetupVersion=$version" $signArg
     if ($LASTEXITCODE -ne 0) { throw "Building the setup failed (exit $LASTEXITCODE)." }
     $setup = Join-Path $root 'bin\installer\CloClo.Bundle\Release\CloClo-Setup.exe'
+    if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) { throw "The setup build left no CloClo-Setup.exe at $setup." }
 
-    # ------------------------------------------------------------ result
-    New-Item -ItemType Directory -Force -Path $distDir | Out-Null
-    $out = Join-Path $distDir "CloClo-Setup-$version.exe"
-    Copy-Item -LiteralPath $setup -Destination $out -Force
-
+    # Verify all three artifacts before publishing anything to dist\.
     Write-Host ''
-    foreach ($f in $exe, $msi, $out) {
+    foreach ($f in $exe, $msi, $setup) {
         $sig = Get-AuthenticodeSignature -LiteralPath $f
         $who = if ($sig.SignerCertificate) { "$($sig.SignerCertificate.Subject) ($($sig.SignerCertificate.Thumbprint))" } else { 'not signed' }
         Write-Host ("{0,-28} {1,-12} {2}" -f (Split-Path $f -Leaf), $sig.Status, $who)
@@ -166,10 +164,34 @@ try {
             throw "$($f.FullName) was expected to be unsigned, but its signature status is $($sig.Status)."
         }
     }
+
+    # ------------------------------------------------------------ result
+    if (Test-Path -LiteralPath $distDir) {
+        $distItem = Get-Item -LiteralPath $distDir -Force
+        if (-not $distItem.PSIsContainer -or ($distItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "Refusing to publish to a non-directory or linked dist path: $distDir"
+        }
+    } else {
+        New-Item -ItemType Directory -Path $distDir | Out-Null
+    }
+    $out = Join-Path $distDir "CloClo-Setup-$version.exe"
+    if (Test-Path -LiteralPath $out) {
+        $existingOut = Get-Item -LiteralPath $out -Force
+        if ($existingOut.PSIsContainer -or ($existingOut.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "Refusing to overwrite a linked or non-file setup path: $out"
+        }
+    }
+    Copy-Item -LiteralPath $setup -Destination $out -Force
+    $setupHash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash
+    $outHash = (Get-FileHash -LiteralPath $out -Algorithm SHA256).Hash
+    if ($setupHash -ne $outHash) {
+        Remove-Item -LiteralPath $out -Force
+        throw "The copied setup differs from the verified build; no installer was published."
+    }
     Write-Host ''
     Write-Host "Setup: $out" -ForegroundColor Green
     Write-Host ("Size:  {0:0.0} MB" -f ((Get-Item -LiteralPath $out).Length / 1MB))
-    Write-Host "SHA-256: $((Get-FileHash -LiteralPath $out -Algorithm SHA256).Hash)"
+    Write-Host "SHA-256: $outHash"
     Write-Host 'Send the SHA-256 along with the file, so the person installing it can check they got the same file.'
     exit 0
 } catch {

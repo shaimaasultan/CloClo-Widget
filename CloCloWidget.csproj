@@ -144,11 +144,10 @@
 
   <!--
     Opt-in Authenticode signing, done by sign.ps1 (install.ps1 drives it).
-    Runs only when a certificate is given:
+    Runs only when a protected certificate is given:
       -p:SignCertThumbprint=<sha1>   a code-signing cert in the "My" store
                                      (also where hardware tokens and cloud
-                                     signing providers expose theirs), or
-      -p:SignCertFile=<path.pfx>     password in env var SIGN_CERT_PASSWORD
+                                     signing providers expose theirs)
     Two stages, because a single-file publish packs every DLL inside the exe:
       1. SignBundledBinaries — just before bundling, signs copies of every
          DLL that isn't already validly signed (CloCloWidget.dll and any
@@ -158,10 +157,9 @@
     checked straight after signing; a failure fails the build.
   -->
   <PropertyGroup>
-    <_SignEnabled Condition="'$(SignCertThumbprint)' != '' or '$(SignCertFile)' != ''">true</_SignEnabled>
+    <_SignEnabled Condition="'$(SignCertThumbprint)' != ''">true</_SignEnabled>
     <_SignScript>&quot;$(MSBuildProjectDirectory)\scripts\sign.ps1&quot;</_SignScript>
     <_SignCertArgs Condition="'$(SignCertThumbprint)' != ''">-Thumbprint $(SignCertThumbprint)</_SignCertArgs>
-    <_SignCertArgs Condition="'$(SignCertThumbprint)' == '' and '$(SignCertFile)' != ''">-PfxFile &quot;$([System.IO.Path]::GetFullPath('$(SignCertFile)'))&quot;</_SignCertArgs>
     <_SignCertArgs Condition="'$(SignToolPath)' != ''">$(_SignCertArgs) -SignTool &quot;$(SignToolPath)&quot;</_SignCertArgs>
     <_SignCertArgs Condition="'$(SignTimestampUrl)' != ''">$(_SignCertArgs) -TimestampUrl $(SignTimestampUrl)</_SignCertArgs>
     <!-- Full path, not "powershell.exe": a bare name is looked up through
@@ -170,6 +168,11 @@
     <_SignPowerShell>$([System.IO.Path]::Combine($([System.Environment]::GetFolderPath(SpecialFolder.System)), 'WindowsPowerShell', 'v1.0', 'powershell.exe'))</_SignPowerShell>
     <_SignCommand>&quot;$(_SignPowerShell)&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $(_SignScript) $(_SignCertArgs)</_SignCommand>
   </PropertyGroup>
+
+  <Target Name="RejectPfxSigning" BeforeTargets="PrepareForBuild"
+          Condition="'$(SignCertFile)' != ''">
+    <Error Text="File-based signing has been removed. Use SignCertThumbprint with a protected certificate in the Windows store." />
+  </Target>
 
   <Target Name="SignBundledBinaries" AfterTargets="PrepareForBundle" Condition="'$(_SignEnabled)' == 'true'">
     <PropertyGroup>

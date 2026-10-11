@@ -60,7 +60,7 @@ To see whether anything in the project folder changed since the last
 install, double-click **`scripts/Check-Source.cmd`** — see
 [Checking the source](#checking-the-source).
 
-To choose differently (a per-user install, a `.pfx`, no signing…), run
+To choose differently (a per-user install or no signing), run
 `scripts/install.ps1` yourself — see [Installing](#installing).
 
 Always start the installed copy, not `publish\CloCloWidget.exe`: every install
@@ -185,7 +185,6 @@ options:
 .\scripts\install.ps1                                   # per-user install, unsigned
 .\scripts\install.ps1 -ProgramFiles                     # install to Program Files instead (recommended)
 .\scripts\install.ps1 -CertThumbprint <thumbprint>      # sign with a certificate from your store
-.\scripts\install.ps1 -PfxPath C:\certs\codesign.pfx    # sign with a .pfx (asks for its password)
 .\scripts\install.ps1 -UseCloCloCertificate             # sign with your newest protected CloClo certificate (offers to create one)
 .\scripts\install.ps1 -DesktopShortcut                  # also put a shortcut on the desktop
 .\scripts\install.ps1 -NoLaunch                         # don't start CloClo afterwards
@@ -284,16 +283,10 @@ Which certificates can sign:
   confirm (or enter a password) every time something signs with it, or a
   smart card. An unprotected key is refused, since any program running as you
   could sign its own files as CloClo with it.
-- **From a `.pfx` file** (`-PfxPath`): protected by its password, which is
-  passed through the `SIGN_CERT_PASSWORD` environment variable, never on a
-  command line. The certificate is placed in your personal store only while
-  signing, and removed again afterwards with its private key. This is the
-  weaker option: during the signing that key has no protection, so another
-  program running as you could sign with it unnoticed, and the password sits
-  in the build's environment while it runs (the install turns off the build
-  servers, so no build process keeps it afterwards). If a build is killed
-  mid-signing, the next signing with the same `.pfx` removes the leftover
-  certificate. Prefer a protected certificate from your store.
+
+File-based `.pfx` signing is not supported. It temporarily imported an
+unprotected key into the user's certificate store, allowing another process
+running as that user to sign during the build. Use a protected store key.
 
 An Authenticode code-signing certificate can also come from a trusted signing
 provider; check that provider's current availability and terms before choosing
@@ -476,8 +469,7 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 ```
 
 To sign it the same way `install.ps1` does, add
-`-p:SignCertThumbprint=<thumbprint>`, or `-p:SignCertFile=<path.pfx>` with the
-password in `SIGN_CERT_PASSWORD`.
+`-p:SignCertThumbprint=<thumbprint>` for a protected store certificate.
 
 ## How it's built
 

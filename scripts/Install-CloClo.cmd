@@ -27,6 +27,8 @@ if errorlevel 1 (
 ) else (
     echo.
     echo CloClo is installed.
+    echo This direct install does not create a setup EXE.
+    echo To create the distributable installer in dist, run scripts\Build-Setup.cmd.
 )
 
 :done

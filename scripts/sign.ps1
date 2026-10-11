@@ -20,18 +20,12 @@
   -Path <file>
       Signs one file in place (the final published exe).
 
-  The certificate is either -Thumbprint (a code-signing cert in the
-  CurrentUser or LocalMachine "My" store - also where hardware tokens and
-  cloud signing providers expose theirs) or -PfxFile, whose password is
-  read from the SIGN_CERT_PASSWORD environment variable. A .pfx is never
-  handed to signtool directly - that needs the password on signtool's
-  command line, readable by any other process. Instead it's loaded here,
-  placed in the CurrentUser "My" store just for the signing, used by
-  thumbprint, then removed again together with its private key.
+  -Thumbprint selects a protected code-signing certificate in the
+  CurrentUser or LocalMachine "My" store (including hardware tokens and
+  cloud signing providers). File-based private keys are not accepted.
 #>
 param(
     [string]$Thumbprint,
-    [string]$PfxFile,
     [string]$BundleList,
     [string]$OutDir,
     [string]$SignedList,
@@ -50,8 +44,7 @@ param(
 $env:PSModulePath = $PSHOME + '\Modules'
 $ErrorActionPreference = 'Stop'
 
-if (-not $Thumbprint -and -not $PfxFile) { throw 'Pass -Thumbprint or -PfxFile.' }
-if ($PfxFile -and -not (Test-Path $PfxFile)) { throw "Certificate file not found: $PfxFile" }
+if ($Thumbprint -notmatch '^[0-9A-Fa-f]{40}$') { throw 'Pass a 40-character certificate thumbprint.' }
 
 if (-not $SignTool) {
     # Known folder, not ${env:ProgramFiles(x86)}, which this user's
@@ -64,73 +57,11 @@ if (-not $SignTool -or -not (Test-Path $SignTool)) {
     throw 'signtool.exe not found - install the Windows SDK, or pass -SignTool <path>.'
 }
 
-# Makes the .pfx's certificate available to signtool by thumbprint for the
-# duration of $action only. A certificate that was already in the store
-# beforehand is left exactly as it was.
-#
-# While it's in the store its private key is unprotected: any program
-# running as this user could sign with it until it's removed again. If the
-# build is killed before the clean-up below, the key would stay there - so a
-# marker file records the thumbprint while the key is in the store, and the
-# next signing with the same .pfx treats a certificate it finds under that
-# thumbprint as such a leftover and removes it too. (Only for the same .pfx:
-# the marker sits in a folder any program can write to, so it must not be
-# able to make this delete any other certificate.)
-$pfxMarker = [IO.Path]::Combine([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..')), 'obj', 'pfx-signing.pending')
-# Removing a certificate from the store leaves its private key behind in the
-# user's key store - this deletes that too.
-function Remove-PrivateKey($cert) {
-    $key = [Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
-    if ($key -is [Security.Cryptography.RSACng]) { $key.Key.Delete() }
-    elseif ($key -is [Security.Cryptography.RSACryptoServiceProvider]) { $key.PersistKeyInCsp = $false; $key.Clear() }
-}
-function Use-PfxCertificate([scriptblock]$action) {
-    $flags = [Security.Cryptography.X509Certificates.X509KeyStorageFlags]'UserKeySet, PersistKeySet'
-    $cert = [Security.Cryptography.X509Certificates.X509Certificate2]::new($PfxFile, $env:SIGN_CERT_PASSWORD, $flags)
-    $store = [Security.Cryptography.X509Certificates.X509Store]::new('My', 'CurrentUser')
-    $store.Open('ReadWrite')
-    $alreadyThere = $store.Certificates.Find('FindByThumbprint', $cert.Thumbprint, $false).Count -gt 0
-    if (Test-Path -LiteralPath $pfxMarker) {
-        $leftover = ([IO.File]::ReadAllText($pfxMarker)).Trim()
-        if ($leftover -ieq $cert.Thumbprint) {
-            # Left behind by an earlier signing that didn't finish. Its
-            # private key was imported by that run into a key container of
-            # its own - delete that one now; this run's is deleted below.
-            foreach ($old in $store.Certificates.Find('FindByThumbprint', $leftover, $false)) {
-                $store.Remove($old)
-                Remove-PrivateKey $old
-            }
-            $alreadyThere = $false
-        } elseif ($leftover -match '^[0-9A-F]{40}$' -and
-                  $store.Certificates.Find('FindByThumbprint', $leftover, $false).Count -gt 0) {
-            Write-Warning ("An earlier signing with another .pfx didn't finish, and may have left its certificate (thumbprint $leftover) " +
-                "with an unprotected private key in your personal certificate store. If you didn't put it there yourself, remove it " +
-                "(certmgr.msc -> Personal -> Certificates).")
-        }
-    }
-    try {
-        if (-not $alreadyThere) {
-            [IO.Directory]::CreateDirectory((Split-Path $pfxMarker)) | Out-Null
-            [IO.File]::WriteAllText($pfxMarker, $cert.Thumbprint)
-            $store.Add($cert)
-        }
-        & $action $cert.Thumbprint
-    } finally {
-        if (-not $alreadyThere) {
-            $store.Remove($cert)
-            Remove-PrivateKey $cert
-            Remove-Item -LiteralPath $pfxMarker -Force -ErrorAction SilentlyContinue
-        }
-        $store.Close()
-    }
-}
-
 # A certificate from the store may only sign if Windows guards its private
 # key: either a key with "strong key protection", where Windows asks for
 # confirmation every time anything signs with it, or a smart-card key that
 # needs its PIN. Otherwise any program running as this user could sign its
-# own files as CloClo without a trace. (A .pfx is protected by its
-# password instead, so that path isn't affected.)
+# own files as CloClo without a trace.
 function Assert-ProtectedKey([string]$thumbprint) {
     $cert = Get-ChildItem Cert:\CurrentUser\My, Cert:\LocalMachine\My -ErrorAction SilentlyContinue |
         Where-Object Thumbprint -eq $thumbprint | Select-Object -First 1
@@ -160,14 +91,11 @@ function Assert-ProtectedKey([string]$thumbprint) {
 }
 
 function Invoke-SignTool([string[]]$files) {
-    $sign = {
-        param($thumbprint)
-        # One signtool call for the whole batch: one timestamp round-trip
-        # per file, but a single certificate lookup / PIN prompt.
-        & $SignTool sign /sha1 $thumbprint /fd SHA256 /tr $TimestampUrl /td SHA256 /q @files
-        if ($LASTEXITCODE -ne 0) { throw "signtool failed (exit $LASTEXITCODE)." }
-    }
-    if ($Thumbprint) { Assert-ProtectedKey $Thumbprint; & $sign $Thumbprint } else { Use-PfxCertificate $sign }
+    Assert-ProtectedKey $Thumbprint
+    # SignTool accepts a batch, but Windows still authorizes every use of a
+    # High-protection key. Keep that protection for each file.
+    & $SignTool sign /sha1 $Thumbprint /fd SHA256 /tr $TimestampUrl /td SHA256 /q @files
+    if ($LASTEXITCODE -ne 0) { throw "signtool failed (exit $LASTEXITCODE)." }
 
     foreach ($f in $files) {
         $sig = Get-AuthenticodeSignature -LiteralPath $f

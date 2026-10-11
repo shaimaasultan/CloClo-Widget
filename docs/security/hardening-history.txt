@@ -946,3 +946,12 @@ selection actions report that the selection is unavailable.
 - Hiding the now-playing label clears its text and image source; decoded
   notification logos dispose their input stream after OnLoad completes.
 
+Remove file-based signing option
+
+The earlier .pfx signing entries above describe historical behavior only.
+Current install and build scripts accept a protected Windows-store certificate
+by thumbprint. The installer no longer accepts -PfxPath or -PfxPassword,
+sign.ps1 no longer imports a .pfx or reads SIGN_CERT_PASSWORD, and MSBuild
+rejects the old SignCertFile property. Each DLL, exe and installer artifact
+keeps its own checked Authenticode signature.
+
