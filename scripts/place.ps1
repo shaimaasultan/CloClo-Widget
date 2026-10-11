@@ -50,10 +50,13 @@ New-Item -ItemType Directory -Path $stage | Out-Null
 $want = @{}
 foreach ($pair in $Expected.Split(';')) {
 $kv = $pair.Split('=', 2)
-if ($kv.Count -ne 2 -or $kv[0] -notmatch '^[A-Za-z0-9_.-]+\.(exe|dll|ps1|json)$' -or $kv[1] -notmatch '^[0-9A-F]{64}$') { Fail 5 }
+if ($kv.Count -ne 2 -or
+    ($kv[0] -notmatch '^[A-Za-z0-9_.-]+\.(exe|dll|ps1|json)$' -and $kv[0] -cne 'ggml-base.bin') -or
+    $kv[1] -notmatch '^[0-9A-F]{64}$') { Fail 5 }
 $want[$kv[0]] = $kv[1]
 }
 if (-not $want.ContainsKey($exeName)) { Fail 5 }
+if (-not $want.ContainsKey('ggml-base.bin')) { Fail 5 }
 foreach ($n in @($want.Keys)) {
 $item = Get-Item -LiteralPath (Join-Path $Source $n) -Force
 if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { Fail 5 }

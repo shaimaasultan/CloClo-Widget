@@ -30,10 +30,10 @@
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="CloClo">
-        <!-- The signed, self-contained CloClo, native WPF DLLs and four
-             pinned local transcription CPU DLLs. All sit beside the exe. -->
+        <!-- The signed app, native DLLs, and pinned local transcription model. -->
         <Files Include="$(AppDir)\*.exe" />
         <Files Include="$(AppDir)\*.dll" />
+        <Files Include="$(AppDir)\ggml-base.bin" />
       </Directory>
     </StandardDirectory>
 

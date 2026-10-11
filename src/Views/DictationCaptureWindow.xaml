@@ -54,7 +54,7 @@
             <ToggleButton x:Name="MicToggle" Content="Dictate: Off" Click="MicToggle_Click" />
             <ToggleButton x:Name="ReadToggle" Content="Read aloud: Off" Click="ReadToggle_Click" />
             <ToggleButton x:Name="PlaybackToggle" Content="Transcribe playing audio: Off"
-                          ToolTip="Captures all audio playing through the default Windows output device while on. First use downloads a verified local speech model. Saves only when you choose Save."
+                          ToolTip="Captures all audio playing through the default Windows output device while on. Uses CloClo's bundled local speech model. Saves only when you choose Save."
                           Click="PlaybackToggle_Click" />
         </WrapPanel>
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">

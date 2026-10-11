@@ -418,6 +418,11 @@ try {
 
 $builtExe = Join-Path $publishDir $exeName
 if (-not (Test-Path $builtExe)) { throw "Build output not found at $builtExe." }
+$builtModel = Join-Path $publishDir 'ggml-base.bin'
+if (-not (Test-Path -LiteralPath $builtModel) -or
+    (Get-FileHash -LiteralPath $builtModel -Algorithm SHA256).Hash -ne '60ED5BC3DD14EEA856493D334349B405782DDCAF0028D4B5DF4088345FBA2EFE') {
+    throw 'The bundled speech model is missing or altered in publish\. Check Git LFS and rebuild.'
+}
 & $checkSource -Root $root -Manifest $sourceRecord -Quiet
 if ($LASTEXITCODE -ne 0) {
     throw "Source files in $root changed while building, so the build can't be tied to a known state. Nothing was installed - run it again."
@@ -459,7 +464,9 @@ Stop-RunningWidget   # again, in case one was started while building
 # the uninstaller (so Settings > Apps can remove CloClo without this project
 # folder), and the source record with its checker (for Check-Source.cmd).
 Copy-Item -LiteralPath (Join-Path $root 'scripts\uninstall.ps1'), $checkSource, $sourceRecord -Destination $publishDir -Force
-$files = @(Get-ChildItem -LiteralPath $publishDir -File | Where-Object Extension -in '.exe', '.dll', '.ps1', '.json')
+$files = @(Get-ChildItem -LiteralPath $publishDir -File | Where-Object {
+    $_.Extension -in '.exe', '.dll', '.ps1', '.json' -or $_.Name -eq 'ggml-base.bin'
+})
 $version = (Get-Item -LiteralPath $builtExe).VersionInfo.ProductVersion -replace '\+.*$', ''
 $totalBytes = ($files | Measure-Object Length -Sum).Sum
 if ($ProgramFiles) {

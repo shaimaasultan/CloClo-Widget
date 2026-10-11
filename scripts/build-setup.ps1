@@ -6,7 +6,7 @@
 
 .DESCRIPTION
   1. Publishes CloClo exactly as a Program Files install does (self-contained,
-     single file, the native WPF DLLs beside it), signed.
+     single-file exe, native DLLs and the local speech model beside it), signed.
   2. Builds CloClo.msi (installer\Package.wxs) around it and signs it.
   3. Builds CloClo-Setup.exe (installer\Bundle.wxs) around that and signs it.
   4. Copies the result to dist\CloClo-Setup-<version>.exe and prints its

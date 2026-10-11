@@ -47,6 +47,24 @@
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <!-- Keep the verified model as a separate installed data file. Bundling it
+       into the exe would inflate the executable and duplicate it in memory. -->
+  <ItemGroup>
+    <Content Include="Assets\Models\ggml-base.bin" Link="ggml-base.bin"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
+             ExcludeFromSingleFile="true" />
+  </ItemGroup>
+
+  <Target Name="VerifyBundledWhisperModel" BeforeTargets="CoreCompile">
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\Assets\Models\ggml-base.bin')"
+           Text="The bundled Whisper model is missing. Run git lfs pull before building." />
+    <GetFileHash Files="$(MSBuildProjectDirectory)\Assets\Models\ggml-base.bin" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_BundledModelHash" />
+    </GetFileHash>
+    <Error Condition="'%(_BundledModelHash.FileHash)' != '60ED5BC3DD14EEA856493D334349B405782DDCAF0028D4B5DF4088345FBA2EFE'"
+           Text="The bundled Whisper model is incomplete or altered. Run git lfs pull to restore the pinned model." />
+  </Target>
+
   <Target Name="PrepareWhisperRuntime" Condition="'$(RuntimeIdentifier)' == 'win-x64'">
     <ItemGroup>
       <_WhisperSource Include="$(PkgWhisper_net_Runtime)\build\win-x64\ggml-base-whisper.dll" ExpectedHash="E6C362421B6D5A5C1B52341F88D3D72764DE29F05141748CC3FAAD2F6348063F" />

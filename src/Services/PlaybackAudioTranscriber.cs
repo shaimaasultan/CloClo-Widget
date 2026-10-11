@@ -88,8 +88,13 @@ internal sealed class PlaybackAudioTranscriber : IAsyncDisposable
                 var samples = new float[SampleRate * ChunkSeconds];
                 for (var i = 0; i < samples.Length; i++)
                     samples[i] = BinaryPrimitives.ReadInt16LittleEndian(pcm.AsSpan(i * 2, 2)) / 32768f;
-                await foreach (var segment in processor.ProcessAsync(samples, _stop.Token))
+                // Whisper.net can end its result enumeration on cancellation
+                // before the native processing task has finished. Disposing the
+                // processor/model at that point can leave native code using
+                // freed memory. Let this bounded chunk finish before cleanup.
+                await foreach (var segment in processor.ProcessAsync(samples, CancellationToken.None))
                 {
+                    if (_stop.IsCancellationRequested) continue;
                     var text = segment.Text?.Trim();
                     if (string.IsNullOrWhiteSpace(text)) continue;
                     Interlocked.Increment(ref _recognizedPhrases);

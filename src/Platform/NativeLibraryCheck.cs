@@ -60,6 +60,7 @@ public static partial class NativeLibraryCheck
     private static readonly HashSet<string> AllowedAppFiles = new(StringComparer.OrdinalIgnoreCase)
     {
         "uninstall.ps1", "check-source.ps1", "source-manifest.json", "CloCloWidget.pdb",
+        "ggml-base.bin", // inert model data, SHA-256 checked before it reaches Whisper
     };
 
     // The verified DLLs, held open (read-share only) for the process's lifetime.

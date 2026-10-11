@@ -117,7 +117,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   | GPU info | Shows the graphics cards in this PC |
   | Read selection aloud | Opens the shared speech editor, adds highlighted text, and reads it from the editor (up to 5,000 characters per reading) |
   | Selection details | Shows word, character and line counts and a short preview of highlighted text; nothing is saved (the fallback briefly copies selected text) |
-  | Dictate | Opens the shared speech editor. **Dictate** uses the microphone; **Read aloud** speaks the editor's text; **Transcribe playing audio** captures the default speaker output and adds locally recognized words to the editor. First use downloads a 142 MiB verified speech model. Load a text file (up to 256 KiB), save text to the private dictation file, or open that folder from the window. Microphone typing pauses when the editor loses focus |
+  | Dictate | Opens the shared speech editor. **Dictate** uses the microphone; **Read aloud** speaks the editor's text; **Transcribe playing audio** captures the default speaker output and adds locally recognized words to the editor using the bundled local model, with no first-use download. Load a text file (up to 256 KiB), save text to the private dictation file, or open that folder from the window. Microphone typing pauses when the editor loses focus |
   | Convert units | Converts a highlighted "5 km", "98 F"… (km/mi/m/ft, kg/lb, °C/°F/K) |
   | Color picker | Pick any color on screen; its hex code is copied (Esc cancels) |
   | QR code from selection | Makes a QR code of the highlighted text or link |
@@ -532,15 +532,18 @@ records the SHA-256 of every native runtime DLL it ships
   This optional mode requires Windows 11, the Visual C++ 2022 x64 runtime,
   and an AVX2/FMA/F16C-capable CPU; the other widget features retain their
   existing Windows 10 support.
-  The first use downloads the multilingual base model to
-  `%LocalAppData%\CloCloWidget\Models`; its size and SHA-256 are checked before
-  use. The verified model bytes are kept in memory during transcription so the
-  native recognizer reads exactly what CloClo checked. The model and capture
+  The multilingual base model is included as `ggml-base.bin` beside the
+  installed executable, so playback transcription works offline after install.
+  Its size and SHA-256 are checked before use. The verified model bytes are kept
+  in memory during transcription so the native recognizer reads exactly what
+  CloClo checked. The model and capture
   queue are released when transcription stops; this mode temporarily uses about
   142 MiB more memory than loading the model by pathname. Once loaded, the small
   native runtime DLLs stay loaded until CloClo exits.
   The four native runtime DLLs are pinned by SHA-256 in the executable and
   signed alongside CloClo in signed builds. Audio is not sent to a service.
+  The model is tracked with Git LFS; clone the project with Git LFS enabled
+  before building an installer. The installed package is about 142 MiB larger.
   Text that cannot be selected and copied is unavailable to the selection reader.
   Loading a file reads text only from the user-chosen file, with a 256 KiB
   limit; saving still writes only to CloClo's private dictation folder.

@@ -50,7 +50,6 @@ public partial class DictationCaptureWindow : Window
     private HashSet<IntPtr> _textInputWindowsBefore = new();
     private bool _readActive;
     private PlaybackAudioTranscriber? _playback;
-    private bool _playbackStarting;
     private string? _lastSavedText;
 
     // The parent retains the existing restricted append-to-dictation-folder flow.
@@ -166,7 +165,7 @@ public partial class DictationCaptureWindow : Window
 
     private async Task StartPlaybackAsync()
     {
-        if (_playback != null || _playbackStarting) return;
+        if (_playback != null) return;
         if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000) ||
             !System.Runtime.Intrinsics.X86.Avx2.IsSupported ||
             !System.Runtime.Intrinsics.X86.Fma.IsSupported ||
@@ -176,42 +175,11 @@ public partial class DictationCaptureWindow : Window
             Instructions.Text = "Local playback transcription needs Windows 11 and a CPU with AVX2, FMA, and F16C support.";
             return;
         }
-        _playbackStarting = true;
         StopMicrophone();
-        PlaybackToggle.IsEnabled = false;
         PlaybackToggle.Content = "Transcribe playing audio: Preparing";
-        Instructions.Text = "Checking the local speech model. The first use downloads about 142 MiB; playback audio stays on this PC.";
-        try
-        {
-            var progress = new Progress<long>(bytes =>
-            {
-                if (IsLoaded)
-                    Instructions.Text = $"Downloading local speech model: {bytes / 1048576} of 142 MiB. Audio capture has not started yet.";
-            });
-            await PlaybackModelStore.EnsureDownloadedAsync(progress, _lifetime.Token);
-        }
-        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
-        {
-            PlaybackToggle.IsChecked = false;
-            return;
-        }
-        catch (Exception ex)
-        {
-            PlaybackToggle.IsChecked = false;
-            PlaybackToggle.Content = "Transcribe playing audio: Off";
-            Instructions.Text = $"Could not prepare the local speech model: {ex.Message}";
-            return;
-        }
-        finally
-        {
-            _playbackStarting = false;
-            PlaybackToggle.IsEnabled = true;
-        }
-        if (!IsLoaded || PlaybackToggle.IsChecked != true) return;
+        Instructions.Text = "Verifying the bundled speech model. Playback audio stays on this PC.";
         var session = new PlaybackAudioTranscriber();
         _playback = session;
-        PlaybackToggle.Content = "Transcribe playing audio: Starting";
-        Instructions.Text = "Starting capture of the default Windows speaker output.";
         session.TextRecognized += text => Dispatcher.BeginInvoke(new Action(() =>
         {
             if (_playback != session || !IsLoaded) return;
@@ -244,6 +212,7 @@ public partial class DictationCaptureWindow : Window
             if (_playback != session) return;
             var message = ex switch
             {
+                FileNotFoundException => "The bundled speech model or runtime is missing. Reinstall CloClo.",
                 InvalidDataException => ex.Message,
                 DllNotFoundException or BadImageFormatException =>
                     "Could not load the local speech runtime. Check that CloClo is fully installed and the Visual C++ 2022 x64 runtime is present.",
