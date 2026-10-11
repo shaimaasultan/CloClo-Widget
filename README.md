@@ -525,7 +525,14 @@ records the SHA-256 of every native runtime DLL it ships
   runtime in ten-second chunks and keep capturing until turned off or the
   editor closes. The mic mode shows the selected input device and requests
   Windows' local communications processing where that device supports it;
-  otherwise it uses ordinary mic capture. Playback audio is usually cleaner
+  otherwise it uses ordinary mic capture. An optional microphone noise toggle
+  applies a local high-pass filter and soft gate to reduce rumble and noise
+  between phrases; it is off by default and cannot separate overlapping voices
+  or TV audio. A separate comparison toggle requests 24-bit, 48 kHz mono
+  microphone capture and resamples it locally to Whisper's 16 kHz input; the
+  default microphone mode remains 16-bit, 16 kHz. The editor displays the
+  capture device and format so the same speech can be compared in each mode.
+  Playback audio is usually cleaner
   than a microphone recording, so accuracy can still differ. Local
   transcription requires Windows 11, the Visual C++ 2022 x64 runtime,
   and an AVX2/FMA/F16C-capable CPU; the other widget features retain their

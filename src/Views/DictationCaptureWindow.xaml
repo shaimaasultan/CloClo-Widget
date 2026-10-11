@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="CloClo — Speech and dictation"
-        Width="540" Height="400"
+        Width="540" Height="425"
         WindowStartupLocation="Manual"
         ResizeMode="CanResizeWithGrip"
         MinWidth="490" MinHeight="350"
@@ -47,6 +47,8 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
@@ -64,12 +66,18 @@
             <Button x:Name="EnglishButton" Content="EN" Style="{StaticResource LangButton}" Click="English_Click" />
             <Button x:Name="ArabicButton" Content="AR" Style="{StaticResource LangButton}" Click="Arabic_Click" />
         </StackPanel>
-        <TextBlock x:Name="Instructions" Grid.Row="2" Foreground="#f3ecdd" TextWrapping="Wrap" Margin="0,0,0,8"
+        <CheckBox x:Name="ReduceNoiseToggle" Grid.Row="2" Content="Reduce microphone background noise"
+                  Foreground="#f3ecdd" Margin="0,0,0,10" Click="ReduceNoiseToggle_Click"
+                  ToolTip="Optional local filter for low rumble and quiet gaps. It cannot remove overlapping speech or TV; turn it off if words sound worse." />
+        <CheckBox x:Name="HighResolutionMicToggle" Grid.Row="3" Content="Capture mic at 24-bit / 48 kHz (compare)"
+                  Foreground="#f3ecdd" Margin="0,0,0,10" Click="HighResolutionMicToggle_Click"
+                  ToolTip="Requests 24-bit, 48 kHz mono capture, then resamples locally to Whisper's 16 kHz input. Applies when dictation next starts." />
+        <TextBlock x:Name="Instructions" Grid.Row="4" Foreground="#f3ecdd" TextWrapping="Wrap" Margin="0,0,0,8"
                    Text="Type or load text, then turn on Read aloud. Dictate transcribes the default microphone locally; Transcribe playing audio listens to the default speaker output." />
-        <TextBox x:Name="CaptureBox" Grid.Row="3" Padding="8" Background="#1e1610" Foreground="#f3ecdd"
+        <TextBox x:Name="CaptureBox" Grid.Row="5" Padding="8" Background="#1e1610" Foreground="#f3ecdd"
                  BorderBrush="#8a6a2f" CaretBrush="#f3ecdd" AcceptsReturn="True" TextWrapping="Wrap"
                  VerticalScrollBarVisibility="Auto" MaxLength="262144" />
-        <WrapPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+        <WrapPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
             <Button Content="Load text file" Click="Load_Click" />
             <Button Content="Save to dictation file" Click="Save_Click" />
             <Button Content="Open folder" Click="OpenFolder_Click" ToolTip="Open the CloClo dictation folder in Explorer" />

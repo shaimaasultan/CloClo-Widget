@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
 using Whisper.net;
 using Whisper.net.LibraryLoader;
 
@@ -16,9 +17,11 @@ internal enum AudioCaptureSource { Microphone, Playback }
 // Captured PCM stays in a bounded memory queue. The local model is loaded only
 // for a session and disposed when its toggle is turned off or the window closes.
 // Recognition text is emitted as data; this service cannot execute actions.
-internal sealed class LocalAudioTranscriber(AudioCaptureSource source) : IAsyncDisposable
+internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool reduceMicrophoneNoise = false,
+    bool useHighResolutionMicrophone = false) : IAsyncDisposable
 {
     private const int SampleRate = 16000;
+    private const int HighResolutionSampleRate = 48000;
     private const int ChunkSeconds = 10;
     private const int MaxQueuedPackets = 512;
     private static readonly object RuntimeLock = new();
@@ -34,12 +37,23 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source) : IAsyncD
     private long _lastProgressBytes;
     private int _recognizedPhrases;
     private int _finishing;
+    private volatile bool _reduceMicrophoneNoise = reduceMicrophoneNoise;
     private string? _deviceName;
+    private string? _captureFormat;
+    private int _captureBytesPerSecond = SampleRate * sizeof(short);
 
     public event Action<string>? TextRecognized;
     public event Action<int, int, long>? ProgressChanged;
     public event Action<string>? Failed;
     public string? DeviceName => Volatile.Read(ref _deviceName);
+    public string? CaptureFormat => Volatile.Read(ref _captureFormat);
+    public int CaptureBytesPerSecond => Volatile.Read(ref _captureBytesPerSecond);
+
+    public void SetMicrophoneNoiseReduction(bool enabled)
+    {
+        if (source == AudioCaptureSource.Microphone)
+            _reduceMicrophoneNoise = enabled;
+    }
 
     public Task StartAsync(string languageTag)
     {
@@ -50,7 +64,9 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source) : IAsyncD
 
     private async Task RunAsync(string languageTag, TaskCompletionSource started)
     {
-        using var input = new PcmQueueStream(MaxQueuedPackets, _stop.Token);
+        var highResolution = source == AudioCaptureSource.Microphone && useHighResolutionMicrophone;
+        using var input = new PcmQueueStream(MaxQueuedPackets, _stop.Token,
+            highResolution ? 8 * 1024 * 1024 : 2 * 1024 * 1024);
         _input = input;
         WasapiRecorder? recorder = null;
         try
@@ -77,7 +93,7 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source) : IAsyncD
                     }
                     var captured = Interlocked.Add(ref _capturedBytes, buffer.Length);
                     var last = Interlocked.Read(ref _lastProgressBytes);
-                    if (captured - last >= SampleRate * 2 * 5 &&
+                    if (captured - last >= capture.WaveFormat.AverageBytesPerSecond * 5L &&
                         Interlocked.CompareExchange(ref _lastProgressBytes, captured, last) == last)
                         ReportProgress();
                 };
@@ -93,8 +109,10 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source) : IAsyncD
 
             WasapiRecorder BuildRecorder(bool communicationsMode)
             {
-                var builder = new WasapiRecorderBuilder()
-                    .WithFormat(new WaveFormat(SampleRate, 16, 1));
+                var format = highResolution
+                    ? new WaveFormat(HighResolutionSampleRate, 24, 1)
+                    : new WaveFormat(SampleRate, 16, 1);
+                var builder = new WasapiRecorderBuilder().WithFormat(format);
                 if (source == AudioCaptureSource.Playback) builder.WithLoopbackCapture();
                 else if (communicationsMode) builder.WithCommunicationsMode();
                 // Without loopback the recorder uses the default capture device.
@@ -124,26 +142,69 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source) : IAsyncD
                 recorder.StartRecording();
             }
             Volatile.Write(ref _deviceName, recorder.DeviceFriendlyName);
+            var captureFormat = recorder.WaveFormat.AsStandardWaveFormat();
+            if (highResolution && (captureFormat.SampleRate != HighResolutionSampleRate ||
+                                   captureFormat.BitsPerSample != 24 || captureFormat.Channels != 1 ||
+                                   captureFormat.Encoding != WaveFormatEncoding.Pcm))
+                throw new InvalidDataException("The microphone did not provide 24-bit, 48 kHz mono PCM capture.");
+            Volatile.Write(ref _captureBytesPerSecond, captureFormat.AverageBytesPerSecond);
+            Volatile.Write(ref _captureFormat,
+                $"{captureFormat.BitsPerSample}-bit / {captureFormat.SampleRate / 1000} kHz");
             _recorder = recorder;
             _stop.Token.ThrowIfCancellationRequested();
+
+            // Keep the 24-bit stream intact until this managed converter reads
+            // it. WDL low-pass resampling produces the 16 kHz mono floats that
+            // Whisper requires; no audio or intermediate file leaves memory.
+            using var rawStream = highResolution ? new RawSourceWaveStream(input, captureFormat) : null;
+            ISampleProvider? resampler = highResolution
+                ? new WdlResamplingSampleProvider(new Pcm24BitToSampleProvider(rawStream!), SampleRate)
+                : null;
             started.TrySetResult();
 
             var pcm = new byte[SampleRate * 2 * ChunkSeconds];
+            // Only microphone audio can use this optional in-memory filter.
+            // Keep its state across Whisper chunks to avoid clicks at boundaries.
+            MicrophoneNoiseFilter? noiseFilter = null;
             while (!_stop.IsCancellationRequested)
             {
-                var count = input.Read(pcm, 0, pcm.Length);
-                if (count == 0) break;
-                if (count < pcm.Length)
+                float[] samples;
+                int sampleCount;
+                if (resampler != null)
+                {
+                    samples = new float[SampleRate * ChunkSeconds];
+                    sampleCount = 0;
+                    while (sampleCount < samples.Length)
+                    {
+                        var read = resampler.Read(samples.AsSpan(sampleCount));
+                        if (read == 0) break;
+                        sampleCount += read;
+                    }
+                    if (sampleCount == 0) break;
+                    if (sampleCount != samples.Length) Array.Resize(ref samples, sampleCount);
+                }
+                else
+                {
+                    var count = input.Read(pcm, 0, pcm.Length);
+                    if (count == 0) break;
+                    sampleCount = count / sizeof(short);
+                    samples = new float[sampleCount];
+                    for (var i = 0; i < sampleCount; i++)
+                        samples[i] = BinaryPrimitives.ReadInt16LittleEndian(pcm.AsSpan(i * 2, 2)) / 32768f;
+                }
+                if (sampleCount < SampleRate * ChunkSeconds)
                 {
                     // A stopped microphone still has the last spoken phrase.
-                    // Whisper accepts a zero-padded final chunk; very short
-                    // fragments are skipped to avoid silence hallucinations.
-                    if (source != AudioCaptureSource.Microphone || count < SampleRate * 2) break;
-                    Array.Clear(pcm, count, pcm.Length - count);
+                    // Send only the captured samples; padding the rest of our
+                    // 10-second window adds silence, not speech context.
+                    // Very short fragments are skipped to avoid hallucinations.
+                    if (source != AudioCaptureSource.Microphone || sampleCount < SampleRate) break;
                 }
-                var samples = new float[SampleRate * ChunkSeconds];
-                for (var i = 0; i < samples.Length; i++)
-                    samples[i] = BinaryPrimitives.ReadInt16LittleEndian(pcm.AsSpan(i * 2, 2)) / 32768f;
+                if (source == AudioCaptureSource.Microphone && _reduceMicrophoneNoise)
+                    noiseFilter ??= new MicrophoneNoiseFilter(SampleRate);
+                else
+                    noiseFilter = null;
+                noiseFilter?.Process(samples);
                 // Whisper.net can end its result enumeration on cancellation
                 // before the native processing task has finished. Disposing the
                 // processor/model at that point can leave native code using
@@ -157,7 +218,7 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source) : IAsyncD
                     TextRecognized?.Invoke(text);
                     ReportProgress();
                 }
-                if (count < pcm.Length) break;
+                if (sampleCount < SampleRate * ChunkSeconds) break;
             }
         }
         catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
@@ -245,9 +306,8 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source) : IAsyncD
     private void ReportProgress() => ProgressChanged?.Invoke(
         Volatile.Read(ref _recognizedPhrases), 0, Interlocked.Read(ref _capturedBytes));
 
-    private sealed class PcmQueueStream(int capacity, CancellationToken cancellationToken) : Stream
+    private sealed class PcmQueueStream(int capacity, CancellationToken cancellationToken, int maxQueuedBytes) : Stream
     {
-        private const int MaxQueuedBytes = 2 * 1024 * 1024;
         private readonly BlockingCollection<byte[]> _packets = new(capacity);
         private byte[]? _current;
         private int _offset;
@@ -257,7 +317,7 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source) : IAsyncD
         {
             if (_packets.IsAddingCompleted) return true;
             var total = Interlocked.Add(ref _queuedBytes, pcm.Length);
-            if (total > MaxQueuedBytes)
+            if (total > maxQueuedBytes)
             {
                 Interlocked.Add(ref _queuedBytes, -pcm.Length);
                 return false;

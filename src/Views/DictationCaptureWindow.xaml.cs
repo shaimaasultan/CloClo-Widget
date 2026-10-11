@@ -122,6 +122,19 @@ public partial class DictationCaptureWindow : Window
         else await StopMicrophoneAsync();
     }
 
+    private void ReduceNoiseToggle_Click(object sender, RoutedEventArgs e)
+    {
+        _microphone?.SetMicrophoneNoiseReduction(ReduceNoiseToggle.IsChecked == true);
+        if (_microphone != null)
+            Instructions.Text = "Microphone noise filtering will change with the next audio segment. It cannot remove overlapping voices or TV audio.";
+    }
+
+    private void HighResolutionMicToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (_microphone != null)
+            Instructions.Text = "Turn Dictate off and on to switch microphone capture format. The current session keeps its displayed format.";
+    }
+
     private async void PlaybackToggle_Click(object sender, RoutedEventArgs e)
     {
         if (PlaybackToggle.IsChecked == true) await StartPlaybackAsync();
@@ -229,13 +242,15 @@ public partial class DictationCaptureWindow : Window
         if (MicToggle.IsChecked != true || !IsLoaded) return;
         MicToggle.Content = "Dictate: Preparing";
         Instructions.Text = "Verifying the bundled speech model. Microphone audio stays on this PC.";
-        var session = new LocalAudioTranscriber(AudioCaptureSource.Microphone);
+        var session = new LocalAudioTranscriber(AudioCaptureSource.Microphone,
+            reduceMicrophoneNoise: ReduceNoiseToggle.IsChecked == true,
+            useHighResolutionMicrophone: HighResolutionMicToggle.IsChecked == true);
         _microphone = session;
         AttachRecognizedText(session);
         session.ProgressChanged += (recognized, _, bytes) => Dispatcher.BeginInvoke(new Action(() =>
         {
             if (_microphone != session || !IsLoaded) return;
-            Instructions.Text = $"Listening to {MicrophoneLabel(session)}: {recognized} segments transcribed, {bytes / 32000} seconds of audio received. Only Save writes text to a file.";
+            Instructions.Text = $"Listening to {MicrophoneLabel(session)}: {recognized} segments transcribed, {bytes / session.CaptureBytesPerSecond} seconds of audio received. Only Save writes text to a file.";
         }));
         session.Failed += message => Dispatcher.BeginInvoke(new Action(() =>
         {
@@ -258,6 +273,8 @@ public partial class DictationCaptureWindow : Window
                 DllNotFoundException or BadImageFormatException =>
                     "Could not load the local speech runtime. Check that CloClo is fully installed and the Visual C++ 2022 x64 runtime is present.",
                 UnauthorizedAccessException => "Microphone access was denied. Check Windows microphone privacy settings.",
+                NotSupportedException or InvalidOperationException when HighResolutionMicToggle.IsChecked == true =>
+                    "This input device could not start 24-bit, 48 kHz capture. Turn off the comparison checkbox to use the original mode.",
                 _ => $"Could not start local microphone dictation ({ex.GetType().Name}). Check the default input device and microphone permission."
             };
             await StopMicrophoneWithMessageAsync(message);
@@ -265,7 +282,7 @@ public partial class DictationCaptureWindow : Window
     }
 
     private static string MicrophoneLabel(LocalAudioTranscriber session) =>
-        string.IsNullOrWhiteSpace(session.DeviceName) ? "the default microphone" : session.DeviceName;
+        $"{(string.IsNullOrWhiteSpace(session.DeviceName) ? "the default microphone" : session.DeviceName)} ({session.CaptureFormat ?? "unknown format"})";
 
     private async Task StopMicrophoneWithMessageAsync(string message)
     {
