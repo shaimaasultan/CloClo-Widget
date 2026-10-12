@@ -205,7 +205,8 @@ window is an administrator one), and PowerShell ISE can't pass your typing to it
 stops with a message there rather than waiting for an answer it can't get.
 
 Every install closes a running CloClo first, so the exe can be replaced, and
-moves "Start with Windows" to the installed copy if it was on.
+enables "Start with Windows" for the current user on a first install. Upgrades
+keep the user's on/off choice and move an enabled entry to the installed copy.
 
 CloClo then appears in **Settings → Apps → Installed apps** (an entry in your
 own account's registry, for both kinds of install), and can be uninstalled
@@ -381,8 +382,10 @@ or source folder needed there:
 - Windows' own installer does the work: the administrator prompt names the
   publisher, a failed install rolls back completely, and Settings > Apps gets
   an entry with Uninstall.
-- It installs to Program Files\CloClo with a Start menu shortcut, closes a
+- It installs to Program Files\CloClo with Start Menu and public desktop
+  shortcuts, enables "Start with Windows" for the installing user, closes a
   running CloClo first, and a newer setup replaces an older install in place.
+  The widget's menu can turn startup off again.
 - The last page has a **Launch** button, which starts CloClo as you, not as
   administrator.
 - To uninstall: Settings > Apps > CloClo > Uninstall, or run the setup again

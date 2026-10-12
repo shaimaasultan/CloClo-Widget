@@ -10,6 +10,8 @@
   CloCloWidget.dll and any unsigned third-party library - then the
   finished exe itself. It then copies the exe to %LocalAppData%\Programs\CloCloWidget
   and creates a Start Menu shortcut (plus a desktop one with -DesktopShortcut).
+  A first install enables Start with Windows for the current user; later
+  upgrades preserve the user's on/off choice.
   No admin rights needed. Re-running it upgrades in place.
 
   -ProgramFiles installs to "C:\Program Files\CloClo" instead, which only
@@ -596,17 +598,20 @@ foreach ($path in $targets) {
     Write-Host "Shortcut: $path"
 }
 
-# "Start with Windows" stores the exe path it was enabled from - if it's on,
-# point it at the installed copy rather than wherever it used to run from.
+# "Start with Windows" stores the exe path it was enabled from. A first
+# install enables it for this user; an upgrade preserves a prior opt-out.
+# When enabled, point it at the installed copy rather than wherever it used
+# to run from.
 # Read back afterwards: an entry left pointing at a removed per-user copy
 # means CloClo won't start, and that folder is writable by any program
 # running as this user.
-if (Get-ItemProperty -Path $runKey -Name $runValue -ErrorAction SilentlyContinue) {
+if ((Get-ItemProperty -Path $runKey -Name $runValue -ErrorAction SilentlyContinue) -or -not $installed) {
     $wanted = "`"$installExe`""
-    Set-ItemProperty -Path $runKey -Name $runValue -Value $wanted
+    New-Item -Path $runKey -Force | Out-Null
+    New-ItemProperty -Path $runKey -Name $runValue -Value $wanted -PropertyType String -Force | Out-Null
     $now = (Get-ItemProperty -Path $runKey -Name $runValue).$runValue
     if ($now -eq $wanted) {
-        Write-Host "Updated 'Start with Windows' to the installed copy."
+        Write-Host "Enabled 'Start with Windows' for this user at the installed copy."
     } else {
         Write-Warning "Couldn't update 'Start with Windows' (it still points to $now). Turn it off and on again from CloClo's right-click menu."
     }

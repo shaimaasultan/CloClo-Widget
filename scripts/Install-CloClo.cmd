@@ -6,7 +6,8 @@ rem    - into C:\Program Files\CloClo (one administrator prompt, for the copy
 rem      only), so no other program running as you can change it
 rem    - signed with your newest protected CloClo certificate; if you have
 rem      none, it offers to create one (an unprotected one is never used)
-rem    - with Start Menu and desktop shortcuts, listed in Installed apps
+rem    - with Start Menu and desktop shortcuts, listed in Installed apps;
+rem      starts with Windows for this user on a first install
 rem  Run it as yourself - NOT with "Run as administrator"; install.ps1 asks
 rem  for administrator rights itself, only when it copies into Program Files.
 rem  Extra options are passed on to install.ps1, e.g.  Install-CloClo.cmd -NoLaunch

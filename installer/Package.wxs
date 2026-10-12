@@ -1,7 +1,8 @@
 <!--
   CloClo's Windows Installer package: what CloClo-Setup.exe installs.
   Per-machine, into Program Files\CloClo (only administrators can change it),
-  with a Start menu shortcut. A newer package replaces an older one in place;
+  with Start menu and desktop shortcuts plus a current-user startup entry.
+  A newer package replaces an older one in place;
   a running CloClo is asked to close first (and ended if it doesn't). Windows
   Installer rolls everything back if anything fails.
 -->
@@ -46,5 +47,27 @@
         <RegistryValue Root="HKCU" Key="Software\CloClo" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </StandardDirectory>
+
+    <!-- A per-machine DesktopFolder resolves to the public desktop. The
+         shortcut targets only the signed executable under Program Files. -->
+    <StandardDirectory Id="DesktopFolder">
+      <Component Id="DesktopShortcut">
+        <Shortcut Id="CloCloDesktopShortcut" Name="CloClo" Description="CloClo desktop widget"
+                  Target="[INSTALLFOLDER]CloCloWidget.exe" WorkingDirectory="INSTALLFOLDER" />
+        <!-- MSI classifies DesktopFolder shortcuts as profile resources for
+             component validation, even when ALLUSERS routes this directory
+             to the public desktop. Use its required HKCU key path. -->
+        <RegistryValue Root="HKCU" Key="Software\CloClo" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <!-- Only the installing user's Run key is used. A common Startup-folder
+         shortcut would start CloClo for every account on this PC. The
+         executable itself still runs unelevated at sign-in. -->
+    <Component Id="CurrentUserStartup" Directory="INSTALLFOLDER">
+      <RegistryValue Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\Run"
+                     Name="CloCloWidget" Type="string"
+                     Value="&quot;[INSTALLFOLDER]CloCloWidget.exe&quot;" KeyPath="yes" />
+    </Component>
   </Package>
 </Wix>

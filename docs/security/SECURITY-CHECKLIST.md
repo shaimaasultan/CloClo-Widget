@@ -175,8 +175,9 @@ step is elevated.
   code-signing certificate for others to install cleanly.
 - Use either `CloClo-Setup.exe` or `scripts/Install-CloClo.cmd` on a PC, not both: they're separate installs of the same
   folder.
-- After a setup uninstall, "Start with Windows" (your own HKCU entry) stays if it was on; turn it off in CloClo
-  first. Windows keeps a copy of the signed package in `C:\ProgramData\Package Cache` (administrators only) for
+- A setup install creates a public desktop shortcut to the signed Program Files executable and a Run entry for
+  the installing user's HKCU only; it does not start CloClo in other accounts or with administrator rights.
+  Setup uninstall removes those installer-owned entries for that user. Windows keeps a copy of the signed package in `C:\ProgramData\Package Cache` (administrators only) for
   uninstalling.
 - Minor: a program running as you could hold the single-instance mutex and keep CloClo from starting - it could
   just as well close CloClo.
