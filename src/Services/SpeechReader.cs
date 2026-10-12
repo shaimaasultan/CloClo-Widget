@@ -9,6 +9,12 @@ using Windows.Media.SpeechSynthesis;
 
 namespace CloCloWidget;
 
+public enum ReadAloudVoice
+{
+    EnglishDavid,
+    ArabicHoda,
+}
+
 // Has Keeper read text aloud via Windows' own speech synthesis. Uses the
 // WinRT SpeechSynthesizer (Windows.Media.SpeechSynthesis) rather than the
 // older System.Speech/SAPI5 API tried first — System.Speech only sees
@@ -52,12 +58,15 @@ public static class SpeechReader
         Finished?.Invoke();
     }
 
-    public static void Speak(string text, Action? onStarted = null, Action? onFailed = null)
+    public static bool IsVoiceAvailable(ReadAloudVoice voice) => FindVoice(voice) != null;
+
+    public static void Speak(string text, Action? onStarted = null, Action? onFailed = null,
+        ReadAloudVoice? selectedVoice = null)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
         if (text.Length > MaxSpokenChars) text = text[..MaxSpokenChars];
         var version = Interlocked.Increment(ref _requestVersion);
-        _ = SpeakAsync(text, onStarted, onFailed, version);
+        _ = SpeakAsync(text, onStarted, onFailed, selectedVoice, version);
     }
 
     public static void Stop()
@@ -68,7 +77,8 @@ public static class SpeechReader
         Release();
     }
 
-    private static async Task SpeakAsync(string text, Action? onStarted, Action? onFailed, long version)
+    private static async Task SpeakAsync(string text, Action? onStarted, Action? onFailed,
+        ReadAloudVoice? selectedVoice, long version)
     {
         var resources = new PlaybackResources();
         try
@@ -82,7 +92,13 @@ public static class SpeechReader
                     resources.Dispose();
                     return;
                 }
-                foreach (var (runText, voice) in SplitByScript(text))
+                var runs = selectedVoice is { } choice
+                    ? new List<(string Text, VoiceInformation Voice)>
+                    {
+                        (text, FindVoice(choice) ?? throw new InvalidOperationException("The selected speech voice is unavailable."))
+                    }
+                    : SplitByScript(text);
+                foreach (var (runText, voice) in runs)
                 {
                     Synth.Voice = voice;
                     var stream = await Synth.SynthesizeTextToStreamAsync(runText);
@@ -164,6 +180,22 @@ public static class SpeechReader
                 _owned[i].Dispose();
             _owned.Clear();
         }
+    }
+
+    private static VoiceInformation? FindVoice(ReadAloudVoice voice)
+    {
+        var (name, language) = voice switch
+        {
+            ReadAloudVoice.EnglishDavid => ("Microsoft David", "en"),
+            ReadAloudVoice.ArabicHoda => ("Microsoft Hoda", "ar"),
+            _ => throw new ArgumentOutOfRangeException(nameof(voice)),
+        };
+        var matchingLanguage = SpeechSynthesizer.AllVoices.Where(
+            v => v.Language.StartsWith(language, StringComparison.OrdinalIgnoreCase));
+        return matchingLanguage.FirstOrDefault(v =>
+                   string.Equals(v.DisplayName, name, StringComparison.OrdinalIgnoreCase))
+               ?? matchingLanguage.FirstOrDefault(v =>
+                   v.DisplayName.StartsWith(name + " ", StringComparison.OrdinalIgnoreCase));
     }
 
     // Splits into runs of consecutive words sharing a script, each to be

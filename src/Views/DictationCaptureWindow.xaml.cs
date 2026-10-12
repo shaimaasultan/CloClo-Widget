@@ -73,6 +73,19 @@ public partial class DictationCaptureWindow : Window
             return;
         }
 
+        var voice = _currentLanguageTag == ArabicLanguageTag
+            ? ReadAloudVoice.ArabicHoda
+            : ReadAloudVoice.EnglishDavid;
+        if (!SpeechReader.IsVoiceAvailable(voice))
+        {
+            ReadToggle.IsChecked = false;
+            ReadToggle.Content = "Read aloud: Off";
+            Instructions.Text = voice == ReadAloudVoice.ArabicHoda
+                ? "Microsoft Hoda is not available. Install the Arabic speech voice in Windows settings."
+                : "Microsoft David is not available. Install the English speech voice in Windows settings.";
+            return;
+        }
+
         _readActive = true;
         ReadToggle.IsChecked = true;
         ReadToggle.Content = "Read aloud: On";
@@ -85,7 +98,8 @@ public partial class DictationCaptureWindow : Window
                 if (!_readActive) return;
                 StopReading();
                 Instructions.Text = "Read aloud could not start. Check your audio output and speech voices.";
-            })));
+            })),
+            selectedVoice: voice);
         if (MicToggle.IsChecked == true) CaptureBox.Focus();
     }
 
@@ -319,6 +333,7 @@ public partial class DictationCaptureWindow : Window
     private async Task SwitchLanguageAsync(string cultureTag)
     {
         if (cultureTag == _currentLanguageTag) return;
+        if (_readActive) StopReading();
         var restartMicrophone = _microphone != null;
         var restartPlayback = _playback != null;
         if (restartMicrophone) await StopMicrophoneAsync();
