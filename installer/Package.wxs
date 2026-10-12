@@ -24,6 +24,22 @@
     <Property Id="ARPNOMODIFY" Value="1" />
     <Property Id="ARPNOREPAIR" Value="1" />
 
+    <!-- Block direct MSI and silent installs while a separate script
+         installer is still registered for this user or machine. The bundle disables
+         its Install button and explains how to remove the old install. -->
+    <Property Id="LEGACYSCRIPTINSTALLUSER">
+      <RegistrySearch Id="LegacyScriptInstallUserSearch" Root="HKCU"
+                      Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\CloClo"
+                      Name="InstallLocation" Type="raw" />
+    </Property>
+    <Property Id="LEGACYSCRIPTINSTALLMACHINE">
+      <RegistrySearch Id="LegacyScriptInstallMachineSearch" Root="HKLM"
+                      Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\CloClo"
+                      Name="InstallLocation" Type="raw" Bitness="always64" />
+    </Property>
+    <Launch Condition="REMOVE=&quot;ALL&quot; OR (NOT LEGACYSCRIPTINSTALLUSER AND NOT LEGACYSCRIPTINSTALLMACHINE)"
+            Message="Uninstall the older script-installed CloClo from Settings > Apps > Installed apps, then run CloClo Setup again." />
+
     <!-- Close a running CloClo (it saves its settings on close), and end it
          if it hasn't gone after a few seconds, so its files can be replaced. -->
     <util:CloseApplication Id="CloseCloClo" Target="CloCloWidget.exe" CloseMessage="yes"

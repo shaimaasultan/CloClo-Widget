@@ -8,6 +8,7 @@
   <String Id="UpdateButton" Value="&amp;Update to version [WixStdBAUpdateAvailable]" />
   <String Id="InstallHeader" Value="Welcome" />
   <String Id="InstallMessage" Value="CloClo is a desktop widget: live weather with an animated keeper, the time and date, media and notification shortcuts, a stopwatch, a daily quote, Arabic word, joke and fact, and the Layer Sudoku daily game.&#xA;&#xA;It installs to Program Files\CloClo with a Start menu shortcut. Click Install to continue, or Cancel to exit." />
+  <String Id="LegacyInstallMessage" Value="An older script-installed CloClo is registered on this PC. Open Settings > Apps > Installed apps and uninstall CloClo there first. Then close and reopen this setup to enable Install. Your settings and dictation files are kept." />
   <String Id="InstallMessageOptions" Value="Setup will install [WixBundleName] on your computer. Click Install to continue, Options to set installation options, or Cancel to exit." />
   <String Id="InstallVersion" Value="Version [WixBundleVersion]" />
   <String Id="ConfirmCancelMessage" Value="Are you sure you want to cancel?" />

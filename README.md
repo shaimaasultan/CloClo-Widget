@@ -390,7 +390,8 @@ or source folder needed there:
   administrator.
 - To uninstall: Settings > Apps > CloClo > Uninstall, or run the setup again
   on a PC that has it - it opens on an Uninstall page. Settings, Sudoku
-  progress and dictation files are kept.
+  progress and dictation files are kept. MSI removes the startup entry it
+  installed; Windows may retain its separate Startup apps approval record.
 - To install without any screens: `CloClo-Setup-<version>.exe /quiet`
   (and `/uninstall /quiet` to remove it).
 
@@ -403,11 +404,13 @@ install elsewhere, sign with a publicly trusted code-signing certificate
 and pass it:
 `.\scripts\Build-Setup.cmd -CertThumbprint <thumbprint>`.
 
-Use either the setup or `scripts/Install-CloClo.cmd` on a PC, not both: they're
-separate installs of the same folder. To switch to the setup, first remove
-the script-based install (Settings > Apps > CloClo > Uninstall).
-Uninstalling leaves your settings (%AppData%\CloCloWidget); if "Start with
-Windows" was on, turn it off in CloClo before uninstalling.
+If a script-based CloClo installation is registered for your account or PC, uninstall
+it from Settings > Apps > Installed apps before running the setup. The setup
+shows this instruction and disables Install until you close and reopen it after
+removing the old installation. Direct MSI and silent installs also refuse to
+install while the script registration remains. A newer MSI setup replaces an
+older MSI setup through Windows Installer.
+Uninstalling leaves your settings (%AppData%\CloCloWidget) and dictation files.
 
 ## Checking the source
 

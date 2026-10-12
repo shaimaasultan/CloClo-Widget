@@ -32,13 +32,14 @@
         </Page>
         <Page Name="Install">
             <Label X="11" Y="80" Width="-11" Height="30" FontId="2" DisablePrefix="yes">#(loc.InstallHeader)</Label>
-            <Label X="11" Y="112" Width="-11" Height="-41" FontId="3" DisablePrefix="yes">#(loc.InstallMessage)</Label>
+            <Label X="11" Y="112" Width="-11" Height="-41" FontId="3" DisablePrefix="yes" VisibleCondition="NOT LegacyScriptInstallUser AND NOT LegacyScriptInstallMachine">#(loc.InstallMessage)</Label>
+            <Label X="11" Y="112" Width="-11" Height="-41" FontId="3" DisablePrefix="yes" VisibleCondition="LegacyScriptInstallUser OR LegacyScriptInstallMachine">#(loc.LegacyInstallMessage)</Label>
             <Button Name="InstallUpdateButton" X="11" Y="-11" Width="200" Height="23" TabStop="yes" FontId="0" EnableCondition="WixStdBAUpdateAvailable" HideWhenDisabled="yes">#(loc.UpdateButton)</Button>
             <Button Name="OptionsButton" X="-171" Y="-11" Width="75" Height="23" TabStop="yes" FontId="0" VisibleCondition="NOT WixStdBASuppressOptionsUI">
                 <Text>#(loc.InstallOptionsButton)</Text>
                 <ChangePageAction Page="Options" />
             </Button>
-            <Button Name="InstallButton" X="-91" Y="-11" Width="75" Height="23" TabStop="yes" FontId="0">#(loc.InstallInstallButton)</Button>
+            <Button Name="InstallButton" X="-91" Y="-11" Width="75" Height="23" TabStop="yes" FontId="0" EnableCondition="NOT LegacyScriptInstallUser AND NOT LegacyScriptInstallMachine">#(loc.InstallInstallButton)</Button>
             <Button Name="InstallCancelButton" X="-11" Y="-11" Width="75" Height="23" TabStop="yes" FontId="0">
                 <Text>#(loc.InstallCancelButton)</Text>
                 <CloseWindowAction />

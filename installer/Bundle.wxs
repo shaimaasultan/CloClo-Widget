@@ -5,7 +5,8 @@
   CloClo refuses to run elevated.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Bundle Name="CloClo" Manufacturer="CloClo" Version="$(Version)"
           UpgradeCode="EE052FAD-DFF9-49E0-8C68-CD517309BF13"
           IconSourceFile="..\Assets\icon.ico">
@@ -20,6 +21,13 @@
     </BootstrapperApplication>
 
     <Variable Name="LaunchTarget" Value="[ProgramFiles64Folder]CloClo\CloCloWidget.exe" />
+
+    <util:RegistrySearch Id="LegacyScriptInstallUserSearch" Variable="LegacyScriptInstallUser"
+                         Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\CloClo"
+                         Result="exists" />
+    <util:RegistrySearch Id="LegacyScriptInstallMachineSearch" Variable="LegacyScriptInstallMachine"
+                         Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\CloClo"
+                         Bitness="always64" Result="exists" />
 
     <Chain>
       <MsiPackage SourceFile="$(MsiPath)" />

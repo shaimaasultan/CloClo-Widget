@@ -173,11 +173,13 @@ step is elevated.
 - **`CloClo-Setup.exe` on other PCs:** signed with your self-signed CN=CloClo certificate, which other PCs don't
   trust - Windows shows the publisher as unknown and SmartScreen warns. Sign with a publicly trusted
   code-signing certificate for others to install cleanly.
-- Use either `CloClo-Setup.exe` or `scripts/Install-CloClo.cmd` on a PC, not both: they're separate installs of the same
-  folder.
+- Setup disables Install while a script install is registered for the installing user or PC and tells them to uninstall
+  it from Settings > Apps first. The MSI also rejects direct or silent installs while that script registration
+  remains, preventing duplicate Installed apps entries.
 - A setup install creates a public desktop shortcut to the signed Program Files executable and a Run entry for
   the installing user's HKCU only; it does not start CloClo in other accounts or with administrator rights.
-  Setup uninstall removes those installer-owned entries for that user. Windows keeps a copy of the signed package in `C:\ProgramData\Package Cache` (administrators only) for
+  Setup uninstall removes those installer-owned entries for that user. Windows may retain its separate Startup apps
+  approval record. Windows keeps a copy of the signed package in `C:\ProgramData\Package Cache` (administrators only) for
   uninstalling.
 - Minor: a program running as you could hold the single-instance mutex and keep CloClo from starting - it could
   just as well close CloClo.
