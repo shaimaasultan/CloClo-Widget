@@ -117,7 +117,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   | GPU info | Shows the graphics cards in this PC |
   | Read selection aloud | Opens the shared speech editor, adds highlighted text, and reads it from the editor (up to 5,000 characters per reading) |
   | Selection details | Shows word, character and line counts and a short preview of highlighted text; nothing is saved (the fallback briefly copies selected text) |
-  | Dictate | Opens the shared speech editor. **Dictate** uses the default microphone and bundled local Whisper model; **Read aloud** speaks the editor's text; **Transcribe playing audio** captures the default speaker output with the same local model. Microphone and playback capture are mutually exclusive. Load a text file (up to 256 KiB), explicitly save text to the private dictation file, or open that folder from the window. Capture continues until its toggle is turned off or the window closes |
+  | Dictate | Opens the shared speech editor. **Dictate** uses the default microphone and bundled local Whisper model; **Read aloud** speaks the editor's text; **Transcribe playing audio** captures the default speaker output with the same local model. Load a text file (up to 256 KiB), explicitly save text to the private dictation file, or open that folder from the window. Capture continues until its toggle is turned off or the window closes |
   | Convert units | Converts a highlighted "5 km", "98 F"… (km/mi/m/ft, kg/lb, °C/°F/K) |
   | Color picker | Pick any color on screen; its hex code is copied (Esc cancels) |
   | QR code from selection | Makes a QR code of the highlighted text or link |
@@ -562,6 +562,31 @@ records the SHA-256 of every native runtime DLL it ships
   native runtime DLLs stay loaded until CloClo exits.
   The four native runtime DLLs are pinned by SHA-256 in the executable and
   signed alongside CloClo in signed builds. Audio is not sent to a service.
+  **Voice activation** is off by default. Enable it from Privacy in the right-
+  click menu or the search action. While enabled, CloClo keeps the microphone
+  and its bundled local Whisper model active to listen for "CloClo". Say
+  "CloClo", then "CloClo open Notepad now", "CloClo open Paint now", or
+  "CloClo open OneDrive now". Say "CloClo stop voice now" to turn voice
+  activation off and release the microphone; CloClo then says "Okay, stopping
+  voice now" with its local Windows voice. A complete phrase also works
+  without a separate wake phrase. For app commands, "now" ends the command
+  and returns CloClo to wake listening after confirmation. The speech editor
+  pauses this listening while open and
+  it resumes when closed. Turning the Privacy switch off stops microphone
+  capture. Voice commands are recognized after a short pause following speech;
+  continuous sound is bounded by an eight-second audio chunk. Audio and
+  recognized words stay in memory and are not added to the dictation editor.
+  Keeper's collar pin is blue while wake listening, pulses after the wake
+  phrase, shows amber dots while handling a command, and briefly shows a green
+  check or amber exclamation after the result. It disappears when voice
+  activation is off; reduced-motion mode keeps these cues static.
+  Only fixed app-name phrases are accepted. CloClo says "Okay, opening [app]
+  now" with the local English Windows voice after recognizing the phrase,
+  then asks for confirmation before opening the matched app. Notepad and Paint
+  use fixed Microsoft package identities;
+  OneDrive must be a Microsoft-signed executable at its fixed Program Files
+  path. The raw transcript is never a path,
+  argument, URI, or shell command. Declining the confirmation opens nothing.
   The model is tracked with Git LFS; clone the project with Git LFS enabled
   before building an installer. The installed package is about 142 MiB larger.
   Text that cannot be selected and copied is unavailable to the selection reader.
@@ -593,7 +618,8 @@ records the SHA-256 of every native runtime DLL it ships
   keyboard or mouse hook, and it accepts callbacks only for CloClo's tray ID.
   “Open dictation folder” opens Explorer after an explicit click. The media
   picker and its label do not activate other apps; saved dictation and Sudoku
-  data cannot trigger program launches.
+  data cannot trigger program launches. The opt-in voice activation setting can
+  open one of three fixed apps only after confirmation.
 
 **What CloClo checks before it runs** (in `NativeLibraryCheck`, before WPF
 loads anything)

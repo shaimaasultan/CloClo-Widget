@@ -296,6 +296,10 @@ public static partial class NativeLibraryCheck
         }
     }
 
+    // Voice commands may launch only fixed Microsoft executables in protected
+    // Windows or Program Files locations. Reuse the existing signature check.
+    internal static bool IsTrustedMicrosoftExecutable(string path) => IsMicrosoftSigned(path);
+
     // Hash matching is mandatory, including for self-signed CloClo builds.
     // A signed installation additionally requires each Whisper DLL to carry
     // the exact signer certificate of the executable. The hash was compiled

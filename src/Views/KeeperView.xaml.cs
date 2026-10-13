@@ -85,6 +85,9 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     private DispatcherTimer? _fidgetTimer;
     private DispatcherTimer? _notificationCueTimer;
     private DispatcherTimer? _startupSaluteTimer;
+    private DispatcherTimer? _voiceResultTimer;
+    private string _voiceCaptureState = "off";
+    private string? _voiceResultState;
     private string? _activeNotificationCue;
     private int _contrastTicks;
     private readonly Dictionary<TextBlock, TextContrastState> _textContrast = new();
@@ -113,7 +116,11 @@ public partial class KeeperView : System.Windows.Controls.UserControl
             _contrastTicks = 0;
             UpdateTextContrast();
         };
-        Unloaded += (_, _) => ClearStartupSalute();
+        Unloaded += (_, _) =>
+        {
+            ClearStartupSalute();
+            SetVoiceStatus("off");
+        };
         _clockTimer.Tick += (_, _) =>
         {
             UpdateClock();
@@ -136,12 +143,92 @@ public partial class KeeperView : System.Windows.Controls.UserControl
 
     public void SetPlace(string city) => Place.Text = city;
 
+    // Persistent local capture state with a two-second result overlay. The
+    // overlay returns to the actual capture state, so a slow model restart
+    // cannot make the pin claim it is listening before the microphone starts.
+    public void SetVoiceStatus(string state)
+    {
+        if (state is "complete" or "failed")
+        {
+            _voiceResultState = state;
+            StopVoiceResultTimer();
+            _voiceResultTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+            _voiceResultTimer.Tick += VoiceResultTimer_Tick;
+            _voiceResultTimer.Start();
+        }
+        else
+        {
+            _voiceCaptureState = state is "wake" or "armed" or "processing" ? state : "off";
+            if (_voiceCaptureState == "off")
+            {
+                StopVoiceResultTimer();
+                _voiceResultState = null;
+            }
+        }
+        RenderVoiceStatus();
+    }
+
+    private void VoiceResultTimer_Tick(object? sender, EventArgs e)
+    {
+        StopVoiceResultTimer();
+        _voiceResultState = null;
+        RenderVoiceStatus();
+    }
+
+    private void StopVoiceResultTimer()
+    {
+        if (_voiceResultTimer == null) return;
+        _voiceResultTimer.Stop();
+        _voiceResultTimer.Tick -= VoiceResultTimer_Tick;
+        _voiceResultTimer = null;
+    }
+
+    private void RenderVoiceStatus()
+    {
+        var state = _voiceResultState ?? _voiceCaptureState;
+        VoiceStatusPin.Visibility = Show(state != "off");
+        VoiceMicGlyph.Visibility = Show(state is "wake" or "armed");
+        VoiceWorkingGlyph.Visibility = Show(state == "processing");
+        VoiceDoneGlyph.Visibility = Show(state == "complete");
+        VoiceFailedGlyph.Visibility = Show(state == "failed");
+        VoicePinBody.Fill = state switch
+        {
+            "processing" or "failed" => Brushes.DarkOrange,
+            "complete" => Brushes.ForestGreen,
+            _ => Brushes.DodgerBlue,
+        };
+
+        VoicePinBody.BeginAnimation(UIElement.OpacityProperty, null);
+        VoicePinBody.Opacity = 1;
+        VoiceHeadRotate.BeginAnimation(RotateTransform.AngleProperty, null);
+        VoiceHeadRotate.Angle = 0;
+        if (_motionMode == "still") return;
+        if (state == "armed")
+        {
+            VoicePinBody.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(1,
+                _motionMode == "gentle" ? 0.8 : 0.55,
+                TimeSpan.FromMilliseconds(_motionMode == "gentle" ? 1100 : 700))
+            {
+                AutoReverse = true,
+                RepeatBehavior = RepeatBehavior.Forever,
+            });
+            VoiceHeadRotate.BeginAnimation(RotateTransform.AngleProperty,
+                new DoubleAnimation(0, _motionMode == "gentle" ? 2 : 4, TimeSpan.FromMilliseconds(220)));
+        }
+        else if (state == "complete")
+        {
+            VoiceHeadRotate.BeginAnimation(RotateTransform.AngleProperty,
+                OneShot(Keys(0.8, EaseInOut, (0, 0), (0.3, 5), (0.65, -2), (1, 0))));
+        }
+    }
+
     public void SetMotionMode(string mode)
     {
         var normalized = mode is "full" or "gentle" or "still" ? mode : "full";
         if (_motionMode == normalized) return;
         _motionMode = normalized;
         ClearStartupSalute();
+        RenderVoiceStatus();
         if (_motionMode == "still") ClearNotificationCue();
         StopIdleMotionTimers();
         _wrapBusy = false;

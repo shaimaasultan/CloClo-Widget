@@ -65,6 +65,9 @@ public class WidgetSettings
     // Speaks a short welcome using the local account name when it is a
     // simple, safe-to-say name. The user can disable it in Privacy.
     public bool SpeakGreeting { get; set; } = true;
+    // Explicit opt-in. When enabled, local microphone transcription listens
+    // for "CloClo" while the speech editor is closed. Audio is never saved.
+    public bool VoiceActivationEnabled { get; set; } = false;
     // Which figure the widget shows: "keeper" or "lady" - picked from the
     // right-click menu's "Avatar" submenu.
     public string Avatar { get; set; } = "keeper";

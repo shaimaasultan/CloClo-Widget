@@ -31,6 +31,7 @@ public partial class DictationCaptureWindow : Window
     // The parent retains the existing restricted append-to-dictation-folder flow.
     public event Func<string, string?>? SaveRequested;
     public event Action? OpenFolderRequested;
+    public event Action? CaptureStopped;
 
     public DictationCaptureWindow()
     {
@@ -44,6 +45,7 @@ public partial class DictationCaptureWindow : Window
             await StopMicrophoneAsync();
             await StopPlaybackAsync();
             StopReading();
+            CaptureStopped?.Invoke();
         };
     }
 
@@ -105,7 +107,7 @@ public partial class DictationCaptureWindow : Window
 
     private void ReadToggle_Click(object sender, RoutedEventArgs e)
     {
-        if (ReadToggle.IsChecked == true) StartReading();
+        if (ReadToggle.IsChecked == true && IsLoaded) StartReading();
         else StopReading();
     }
 
@@ -151,7 +153,7 @@ public partial class DictationCaptureWindow : Window
 
     private async void PlaybackToggle_Click(object sender, RoutedEventArgs e)
     {
-        if (PlaybackToggle.IsChecked == true) await StartPlaybackAsync();
+        if (PlaybackToggle.IsChecked == true && IsLoaded) await StartPlaybackAsync();
         else await StopPlaybackAsync();
     }
 

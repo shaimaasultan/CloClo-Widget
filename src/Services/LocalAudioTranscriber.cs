@@ -18,11 +18,13 @@ internal enum AudioCaptureSource { Microphone, Playback }
 // for a session and disposed when its toggle is turned off or the window closes.
 // Recognition text is emitted as data; this service cannot execute actions.
 internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool reduceMicrophoneNoise = false,
-    bool useHighResolutionMicrophone = false) : IAsyncDisposable
+    bool useHighResolutionMicrophone = false, string? recognitionPrompt = null) : IAsyncDisposable
 {
     private const int SampleRate = 16000;
     private const int HighResolutionSampleRate = 48000;
     private const int ChunkSeconds = 10;
+    private const int VoiceCommandChunkSeconds = 5;
+    private const int VoiceCommandMaximumSeconds = 8;
     private const int MaxQueuedPackets = 512;
     private static readonly object RuntimeLock = new();
     // Whisper.net's manual-load mode binds native imports for the life of the
@@ -74,9 +76,10 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
             var modelBytes = await PlaybackModelStore.ReadVerifiedBytesAsync(_stop.Token);
             EnsureNativeRuntimeLoaded();
             using var factory = WhisperFactory.FromBuffer(modelBytes);
-            using var processor = factory.CreateBuilder()
-                .WithLanguage(languageTag.StartsWith("ar", StringComparison.OrdinalIgnoreCase) ? "ar" : "en")
-                .Build();
+            var builder = factory.CreateBuilder()
+                .WithLanguage(languageTag.StartsWith("ar", StringComparison.OrdinalIgnoreCase) ? "ar" : "en");
+            if (recognitionPrompt != null) builder.WithPrompt(recognitionPrompt);
+            using var processor = builder.Build();
 
             _stop.Token.ThrowIfCancellationRequested();
             void AttachRecorderEvents(WasapiRecorder capture)
@@ -162,7 +165,10 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                 : null;
             started.TrySetResult();
 
-            var pcm = new byte[SampleRate * 2 * ChunkSeconds];
+            // Wake phrases and short commands should reach the matcher promptly.
+            // Dictation and playback keep the longer context that helps accuracy.
+            var chunkSeconds = recognitionPrompt == null ? ChunkSeconds : VoiceCommandChunkSeconds;
+            var pcm = new byte[SampleRate * 2 * chunkSeconds];
             // Only microphone audio can use this optional in-memory filter.
             // Keep its state across Whisper chunks to avoid clicks at boundaries.
             MicrophoneNoiseFilter? noiseFilter = null;
@@ -170,9 +176,16 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
             {
                 float[] samples;
                 int sampleCount;
-                if (resampler != null)
+                var voiceCommandEndOfStream = false;
+                if (recognitionPrompt != null && resampler == null)
                 {
-                    samples = new float[SampleRate * ChunkSeconds];
+                    (samples, voiceCommandEndOfStream) = ReadVoiceCommandPhrase(input);
+                    sampleCount = samples.Length;
+                    if (sampleCount == 0) break;
+                }
+                else if (resampler != null)
+                {
+                    samples = new float[SampleRate * chunkSeconds];
                     sampleCount = 0;
                     while (sampleCount < samples.Length)
                     {
@@ -192,13 +205,15 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                     for (var i = 0; i < sampleCount; i++)
                         samples[i] = BinaryPrimitives.ReadInt16LittleEndian(pcm.AsSpan(i * 2, 2)) / 32768f;
                 }
-                if (sampleCount < SampleRate * ChunkSeconds)
+                if (recognitionPrompt == null && sampleCount < SampleRate * chunkSeconds)
                 {
                     // A stopped microphone still has the last spoken phrase.
                     // Send only the captured samples; padding the rest of our
-                    // 10-second window adds silence, not speech context.
+                    // audio window adds silence, not speech context.
                     // Very short fragments are skipped to avoid hallucinations.
-                    if (source != AudioCaptureSource.Microphone || sampleCount < SampleRate) break;
+                    // A confirmed voice command may be shorter than a second.
+                    var minimumSamples = recognitionPrompt == null ? SampleRate : SampleRate / 2;
+                    if (source != AudioCaptureSource.Microphone || sampleCount < minimumSamples) break;
                 }
                 if (source == AudioCaptureSource.Microphone && _reduceMicrophoneNoise)
                     noiseFilter ??= new MicrophoneNoiseFilter(SampleRate);
@@ -218,7 +233,8 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                     TextRecognized?.Invoke(text);
                     ReportProgress();
                 }
-                if (sampleCount < SampleRate * ChunkSeconds) break;
+                if (voiceCommandEndOfStream ||
+                    (recognitionPrompt == null && sampleCount < SampleRate * chunkSeconds)) break;
             }
         }
         catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
@@ -305,6 +321,77 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
 
     private void ReportProgress() => ProgressChanged?.Invoke(
         Volatile.Read(ref _recognizedPhrases), 0, Interlocked.Read(ref _capturedBytes));
+
+    private static (float[] Samples, bool EndOfStream) ReadVoiceCommandPhrase(PcmQueueStream input)
+    {
+        // Read microphone PCM in 20 ms frames. A short pause ends the current
+        // phrase so Whisper can recognize "now" without waiting for a fixed
+        // five-second window. The bounded maximum handles continuous noise.
+        const int frameSamples = SampleRate / 50;
+        const int trailingSilenceSamples = SampleRate * 3 / 4;
+        var frame = new byte[frameSamples * sizeof(short)];
+        var leadIn = new float[SampleRate / 5];
+        var leadInCount = 0;
+        var captured = new float[SampleRate * VoiceCommandMaximumSeconds];
+        var count = 0;
+        var quietSamples = 0;
+        var noiseFloor = 0.0015f;
+        var started = false;
+        var endOfStream = false;
+
+        while (count < captured.Length)
+        {
+            var bytes = input.Read(frame, 0, frame.Length);
+            if (bytes == 0) { endOfStream = true; break; }
+            var available = bytes / sizeof(short);
+            var energy = 0f;
+            for (var i = 0; i < available; i++)
+            {
+                var value = BinaryPrimitives.ReadInt16LittleEndian(frame.AsSpan(i * 2, 2)) / 32768f;
+                energy += value * value;
+            }
+            var rms = MathF.Sqrt(energy / available);
+            if (!started)
+            {
+                if (rms < MathF.Max(0.004f, noiseFloor * 3))
+                {
+                    noiseFloor = Math.Clamp(noiseFloor * 0.98f + rms * 0.02f, 0.0005f, 0.02f);
+                    if (leadInCount + available > leadIn.Length)
+                    {
+                        var shift = leadInCount + available - leadIn.Length;
+                        Array.Copy(leadIn, shift, leadIn, 0, leadInCount - shift);
+                        leadInCount -= shift;
+                    }
+                    for (var i = 0; i < available; i++)
+                        leadIn[leadInCount++] = BinaryPrimitives.ReadInt16LittleEndian(frame.AsSpan(i * 2, 2)) / 32768f;
+                    continue;
+                }
+                Array.Copy(leadIn, captured, leadInCount);
+                count = leadInCount;
+                started = true;
+            }
+
+            var toCopy = Math.Min(available, captured.Length - count);
+            for (var i = 0; i < toCopy; i++)
+                captured[count++] = BinaryPrimitives.ReadInt16LittleEndian(frame.AsSpan(i * 2, 2)) / 32768f;
+            quietSamples = rms < MathF.Max(0.003f, noiseFloor * 2)
+                ? quietSamples + toCopy : 0;
+            if (quietSamples >= trailingSilenceSamples) break;
+            if (bytes < frame.Length) { endOfStream = true; break; }
+        }
+
+        if (!started) return ([], endOfStream);
+        Array.Resize(ref captured, count);
+        return (captured, endOfStream);
+    }
+
+    public ValueTask AbortAsync()
+    {
+        // A completed command does not need buffered microphone audio. Native
+        // Whisper processing still finishes before the model is disposed.
+        _stop.Cancel();
+        return DisposeAsync();
+    }
 
     private sealed class PcmQueueStream(int capacity, CancellationToken cancellationToken, int maxQueuedBytes) : Stream
     {
