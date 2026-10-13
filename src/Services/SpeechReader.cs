@@ -198,6 +198,9 @@ public static class SpeechReader
                    v.DisplayName.StartsWith(name + " ", StringComparison.OrdinalIgnoreCase));
     }
 
+    private static bool IsArabicVoice(VoiceInformation voice) =>
+        voice.Language.StartsWith("ar", StringComparison.OrdinalIgnoreCase);
+
     // Splits into runs of consecutive words sharing a script, each to be
     // synthesized (and queued for playback, via MediaPlaybackList's own
     // auto-advance) with the matching voice — so e.g. "مرحبا Ahmad, كيف
@@ -206,9 +209,20 @@ public static class SpeechReader
     // the first Arabic character found anywhere in it.
     private static List<(string Text, VoiceInformation Voice)> SplitByScript(string text)
     {
-        var arabicVoice = SpeechSynthesizer.AllVoices.FirstOrDefault(
-            v => v.Language.StartsWith("ar", StringComparison.OrdinalIgnoreCase));
-        var defaultVoice = SpeechSynthesizer.DefaultVoice;
+        // Arabic voices skip Latin-script words entirely, so when Windows'
+        // default voice is Arabic (as on a PC set up for Arabic), "Hi, Ahmad."
+        // would come out as just "Hi". Latin words use the default voice only
+        // when it isn't Arabic, otherwise David or another English voice.
+        var windowsDefault = SpeechSynthesizer.DefaultVoice;
+        var defaultIsArabic = IsArabicVoice(windowsDefault);
+        var arabicVoice = (defaultIsArabic ? windowsDefault : null)
+            ?? FindVoice(ReadAloudVoice.ArabicHoda)
+            ?? SpeechSynthesizer.AllVoices.FirstOrDefault(IsArabicVoice);
+        var defaultVoice = (defaultIsArabic ? null : windowsDefault)
+            ?? FindVoice(ReadAloudVoice.EnglishDavid)
+            ?? SpeechSynthesizer.AllVoices.FirstOrDefault(
+                v => v.Language.StartsWith("en", StringComparison.OrdinalIgnoreCase))
+            ?? windowsDefault;
 
         var runs = new List<(string Text, VoiceInformation Voice)>();
         var currentWords = new List<string>();
