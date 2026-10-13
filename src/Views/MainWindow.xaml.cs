@@ -527,6 +527,7 @@ public partial class MainWindow : Window
             new("Privacy: Show notification text", "notifications privacy toggle", WidgetSearchActionKind.Toggle, ToggleNotificationText, () => _settings.ShowNotificationText),
             new("Privacy: Speak greeting", "account name startup voice toggle", WidgetSearchActionKind.Toggle, ToggleSpeakGreeting, () => _settings.SpeakGreeting),
             new("Privacy: Voice activation", "cloclo wake word microphone voice command toggle", WidgetSearchActionKind.Toggle, ToggleVoiceActivation, () => _settings.VoiceActivationEnabled),
+            new("Privacy: Voice commands in Arabic", "cloclo arabic عربي voice command language toggle", WidgetSearchActionKind.Toggle, ToggleVoiceCommandsInArabic, () => _settings.VoiceCommandsInArabic),
         };
 
         // All icon actions remain available here even when their icon is hidden.
@@ -1860,6 +1861,7 @@ public partial class MainWindow : Window
             Item("Show notification text", ToggleNotificationText, isChecked: _settings.ShowNotificationText),
             Item("Speak greeting and account name on startup", ToggleSpeakGreeting, isChecked: _settings.SpeakGreeting),
             Item("Allow local CloClo voice activation", ToggleVoiceActivation, isChecked: _settings.VoiceActivationEnabled),
+            Item("Voice commands in Arabic", ToggleVoiceCommandsInArabic, isChecked: _settings.VoiceCommandsInArabic),
         });
 
     private void ToggleHideFromScreenCapture()
@@ -1913,6 +1915,29 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ToggleVoiceCommandsInArabic()
+    {
+        _settings.VoiceCommandsInArabic = !_settings.VoiceCommandsInArabic;
+        _settings.Save();
+        ShowOneShotLabel(_settings.VoiceCommandsInArabic ? "Voice commands: Arabic" : "Voice commands: English",
+            VoiceCommandHint);
+        // A running session keeps its recognition language; restart it so the
+        // change applies now. Pending confirmations restart capture themselves.
+        if (_voiceActivation == null || _voiceActionPending) return;
+        _ = RestartVoiceActivationAsync();
+    }
+
+    private async Task RestartVoiceActivationAsync()
+    {
+        await StopVoiceActivationAsync(abortPendingAudio: true);
+        if (_settings.VoiceActivationEnabled && !_voicePausedForEditor && !_voiceActivationClosing)
+            await StartVoiceActivationAsync();
+    }
+
+    private string VoiceCommandHint => _settings.VoiceCommandsInArabic
+        ? "قول: كلوكلو افتح المفكرة دلوقتي، أو كلوكلو وقف الصوت دلوقتي."
+        : "Say CloClo open an approved app now, or CloClo stop voice now.";
+
     private void ResumeVoiceActivationAfterEditor()
     {
         _voicePausedForEditor = false;
@@ -1937,8 +1962,11 @@ public partial class MainWindow : Window
 
             await _voiceActivationStop;
             if (!_settings.VoiceActivationEnabled || _voicePausedForEditor || _voiceActivationClosing) return;
+            var arabicCommands = _settings.VoiceCommandsInArabic;
             var session = new LocalAudioTranscriber(AudioCaptureSource.Microphone,
-                recognitionPrompt: ApprovedVoiceAppLauncher.RecognitionPrompt);
+                recognitionPrompt: arabicCommands
+                    ? ApprovedVoiceAppLauncher.ArabicRecognitionPrompt
+                    : ApprovedVoiceAppLauncher.RecognitionPrompt);
             _voiceActivation = session;
             session.TextRecognized += text =>
             {
@@ -1954,7 +1982,7 @@ public partial class MainWindow : Window
                     if (_voiceActivation == session) _ = RecoverVoiceActivationAsync(message);
                 }));
             };
-            await session.StartAsync("en-US");
+            await session.StartAsync(arabicCommands ? "ar-EG" : "en-US");
             if (_voiceActivation == session)
             {
                 _voiceListeningSinceUtc = DateTime.UtcNow;
@@ -1982,7 +2010,7 @@ public partial class MainWindow : Window
         if (ApprovedVoiceAppLauncher.IsWakePhrase(text))
         {
             ArmVoiceCommand("CloClo");
-            ShowOneShotLabel("CloClo is listening", "Say CloClo open an approved app now, or CloClo stop voice now.");
+            ShowOneShotLabel("CloClo is listening", VoiceCommandHint);
             return;
         }
 
@@ -2028,7 +2056,7 @@ public partial class MainWindow : Window
             DisarmVoiceCommand();
             Keeper.SetVoiceStatus("wake");
             Keeper.SetVoiceStatus("failed");
-            ShowOneShotLabel("Voice command not recognized", "Say CloClo open an approved app now, or CloClo stop voice now.");
+            ShowOneShotLabel("Voice command not recognized", VoiceCommandHint);
         }
     }
 

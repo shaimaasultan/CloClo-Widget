@@ -189,7 +189,7 @@ public partial class DictationCaptureWindow : Window
             await session.StartAsync(_currentLanguageTag);
             if (_playback != session) return;
             PlaybackToggle.Content = "Transcribe playing audio: On";
-            Instructions.Text = "Transcribing locally in 10-second chunks from the default output device. Turn this off to stop; only Save writes text to a file.";
+            Instructions.Text = "Transcribing locally phrase by phrase from the default output device. Turn this off to stop; only Save writes text to a file.";
         }
         catch (Exception ex)
         {
@@ -277,7 +277,7 @@ public partial class DictationCaptureWindow : Window
             await session.StartAsync(_currentLanguageTag);
             if (_microphone != session) return;
             MicToggle.Content = "Dictate: On";
-            Instructions.Text = $"Transcribing locally from {MicrophoneLabel(session)} in 10-second chunks. Turn this off to stop; only Save writes text to a file.";
+            Instructions.Text = $"Transcribing locally from {MicrophoneLabel(session)} phrase by phrase. Turn this off to stop; only Save writes text to a file.";
         }
         catch (Exception ex)
         {
@@ -358,6 +358,10 @@ public partial class DictationCaptureWindow : Window
     {
         EnglishButton.Background = _currentLanguageTag == EnglishLanguageTag ? ActiveLangBrush : InactiveLangBrush;
         ArabicButton.Background = _currentLanguageTag == ArabicLanguageTag ? ActiveLangBrush : InactiveLangBrush;
+        // Lay Arabic out right to left without adding direction marks to the
+        // text itself, so saved dictation files contain only what was said.
+        CaptureBox.FlowDirection = _currentLanguageTag == ArabicLanguageTag
+            ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
     }
 
     private async void Load_Click(object sender, RoutedEventArgs e)

@@ -6,15 +6,23 @@ using System.Runtime.InteropServices;
 
 namespace CloCloWidget;
 
-internal enum ApprovedVoiceApp { Notepad, Paint, OneDrive, SnippingTool, Settings }
+internal enum ApprovedVoiceApp { Notepad, Paint, OneDrive, SnippingTool, Settings, YouTube, Spotify, Word }
 
 // Speech is never interpreted as a path, argument, URI, or shell command.
 // Only these fixed phrases can select a fixed app, and the widget asks the
 // user for confirmation before any activation.
 internal static class ApprovedVoiceAppLauncher
 {
-    internal const string RecognitionPrompt = "CloClo. CloClo open Notepad now. CloClo open Paint now. CloClo open OneDrive now. CloClo open Snipping Tool now. CloClo open Settings now. CloClo stop voice now.";
-    private static readonly string[] WakeNames = ["cloclo", "clo clo", "clock low", "clock lo", "clo low"];
+    internal const string RecognitionPrompt = "CloClo. CloClo open Notepad now. CloClo open Paint now. CloClo open OneDrive now. CloClo open Snipping Tool now. CloClo open Settings now. CloClo open YouTube now. CloClo open Spotify now. CloClo open Word now. CloClo stop voice now.";
+    // Used when Arabic voice commands are chosen. The English phrases above
+    // still match; Whisper is only steered toward Arabic script.
+    internal const string ArabicRecognitionPrompt = "كلوكلو. كلوكلو افتح المفكرة دلوقتي. كلوكلو افتح الرسام دلوقتي. كلوكلو افتح ون درايف دلوقتي. كلوكلو افتح أداة القص دلوقتي. كلوكلو افتح الإعدادات دلوقتي. كلوكلو افتح يوتيوب دلوقتي. كلوكلو افتح سبوتيفاي دلوقتي. كلوكلو افتح وورد دلوقتي. كلوكلو وقف الصوت دلوقتي.";
+    // Phrases are compared after TranscriptCleanup.MatchingKey, so Arabic
+    // entries here use its unified spelling (ا for أ/إ/آ, ه for ة, ي for ى).
+    private static readonly string[] WakeNames =
+        ["cloclo", "clo clo", "clock low", "clock lo", "clo low", "كلوكلو", "كلو كلو", "كلوك لو"];
+    private static readonly string[] FinishWords = ["now", "دلوقتي", "دلوقت", "الان"];
+    private static readonly string[] StopPhrases = ["stop voice", "وقف الصوت", "اوقف الصوت", "اقفل الصوت"];
 
     internal static bool IsWakePhrase(string transcript) =>
         TryStripWakeName(Normalize(transcript), out var remainder) && remainder.Length == 0;
@@ -25,20 +33,33 @@ internal static class ApprovedVoiceAppLauncher
     }
 
     internal static bool HasFinishWord(string transcript) =>
-        Normalize(transcript).EndsWith(" now", StringComparison.Ordinal);
+        TryStripFinishWord(Normalize(transcript), out _);
 
     internal static bool IsStopVoiceCommand(string transcript) =>
         TryStripWakeName(Normalize(transcript), out var remainder) &&
-        remainder == "stop voice now";
+        TryStripFinishWord(remainder, out var command) &&
+        Array.IndexOf(StopPhrases, command) >= 0;
 
     internal static bool TryMatchFinishedCommand(string transcript, out ApprovedVoiceApp app)
     {
         app = default;
         var phrase = Normalize(transcript);
-        if (phrase.Length > 160 || !phrase.EndsWith(" now", StringComparison.Ordinal)) return false;
+        if (phrase.Length > 160) return false;
         if (!TryStripWakeName(phrase, out var remainder) ||
-            remainder.Length <= 4 || !remainder.EndsWith(" now", StringComparison.Ordinal)) return false;
-        return TryMatch(remainder[..^4], out app);
+            !TryStripFinishWord(remainder, out var command)) return false;
+        return TryMatch(command, out app);
+    }
+
+    private static bool TryStripFinishWord(string phrase, out string command)
+    {
+        foreach (var word in FinishWords)
+        {
+            if (phrase.Length <= word.Length + 1 || !phrase.EndsWith(" " + word, StringComparison.Ordinal)) continue;
+            command = phrase[..^(word.Length + 1)];
+            return true;
+        }
+        command = "";
+        return false;
     }
 
     private static bool TryStripWakeName(string phrase, out string remainder)
@@ -67,6 +88,9 @@ internal static class ApprovedVoiceAppLauncher
         ApprovedVoiceApp.OneDrive => "OneDrive",
         ApprovedVoiceApp.SnippingTool => "Snipping Tool",
         ApprovedVoiceApp.Settings => "Settings",
+        ApprovedVoiceApp.YouTube => "YouTube",
+        ApprovedVoiceApp.Spotify => "Spotify",
+        ApprovedVoiceApp.Word => "Word",
         _ => throw new ArgumentOutOfRangeException(nameof(app))
     };
 
@@ -75,7 +99,7 @@ internal static class ApprovedVoiceAppLauncher
         app = default;
         if (transcript.Length > 160) return false;
         var phrase = Normalize(transcript);
-        foreach (var verb in new[] { "open ", "launch ", "start " })
+        foreach (var verb in new[] { "open ", "launch ", "start ", "افتح لي ", "افتحلي ", "افتح ", "شغل " })
         {
             if (!phrase.StartsWith(verb, StringComparison.Ordinal)) continue;
             phrase = phrase[verb.Length..];
@@ -87,33 +111,38 @@ internal static class ApprovedVoiceAppLauncher
             phrase = phrase[..^suffix.Length];
             break;
         }
+        foreach (var prefix in new[] { "برنامج ", "تطبيق " })
+        {
+            if (!phrase.StartsWith(prefix, StringComparison.Ordinal)) continue;
+            phrase = phrase[prefix.Length..];
+            break;
+        }
         switch (phrase)
         {
-            case "notepad" or "note pad" or "not bad" or "note bad":
+            case "notepad" or "note pad" or "not bad" or "note bad" or
+                 "المفكره" or "مفكره" or "نوت باد" or "نوتباد":
                 app = ApprovedVoiceApp.Notepad; return true;
-            case "paint" or "paintbrush" or "paint brush" or "bent brush":
+            case "paint" or "paintbrush" or "paint brush" or "bent brush" or
+                 "الرسام" or "رسام" or "بينت" or "باينت":
                 app = ApprovedVoiceApp.Paint; return true;
-            case "onedrive" or "one drive":
+            case "onedrive" or "one drive" or "ون درايف" or "وان درايف" or "ون دريف":
                 app = ApprovedVoiceApp.OneDrive; return true;
-            case "snipping tool" or "sniping tool":
+            case "snipping tool" or "sniping tool" or "اداه القص" or "اداه قص" or "سنيبنج تول":
                 app = ApprovedVoiceApp.SnippingTool; return true;
-            case "settings" or "windows settings":
+            case "settings" or "windows settings" or "الاعدادات" or "اعدادات":
                 app = ApprovedVoiceApp.Settings; return true;
+            case "youtube" or "you tube" or "يوتيوب" or "اليوتيوب" or "يو تيوب":
+                app = ApprovedVoiceApp.YouTube; return true;
+            case "spotify" or "سبوتيفاي" or "سبوتيفي" or "سبوتفاي":
+                app = ApprovedVoiceApp.Spotify; return true;
+            case "word" or "microsoft word" or "وورد" or "الوورد" or "مايكروسوفت وورد":
+                app = ApprovedVoiceApp.Word; return true;
             default: return false;
         }
     }
 
-    private static string Normalize(string transcript)
-    {
-        if (transcript.Length > 160) return "";
-        var words = new char[transcript.Length];
-        for (var i = 0; i < transcript.Length; i++)
-        {
-            var c = char.ToLowerInvariant(transcript[i]);
-            words[i] = c is >= 'a' and <= 'z' or >= '0' and <= '9' ? c : ' ';
-        }
-        return string.Join(' ', new string(words).Split(' ', StringSplitOptions.RemoveEmptyEntries));
-    }
+    private static string Normalize(string transcript) =>
+        transcript.Length > 160 ? "" : TranscriptCleanup.MatchingKey(transcript);
 
     internal static string? Launch(ApprovedVoiceApp app)
     {
@@ -129,6 +158,26 @@ internal static class ApprovedVoiceAppLauncher
                     return ActivatePackagedApp("Microsoft.ScreenSketch_8wekyb3d8bbwe!App");
                 case ApprovedVoiceApp.Settings:
                     return ActivatePackagedApp("windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel");
+                case ApprovedVoiceApp.Spotify:
+                    return ActivatePackagedApp("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify");
+                case ApprovedVoiceApp.YouTube:
+                    foreach (var folder in new[] {
+                        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) })
+                    {
+                        var path = Path.Combine(folder, "Microsoft", "Edge", "Application", "msedge.exe");
+                        if (File.Exists(path)) return StartTrustedExecutable(path, "https://www.youtube.com/");
+                    }
+                    return "Microsoft Edge was not found in Program Files.";
+                case ApprovedVoiceApp.Word:
+                    foreach (var folder in new[] {
+                        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86) })
+                    {
+                        var path = Path.Combine(folder, "Microsoft Office", "root", "Office16", "WINWORD.EXE");
+                        if (File.Exists(path)) return StartTrustedExecutable(path);
+                    }
+                    return "Microsoft Word was not found in Program Files.";
                 case ApprovedVoiceApp.OneDrive:
                     foreach (var folder in new[] {
                         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
@@ -149,11 +198,13 @@ internal static class ApprovedVoiceAppLauncher
         }
     }
 
-    private static string? StartTrustedExecutable(string path)
+    private static string? StartTrustedExecutable(string path, string? fixedArgument = null)
     {
         if (!File.Exists(path) || !NativeLibraryCheck.IsTrustedMicrosoftExecutable(path))
             return "The Microsoft app is missing or its signature could not be verified.";
-        using var process = Process.Start(new ProcessStartInfo(path) { UseShellExecute = false });
+        var start = new ProcessStartInfo(path) { UseShellExecute = false };
+        if (fixedArgument != null) start.ArgumentList.Add(fixedArgument);
+        using var process = Process.Start(start);
         return process == null ? "Windows did not start the app." : null;
     }
 

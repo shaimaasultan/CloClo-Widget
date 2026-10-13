@@ -68,6 +68,9 @@ public class WidgetSettings
     // Explicit opt-in. When enabled, local microphone transcription listens
     // for "CloClo" while the speech editor is closed. Audio is never saved.
     public bool VoiceActivationEnabled { get; set; } = false;
+    // Steers voice-command recognition toward Arabic speech. English command
+    // phrases are still accepted; the approved app list does not change.
+    public bool VoiceCommandsInArabic { get; set; } = false;
     // Which figure the widget shows: "keeper" or "lady" - picked from the
     // right-click menu's "Avatar" submenu.
     public string Avatar { get; set; } = "keeper";

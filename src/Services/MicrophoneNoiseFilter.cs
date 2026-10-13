@@ -5,9 +5,15 @@ namespace CloCloWidget;
 // A conservative, managed microphone-only filter. The high-pass stage removes
 // low rumble, while the soft gate attenuates quiet gaps between utterances.
 // Neither stage can separate overlapping voices from the speaker's voice.
-internal sealed class MicrophoneNoiseFilter(int sampleRate)
+// quietGain is the level quiet gaps are reduced to; Arabic dictation uses a
+// gentler value because breathy sounds such as ح, ه, ف, and ث are quiet.
+internal sealed class MicrophoneNoiseFilter(int sampleRate, float quietGain = 0.35f)
 {
     private const int FrameSamples = 160; // 10 ms at 16 kHz
+    // Keep the gate open briefly after speech so soft word endings (a final
+    // ه or ح, an English "th" or "f") are not attenuated with the gap.
+    private const int HoldFrames = 15;
+    private int _holdFrames;
     private readonly float _highPassPole = MathF.Exp(-2f * MathF.PI * 90f / sampleRate);
     private float _previousInput;
     private float _previousOutput;
@@ -41,7 +47,9 @@ internal sealed class MicrophoneNoiseFilter(int sampleRate)
                 _noiseFloor = 0.999f * _noiseFloor + 0.001f * rms;
             _noiseFloor = Math.Clamp(_noiseFloor, 0.001f, 0.03f);
 
-            var target = rms < _noiseFloor * 1.7f ? 0.35f : 1f;
+            if (rms >= _noiseFloor * 1.7f) _holdFrames = HoldFrames;
+            else if (_holdFrames > 0) _holdFrames--;
+            var target = _holdFrames > 0 ? 1f : quietGain;
             // Smooth both transitions to preserve consonant onsets and avoid
             // the hard cuts of a traditional noise gate.
             var step = (target - _gain) / count;

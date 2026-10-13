@@ -537,12 +537,21 @@ records the SHA-256 of every native runtime DLL it ships
   output device, including other apps and system sounds. Only one capture
   toggle can run at a time. Audio stays in a bounded memory queue for local
   recognition and is discarded when capture stops. Both use Whisper's CPU
-  runtime in ten-second chunks and keep capturing until turned off or the
-  editor closes. The mic mode shows the selected input device and requests
+  runtime phrase by phrase: audio is split at natural pauses (at most 15
+  seconds, cut at the quietest moment so words stay whole), silence before
+  speech is skipped, and capture continues until turned off or the editor
+  closes. Dictation uses beam search, and Arabic dictation gives Whisper a
+  short Arabic (Egyptian for ar-EG) example sentence to steer script and
+  spelling. Recognized text is tidied locally: Arabic punctuation after Arabic
+  words, no tatweel or doubled diacritics, and segments Whisper commonly
+  invents from silence or music (subtitle credits such as "ترجمة نانسي قنقر",
+  "Thanks for watching", or "[Music]") are dropped. With Arabic selected the
+  editor lays text out right to left; no direction marks are added to it. The mic mode shows the selected input device and requests
   Windows' local communications processing where that device supports it;
   otherwise it uses ordinary mic capture. An optional microphone noise toggle
   applies a local high-pass filter and soft gate to reduce rumble and noise
-  between phrases; it is off by default and cannot separate overlapping voices
+  between phrases (gentler for Arabic, and held open briefly after speech so
+  quiet word endings are kept); it is off by default and cannot separate overlapping voices
   or TV audio. A separate comparison toggle requests 24-bit, 48 kHz mono
   microphone capture and resamples it locally to Whisper's 16 kHz input; the
   default microphone mode remains 16-bit, 16 kHz. The editor displays the
@@ -566,8 +575,14 @@ records the SHA-256 of every native runtime DLL it ships
   click menu or the search action. While enabled, CloClo keeps the microphone
   and its bundled local Whisper model active to listen for "CloClo". Say
   "CloClo", then "CloClo open Notepad now", "CloClo open Paint now",
-  "CloClo open OneDrive now", "CloClo open Snipping Tool now", or
-  "CloClo open Settings now". Say "CloClo stop voice now" to turn voice
+  "CloClo open OneDrive now", "CloClo open Snipping Tool now",
+  "CloClo open Settings now", "CloClo open YouTube now",
+  "CloClo open Spotify now", or "CloClo open Word now".
+  With **Voice commands in Arabic** turned on in Privacy, recognition is
+  steered toward Arabic and the same fixed commands can be said in Arabic,
+  for example "كلوكلو افتح المفكرة دلوقتي" or "كلوكلو وقف الصوت دلوقتي"
+  ("دلوقتي" or "الآن" ends a command). English phrases still match.
+  Say "CloClo stop voice now" to turn voice
   activation off and release the microphone; CloClo then says "Okay, stopping
   voice now" with its local Windows voice. A complete phrase also works
   without a separate wake phrase. For app commands, "now" ends the command
@@ -586,9 +601,10 @@ records the SHA-256 of every native runtime DLL it ships
   Only fixed app-name phrases are accepted. CloClo says "Okay, opening [app]
   now" with the local English Windows voice after recognizing the phrase,
   then asks for confirmation before opening the matched app. Notepad, Paint,
-  Snipping Tool and Settings use fixed Microsoft package identities;
-  OneDrive must be a Microsoft-signed executable at its fixed Program Files
-  path. The raw transcript is never a path,
+  Snipping Tool and Settings use fixed Microsoft package identities; Spotify
+  uses its fixed Store package identity. OneDrive and Word must be Microsoft-
+  signed executables at fixed Program Files paths. YouTube opens a fixed HTTPS
+  address in a Microsoft-signed Edge executable from Program Files. The raw transcript is never a path,
   argument, URI, or shell command. Declining the confirmation opens nothing.
   The model is tracked with Git LFS; clone the project with Git LFS enabled
   before building an installer. The installed package is about 142 MiB larger.
@@ -622,7 +638,7 @@ records the SHA-256 of every native runtime DLL it ships
   “Open dictation folder” opens Explorer after an explicit click. The media
   picker and its label do not activate other apps; saved dictation and Sudoku
   data cannot trigger program launches. The opt-in voice activation setting can
-  open one of five fixed apps only after confirmation.
+  open one of eight fixed destinations only after confirmation.
 
 **What CloClo checks before it runs** (in `NativeLibraryCheck`, before WPF
 loads anything)
