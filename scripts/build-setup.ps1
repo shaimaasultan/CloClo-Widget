@@ -41,6 +41,8 @@ $root = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..'))
 # Full paths, never bare names that PATH or App Paths could redirect.
 $dotnetExe = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'dotnet\dotnet.exe'
 $appDir = Join-Path $root 'obj\setup\app'
+$packageIntermediateDir = Join-Path $root 'obj\installer\CloClo.Package'
+$bundleIntermediateDir = Join-Path $root 'obj\installer\CloClo.Bundle'
 $logDir = Join-Path $root 'obj\setup\logs'
 $distDir = Join-Path $root 'dist'
 $script:logWriter = $null
@@ -73,6 +75,20 @@ function Invoke-DotNetLogged([string[]]$arguments) {
         $script:logWriter.Flush()
     }
     return $code
+}
+
+function Get-MsiProductVersion([string]$path) {
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $database = $installer.OpenDatabase($path, 0)
+    $view = $database.OpenView("SELECT ``Value`` FROM ``Property`` WHERE ``Property``='ProductVersion'")
+    try {
+        [void]$view.Execute()
+        $record = $view.Fetch()
+        if (-not $record) { throw "The MSI has no ProductVersion: $path" }
+        return [string]$record.StringData(1)
+    } finally {
+        [void]$view.Close()
+    }
 }
 
 function Reset-SafeBuildDirectory([string]$path, [string]$expectedParent, [string]$projectRoot) {
@@ -190,19 +206,29 @@ try {
 
     # ------------------------------------------------------------ 2. package
     Write-BuildMessage "`n2/3 Building CloClo.msi..." Cyan
-    $packageArgs = @('build', (Join-Path $root 'installer\CloClo.Package.wixproj')) + $common + @("-p:AppDir=$appDir", "-p:SetupVersion=$version", $signArg)
+    # WiX may reuse preprocessed source from an earlier build even when
+    # SetupVersion changes. Clear only this project's validated obj folder.
+    Reset-SafeBuildDirectory $packageIntermediateDir ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($packageIntermediateDir))) $root
+    $packageArgs = @('build', (Join-Path $root 'installer\CloClo.Package.wixproj')) + $common + @("-p:AppDir=$appDir", "-p:SetupVersion=$version", "-p:Version=$version", $signArg)
     $exitCode = Invoke-DotNetLogged $packageArgs
     if ($exitCode -ne 0) { throw "Building the package failed (exit $exitCode)." }
     $msi = Join-Path $root 'bin\installer\CloClo.Package\Release\CloClo.msi'
     if (-not (Test-Path -LiteralPath $msi -PathType Leaf)) { throw "The package build left no CloClo.msi at $msi." }
+    $msiVersion = Get-MsiProductVersion $msi
+    if ($msiVersion -ne $version) { throw "The MSI version is $msiVersion, but this build requested $version." }
+    Write-BuildMessage "MSI ProductVersion: $msiVersion"
 
     # ------------------------------------------------------------ 3. setup
     Write-BuildMessage "`n3/3 Building CloClo-Setup.exe..." Cyan
-    $bundleArgs = @('build', (Join-Path $root 'installer\CloClo.Bundle.wixproj')) + $common + @("-p:MsiPath=$msi", "-p:SetupVersion=$version", $signArg)
+    Reset-SafeBuildDirectory $bundleIntermediateDir ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($bundleIntermediateDir))) $root
+    $bundleArgs = @('build', (Join-Path $root 'installer\CloClo.Bundle.wixproj')) + $common + @("-p:MsiPath=$msi", "-p:SetupVersion=$version", "-p:Version=$version", $signArg)
     $exitCode = Invoke-DotNetLogged $bundleArgs
     if ($exitCode -ne 0) { throw "Building the setup failed (exit $exitCode)." }
     $setup = Join-Path $root 'bin\installer\CloClo.Bundle\Release\CloClo-Setup.exe'
     if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) { throw "The setup build left no CloClo-Setup.exe at $setup." }
+    $setupVersion = (Get-Item -LiteralPath $setup).VersionInfo.ProductVersion
+    if ($setupVersion -ne $version) { throw "The setup version is $setupVersion, but this build requested $version." }
+    Write-BuildMessage "Setup ProductVersion: $setupVersion"
 
     # Verify all three artifacts before publishing anything to dist\.
     Write-BuildMessage ''
