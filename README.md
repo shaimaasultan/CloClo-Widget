@@ -616,7 +616,12 @@ records the SHA-256 of every native runtime DLL it ships
   capture. If capture stops unexpectedly, CloClo keeps the Privacy choice on
   and retries locally with a delay of 2 to 60 seconds. Voice commands are
   recognized after a short pause following speech;
-  continuous sound is bounded by an eight-second audio chunk. Audio and
+  continuous sound is bounded by an eight-second audio chunk. Sound that runs
+  into that limit (TV, music) and phrases left behind while an earlier one was
+  still being recognized are skipped rather than decoded, and if recognition
+  falls behind, the oldest unprocessed audio (beyond 20 seconds) is dropped
+  instead of stopping voice activation. Commands are decoded with a shorter
+  Whisper audio window, about three times faster than a full one. Audio and
   recognized words stay in memory and are not added to the dictation editor.
   Keeper's collar pin is blue while wake listening, pulses after the wake
   phrase, shows amber dots while handling a command, and briefly shows a green

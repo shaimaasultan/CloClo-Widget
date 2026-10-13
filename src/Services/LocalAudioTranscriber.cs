@@ -34,11 +34,12 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
     // spelling, and punctuation; they are never treated as commands.
     private const string EgyptianArabicPrompt = "أهلاً، إزيك؟ النهارده هنتكلم شوية بالعربي.";
     private const string ArabicPrompt = "مرحباً، كيف حالك؟ سنتحدث اليوم باللغة العربية.";
-    private const int MaxQueuedPackets = 512;
-    // Playback is taken as Windows mixes it, 48 kHz float stereo, so its
-    // queue holds more packets and bytes for the same seconds of audio.
+    // Playback is taken as Windows mixes it, 48 kHz float stereo.
     private const int PlaybackSampleRate = 48000;
-    private const int PlaybackMaxQueuedPackets = 4096;
+    // Voice activation keeps at most this much unprocessed audio, dropping
+    // the oldest beyond it, and skips phrases that are this far behind.
+    private const int VoiceCommandQueueSeconds = 20;
+    private const int VoiceCommandStaleSeconds = 2;
     private static readonly object RuntimeLock = new();
     // Whisper.net's manual-load mode binds native imports for the life of the
     // process. Keep these handles alive too; the model and recorder remain
@@ -88,8 +89,16 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
         var playback = source == AudioCaptureSource.Playback;
         // Both are converted to Whisper's 16 kHz mono here, not by Windows.
         var convertLocally = highResolution || playback;
-        using var input = new PcmQueueStream(playback ? PlaybackMaxQueuedPackets : MaxQueuedPackets, _stop.Token,
-            playback ? 16 * 1024 * 1024 : highResolution ? 8 * 1024 * 1024 : 2 * 1024 * 1024);
+        // The queue is bounded by bytes, about a minute of audio for dictation
+        // and playback. Packet counts would be a poor bound: microphones
+        // deliver 5 to 10 ms packets, so 512 of them held under 3 seconds.
+        // Voice activation drops its oldest audio instead of failing when
+        // decoding falls behind; audio that old can't be a live command.
+        var voiceCommands = recognitionPrompt != null;
+        using var input = new PcmQueueStream(_stop.Token,
+            voiceCommands ? VoiceCommandQueueSeconds * SampleRate * sizeof(short)
+            : playback ? 16 * 1024 * 1024 : highResolution ? 8 * 1024 * 1024 : 2 * 1024 * 1024,
+            dropOldestWhenFull: voiceCommands);
         _input = input;
         WasapiRecorder? recorder = null;
         try
@@ -115,7 +124,18 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
             using var ownedFactory = factory;
             Volatile.Write(ref _engine, useGpu ? $"large-v3-turbo model on {gpuName}" : "base model on the CPU");
             var builder = factory.CreateBuilder().WithLanguage(arabic ? "ar" : "en");
-            if (recognitionPrompt != null) builder.WithPrompt(recognitionPrompt);
+            if (recognitionPrompt != null)
+            {
+                // Commands are at most 8 seconds, but Whisper encodes a full
+                // 30-second window by default. A smaller window (50 frames per
+                // second) made English commands about 3x faster with the same
+                // matches; Arabic needed 1024 to keep "وقف الصوت" intact. One
+                // short segment bounds the work when noise is decoded.
+                builder.WithPrompt(recognitionPrompt)
+                    .WithAudioContextSize(arabic ? 1024 : 512)
+                    .WithSingleSegment()
+                    .WithMaxTokensPerSegment(32);
+            }
             else
             {
                 // Beam search costs more CPU per phrase but clearly improves
@@ -269,12 +289,20 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
             MicrophoneNoiseFilter? noiseFilter = null;
             while (!_stop.IsCancellationRequested)
             {
-                var (samples, voicedSamples, endOfStream) = phrases.ReadPhrase();
+                var (samples, voicedSamples, endOfStream, hitLimit) = phrases.ReadPhrase();
                 if (samples.Length == 0) break;
                 // A cough or click alone is skipped; Whisper tends to turn very
                 // short sounds into invented words. A confirmed voice command
                 // may be a single short word.
-                if (recognitionPrompt != null || voicedSamples >= SampleRate / 5)
+                var worthDecoding = voiceCommands
+                    // A wake phrase or command is short and ends at a pause.
+                    // Sound that runs into the length limit (TV, music) and
+                    // phrases left behind while an earlier one was decoding
+                    // can't be a live command, so they skip Whisper.
+                    ? voicedSamples >= SampleRate / 10 && !hitLimit &&
+                      input.QueuedBytes <= VoiceCommandStaleSeconds * CaptureBytesPerSecond
+                    : voicedSamples >= SampleRate / 5;
+                if (worthDecoding)
                 {
                     if (source == AudioCaptureSource.Microphone && _reduceMicrophoneNoise)
                         noiseFilter ??= new MicrophoneNoiseFilter(SampleRate, arabic ? 0.6f : 0.35f);
@@ -461,13 +489,14 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
         private float[] _carry = [];
         private float _noiseFloor = 0.0015f;
 
-        public (float[] Samples, int VoicedSamples, bool EndOfStream) ReadPhrase()
+        public (float[] Samples, int VoicedSamples, bool EndOfStream, bool HitLimit) ReadPhrase()
         {
             var captured = new float[maximumSamples];
             var count = 0;
             var voiced = 0;
             var started = false;
             var endOfStream = false;
+            var hitLimit = false;
             var leadIn = new float[LeadInSamples];
             var leadInCount = 0;
             var quietSamples = 0;
@@ -520,6 +549,7 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                     Array.Copy(captured, cut, _carry, 0, count - cut);
                     Array.Copy(_frame, 0, _carry, count - cut, available);
                     count = cut;
+                    hitLimit = true;
                     break;
                 }
 
@@ -537,30 +567,38 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                 if (available < FrameSamples) { endOfStream = true; break; }
             }
 
-            if (!started) return ([], 0, endOfStream);
+            if (!started) return ([], 0, endOfStream, false);
             Array.Resize(ref captured, count);
-            return (captured, Math.Min(voiced, count), endOfStream);
+            return (captured, Math.Min(voiced, count), endOfStream, hitLimit);
         }
     }
 
-    private sealed class PcmQueueStream(int capacity, CancellationToken cancellationToken, int maxQueuedBytes) : Stream
+    private sealed class PcmQueueStream(CancellationToken cancellationToken, int maxQueuedBytes,
+        bool dropOldestWhenFull) : Stream
     {
-        private readonly BlockingCollection<byte[]> _packets = new(capacity);
+        // A sanity bound only; maxQueuedBytes is the real limit.
+        private const int MaxPackets = 65536;
+        private readonly BlockingCollection<byte[]> _packets = new(MaxPackets);
         private byte[]? _current;
         private int _offset;
         private int _queuedBytes;
+
+        // Audio captured but not yet read by the phrase reader.
+        public int QueuedBytes => Volatile.Read(ref _queuedBytes);
 
         public bool TryWrite(ReadOnlySpan<byte> pcm)
         {
             if (_packets.IsAddingCompleted) return true;
             var total = Interlocked.Add(ref _queuedBytes, pcm.Length);
-            if (total > maxQueuedBytes)
-            {
-                Interlocked.Add(ref _queuedBytes, -pcm.Length);
-                return false;
-            }
             try
             {
+                while (total > maxQueuedBytes && dropOldestWhenFull && _packets.TryTake(out var oldest))
+                    total = Interlocked.Add(ref _queuedBytes, -oldest.Length);
+                if (total > maxQueuedBytes)
+                {
+                    Interlocked.Add(ref _queuedBytes, -pcm.Length);
+                    return false;
+                }
                 if (_packets.TryAdd(pcm.ToArray())) return true;
                 Interlocked.Add(ref _queuedBytes, -pcm.Length);
                 return false;
