@@ -230,7 +230,7 @@ try {
     if ($setupVersion -ne $version) { throw "The setup version is $setupVersion, but this build requested $version." }
     Write-BuildMessage "Setup ProductVersion: $setupVersion"
 
-    # Verify all three artifacts before publishing anything to dist\.
+    # Verify the app, MSI, and setup before publishing.
     Write-BuildMessage ''
     foreach ($f in $exe, $msi, $setup) {
         $sig = Get-AuthenticodeSignature -LiteralPath $f
