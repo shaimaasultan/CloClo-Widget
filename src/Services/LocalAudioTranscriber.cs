@@ -90,7 +90,9 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                     if (buffer.Length == 0) return;
                     if (buffer.Length > 65536 || !input.TryWrite(buffer))
                     {
-                        Failed?.Invoke("Local transcription cannot keep up with the audio. Turn it off and try again.");
+                        Failed?.Invoke(recognitionPrompt == null
+                            ? "Local transcription cannot keep up with the audio. Turn it off and try again."
+                            : "Voice capture could not keep up with the microphone audio.");
                         _stop.Cancel();
                         return;
                     }

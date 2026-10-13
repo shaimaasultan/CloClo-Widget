@@ -6,14 +6,14 @@ using System.Runtime.InteropServices;
 
 namespace CloCloWidget;
 
-internal enum ApprovedVoiceApp { Notepad, Paint, OneDrive }
+internal enum ApprovedVoiceApp { Notepad, Paint, OneDrive, SnippingTool, Settings }
 
 // Speech is never interpreted as a path, argument, URI, or shell command.
 // Only these fixed phrases can select a fixed app, and the widget asks the
 // user for confirmation before any activation.
 internal static class ApprovedVoiceAppLauncher
 {
-    internal const string RecognitionPrompt = "CloClo. CloClo open Notepad now. CloClo open Paint now. CloClo open OneDrive now. CloClo stop voice now.";
+    internal const string RecognitionPrompt = "CloClo. CloClo open Notepad now. CloClo open Paint now. CloClo open OneDrive now. CloClo open Snipping Tool now. CloClo open Settings now. CloClo stop voice now.";
     private static readonly string[] WakeNames = ["cloclo", "clo clo", "clock low", "clock lo", "clo low"];
 
     internal static bool IsWakePhrase(string transcript) =>
@@ -65,6 +65,8 @@ internal static class ApprovedVoiceAppLauncher
         ApprovedVoiceApp.Notepad => "Notepad",
         ApprovedVoiceApp.Paint => "Paint",
         ApprovedVoiceApp.OneDrive => "OneDrive",
+        ApprovedVoiceApp.SnippingTool => "Snipping Tool",
+        ApprovedVoiceApp.Settings => "Settings",
         _ => throw new ArgumentOutOfRangeException(nameof(app))
     };
 
@@ -93,6 +95,10 @@ internal static class ApprovedVoiceAppLauncher
                 app = ApprovedVoiceApp.Paint; return true;
             case "onedrive" or "one drive":
                 app = ApprovedVoiceApp.OneDrive; return true;
+            case "snipping tool" or "sniping tool":
+                app = ApprovedVoiceApp.SnippingTool; return true;
+            case "settings" or "windows settings":
+                app = ApprovedVoiceApp.Settings; return true;
             default: return false;
         }
     }
@@ -119,6 +125,10 @@ internal static class ApprovedVoiceAppLauncher
                     return ActivatePackagedApp("Microsoft.WindowsNotepad_8wekyb3d8bbwe!App");
                 case ApprovedVoiceApp.Paint:
                     return ActivatePackagedApp("Microsoft.Paint_8wekyb3d8bbwe!App");
+                case ApprovedVoiceApp.SnippingTool:
+                    return ActivatePackagedApp("Microsoft.ScreenSketch_8wekyb3d8bbwe!App");
+                case ApprovedVoiceApp.Settings:
+                    return ActivatePackagedApp("windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel");
                 case ApprovedVoiceApp.OneDrive:
                     foreach (var folder in new[] {
                         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),

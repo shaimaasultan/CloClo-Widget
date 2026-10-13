@@ -565,8 +565,9 @@ records the SHA-256 of every native runtime DLL it ships
   **Voice activation** is off by default. Enable it from Privacy in the right-
   click menu or the search action. While enabled, CloClo keeps the microphone
   and its bundled local Whisper model active to listen for "CloClo". Say
-  "CloClo", then "CloClo open Notepad now", "CloClo open Paint now", or
-  "CloClo open OneDrive now". Say "CloClo stop voice now" to turn voice
+  "CloClo", then "CloClo open Notepad now", "CloClo open Paint now",
+  "CloClo open OneDrive now", "CloClo open Snipping Tool now", or
+  "CloClo open Settings now". Say "CloClo stop voice now" to turn voice
   activation off and release the microphone; CloClo then says "Okay, stopping
   voice now" with its local Windows voice. A complete phrase also works
   without a separate wake phrase. For app commands, "now" ends the command
@@ -584,8 +585,8 @@ records the SHA-256 of every native runtime DLL it ships
   activation is off; reduced-motion mode keeps these cues static.
   Only fixed app-name phrases are accepted. CloClo says "Okay, opening [app]
   now" with the local English Windows voice after recognizing the phrase,
-  then asks for confirmation before opening the matched app. Notepad and Paint
-  use fixed Microsoft package identities;
+  then asks for confirmation before opening the matched app. Notepad, Paint,
+  Snipping Tool and Settings use fixed Microsoft package identities;
   OneDrive must be a Microsoft-signed executable at its fixed Program Files
   path. The raw transcript is never a path,
   argument, URI, or shell command. Declining the confirmation opens nothing.
@@ -621,7 +622,7 @@ records the SHA-256 of every native runtime DLL it ships
   “Open dictation folder” opens Explorer after an explicit click. The media
   picker and its label do not activate other apps; saved dictation and Sudoku
   data cannot trigger program launches. The opt-in voice activation setting can
-  open one of three fixed apps only after confirmation.
+  open one of five fixed apps only after confirmation.
 
 **What CloClo checks before it runs** (in `NativeLibraryCheck`, before WPF
 loads anything)
