@@ -166,6 +166,9 @@ public partial class MainWindow : Window
     private DateTime _voiceArmedUntil;
     private string _voiceCommandText = "";
     private DispatcherTimer? _voiceArmTimer;
+    private DispatcherTimer? _voiceRetryTimer;
+    private int _voiceRetryDelaySeconds = 2;
+    private DateTime _voiceListeningSinceUtc;
     private SelectionDetailsWindow? _selectionDetailsWindow;
     private int _selectionDetailsRequest;
     private WindowsStatusWindow? _windowsStatusWindow;
@@ -211,6 +214,7 @@ public partial class MainWindow : Window
         Closing += (_, _) =>
         {
             _voiceActivationClosing = true;
+            StopVoiceRetryTimer();
             Keeper.SetVoiceStatus("off");
             _ = StopVoiceActivationAsync();
             // SystemEvents holds its handlers in a static list, so leaving this
@@ -684,6 +688,7 @@ public partial class MainWindow : Window
         }
 
         _voicePausedForEditor = true;
+        StopVoiceRetryTimer();
         _ = StopVoiceActivationAsync();
         var dialog = new DictationCaptureWindow()
         {
@@ -1893,14 +1898,16 @@ public partial class MainWindow : Window
     {
         _settings.VoiceActivationEnabled = !_settings.VoiceActivationEnabled;
         _settings.Save();
+        StopVoiceRetryTimer();
         if (_settings.VoiceActivationEnabled)
         {
+            _voiceRetryDelaySeconds = 2;
             ShowOneShotLabel("Local voice activation on", "Say CloClo, then an approved command. Say CloClo stop voice now to turn it off.");
             _ = StartVoiceActivationAsync();
         }
         else
         {
-            _ = StopVoiceActivationAsync();
+            _ = StopVoiceActivationAsync(abortPendingAudio: true);
             Keeper.SetVoiceStatus("off");
             ShowOneShotLabel("Voice activation off", "Microphone command capture stopped.");
         }
@@ -1909,6 +1916,7 @@ public partial class MainWindow : Window
     private void ResumeVoiceActivationAfterEditor()
     {
         _voicePausedForEditor = false;
+        StopVoiceRetryTimer();
         if (_settings.VoiceActivationEnabled) _ = StartVoiceActivationAsync();
     }
 
@@ -1916,6 +1924,7 @@ public partial class MainWindow : Window
     {
         if (_voiceActivationStarting || _voiceActivation != null || _voiceActionPending ||
             !_settings.VoiceActivationEnabled || _voicePausedForEditor || _voiceActivationClosing) return;
+        StopVoiceRetryTimer();
         _voiceActivationStarting = true;
         Keeper.SetVoiceStatus("processing");
         try
@@ -1942,23 +1951,28 @@ public partial class MainWindow : Window
             {
                 if (!Dispatcher.HasShutdownStarted) Dispatcher.BeginInvoke(new Action(() =>
                 {
-                    if (_voiceActivation == session) _ = FailVoiceActivationAsync(message);
+                    if (_voiceActivation == session) _ = RecoverVoiceActivationAsync(message);
                 }));
             };
             await session.StartAsync("en-US");
-            if (_voiceActivation == session) Keeper.SetVoiceStatus("wake");
+            if (_voiceActivation == session)
+            {
+                _voiceListeningSinceUtc = DateTime.UtcNow;
+                Keeper.SetVoiceStatus("wake");
+            }
         }
         catch (Exception ex)
         {
             if (_settings.VoiceActivationEnabled && !_voicePausedForEditor && !_voiceActivationClosing)
-                await FailVoiceActivationAsync($"Local voice activation stopped ({ex.GetType().Name}).");
+                await RecoverVoiceActivationAsync($"Local voice activation stopped ({ex.GetType().Name}).");
         }
         finally
         {
             _voiceActivationStarting = false;
             if (_settings.VoiceActivationEnabled && _voiceActivation == null &&
-                !_voicePausedForEditor && !_voiceActivationClosing && !_voiceActionPending)
-                _ = StartVoiceActivationAsync();
+                !_voicePausedForEditor && !_voiceActivationClosing && !_voiceActionPending &&
+                _voiceRetryTimer == null)
+                ScheduleVoiceActivationRetry("Voice capture was interrupted.");
         }
     }
 
@@ -2051,6 +2065,7 @@ public partial class MainWindow : Window
     {
         _settings.VoiceActivationEnabled = false;
         _settings.Save();
+        StopVoiceRetryTimer();
         try
         {
             // Abort capture immediately; native cleanup can finish while the
@@ -2068,6 +2083,8 @@ public partial class MainWindow : Window
         finally
         {
             _voiceActionPending = false;
+            if (_settings.VoiceActivationEnabled && !_voiceActivationClosing && !_voicePausedForEditor)
+                _ = StartVoiceActivationAsync();
         }
     }
 
@@ -2150,16 +2167,43 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task FailVoiceActivationAsync(string message)
+    private async Task RecoverVoiceActivationAsync(string message)
     {
-        _settings.VoiceActivationEnabled = false;
-        _settings.Save();
-        await StopVoiceActivationAsync();
-        if (!_voiceActivationClosing)
-        {
-            Keeper.SetVoiceStatus("failed");
-            ShowOneShotLabel(message, "Voice activation was switched off.");
-        }
+        if (_voiceListeningSinceUtc != default &&
+            DateTime.UtcNow - _voiceListeningSinceUtc > TimeSpan.FromMinutes(1))
+            _voiceRetryDelaySeconds = 2;
+        _voiceListeningSinceUtc = default;
+        await StopVoiceActivationAsync(abortPendingAudio: true);
+        ScheduleVoiceActivationRetry(message);
+    }
+
+    private void ScheduleVoiceActivationRetry(string message)
+    {
+        if (!_settings.VoiceActivationEnabled || _voicePausedForEditor ||
+            _voiceActivationClosing || _voiceRetryTimer != null) return;
+        var delay = _voiceRetryDelaySeconds;
+        _voiceRetryDelaySeconds = Math.Min(delay * 2, 60);
+        Keeper.SetVoiceStatus("processing");
+        Keeper.SetVoiceStatus("failed");
+        ShowOneShotLabel(message, $"Retrying local voice capture in {delay} seconds. Privacy remains on.");
+        _voiceRetryTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(delay) };
+        _voiceRetryTimer.Tick += VoiceRetryTimer_Tick;
+        _voiceRetryTimer.Start();
+    }
+
+    private void VoiceRetryTimer_Tick(object? sender, EventArgs e)
+    {
+        StopVoiceRetryTimer();
+        if (_settings.VoiceActivationEnabled && !_voicePausedForEditor && !_voiceActivationClosing)
+            _ = StartVoiceActivationAsync();
+    }
+
+    private void StopVoiceRetryTimer()
+    {
+        if (_voiceRetryTimer == null) return;
+        _voiceRetryTimer.Stop();
+        _voiceRetryTimer.Tick -= VoiceRetryTimer_Tick;
+        _voiceRetryTimer = null;
     }
 
     private async Task StopVoiceActivationAsync(bool abortPendingAudio = false)

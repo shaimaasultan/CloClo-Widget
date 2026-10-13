@@ -573,7 +573,9 @@ records the SHA-256 of every native runtime DLL it ships
   and returns CloClo to wake listening after confirmation. The speech editor
   pauses this listening while open and
   it resumes when closed. Turning the Privacy switch off stops microphone
-  capture. Voice commands are recognized after a short pause following speech;
+  capture. If capture stops unexpectedly, CloClo keeps the Privacy choice on
+  and retries locally with a delay of 2 to 60 seconds. Voice commands are
+  recognized after a short pause following speech;
   continuous sound is bounded by an eight-second audio chunk. Audio and
   recognized words stay in memory and are not added to the dictation editor.
   Keeper's collar pin is blue while wake listening, pulses after the wake
