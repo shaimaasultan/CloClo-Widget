@@ -12,6 +12,9 @@ public static class StartupRegistration
 {
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string ValueName = "CloCloWidget";
+    public const string SecurityWaitArgument = "--wait-for-security";
+
+    private static string StartupCommand(string exe) => $"\"{exe}\" {SecurityWaitArgument}";
 
     public static bool IsEnabled()
     {
@@ -58,9 +61,22 @@ public static class StartupRegistration
         var inProgramFiles = exe.StartsWith(programFilesDir, StringComparison.OrdinalIgnoreCase);
         if (!inProgramFiles && !exe.StartsWith(userDir, StringComparison.OrdinalIgnoreCase)) return null;
 
-        var registered = registeredValue.Trim().Trim('"');
-        if (string.Equals(registered, exe, StringComparison.OrdinalIgnoreCase)) return null;
-        return inProgramFiles || !fileExists(registered) ? $"\"{exe}\"" : null;
+        var registered = RegisteredExecutable(registeredValue);
+        if (string.Equals(registeredValue, StartupCommand(exe), StringComparison.OrdinalIgnoreCase)) return null;
+        return inProgramFiles || string.Equals(registered, exe, StringComparison.OrdinalIgnoreCase)
+            || registered == null || !fileExists(registered)
+            ? StartupCommand(exe) : null;
+    }
+
+    private static string? RegisteredExecutable(string command)
+    {
+        command = command.Trim();
+        if (!command.StartsWith('"')) return command; // older unquoted entry
+        var closingQuote = command.IndexOf('"', 1);
+        if (closingQuote < 0) return null;
+        var argument = command[(closingQuote + 1)..].Trim();
+        if (argument.Length > 0 && argument != SecurityWaitArgument) return null;
+        return command[1..closingQuote];
     }
 
     public static void SetEnabled(bool enabled)
@@ -71,7 +87,7 @@ public static class StartupRegistration
         {
             var exePath = Environment.ProcessPath;
             if (string.IsNullOrEmpty(exePath)) return;
-            key.SetValue(ValueName, $"\"{exePath}\"");
+            key.SetValue(ValueName, StartupCommand(exePath));
         }
         else
         {

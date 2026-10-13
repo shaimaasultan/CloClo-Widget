@@ -175,11 +175,16 @@ step is elevated.
   code-signing certificate for others to install cleanly.
 - Setup disables Install while a script install is registered for the installing user or PC and tells them to uninstall
   it from Settings > Apps first. The MSI also rejects direct or silent installs while that script registration
-  remains, preventing duplicate Installed apps entries.
+  remains. The script installer also refuses to copy over a setup-managed installation until the user
+  uninstalls it from Settings > Apps, preventing duplicate Installed apps entries.
 - A setup install creates a public desktop shortcut to the signed Program Files executable and a Run entry for
   the installing user's HKCU only; it does not start CloClo in other accounts or with administrator rights.
-  Setup uninstall removes those installer-owned entries for that user. Windows may retain its separate Startup apps
-  approval record. Windows keeps a copy of the signed package in `C:\ProgramData\Package Cache` (administrators only) for
-  uninstalling.
+  Only the Run entry passes `--wait-for-security`: before showing the widget, it checks that WinDefend,
+  SecurityHealthService, and wscsvc report Running on three polls. It waits no more than 90 seconds,
+  because Defender may be disabled or replaced by another antivirus; a Running state does not prove
+  that every security feature has finished initializing. Manual launches are immediate.
+  Setup uninstall removes the installer-owned entries. Windows may retain its separate Startup apps approval
+  record after the Run entry is removed. Windows keeps a copy of the signed package in
+  `C:\ProgramData\Package Cache` (administrators only) for uninstalling.
 - Minor: a program running as you could hold the single-instance mutex and keep CloClo from starting - it could
   just as well close CloClo.

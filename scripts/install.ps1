@@ -238,12 +238,65 @@ function Get-UninstallEntryScript([string]$hive, [string]$version, [long]$bytes)
     $lines -join "`n"
 }
 
+# A WiX setup has its own machine-wide Installed apps entry. Never copy a
+# script install over its MSI-managed Program Files folder. Require the user
+# to uninstall the setup first, as the setup installer does in the reverse
+# direction. Registry command lines are never evaluated.
+function Get-CloCloSetupEntries {
+    $keys = @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall',
+              'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')
+    foreach ($parent in $keys) {
+        foreach ($key in (Get-ChildItem -LiteralPath $parent -ErrorAction SilentlyContinue)) {
+            $item = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction SilentlyContinue
+            $codes = @($item.BundleUpgradeCode) | ForEach-Object { "$_".Trim('{}').ToUpperInvariant() }
+            if ($item.DisplayName -eq 'CloClo' -and $item.Publisher -eq 'CloClo' -and
+                $codes -contains 'EE052FAD-DFF9-49E0-8C68-CD517309BF13') {
+                $item
+            }
+        }
+    }
+}
+
+function Get-CloCloMsiEntries {
+    foreach ($parent in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall',
+                          'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')) {
+        foreach ($key in (Get-ChildItem -LiteralPath $parent -ErrorAction SilentlyContinue)) {
+            $item = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction SilentlyContinue
+            if ($item.DisplayName -eq 'CloClo' -and $item.Publisher -eq 'CloClo' -and
+                $item.WindowsInstaller -eq 1 -and $key.PSChildName -match '^\{[0-9A-Fa-f-]{36}\}$') {
+                $key.PSChildName
+            }
+        }
+    }
+}
+
+function Assert-NoExistingSetup {
+    if (@(Get-CloCloSetupEntries).Count -or @(Get-CloCloMsiEntries).Count) {
+        throw 'A setup-managed CloClo installation exists. Uninstall it from Settings > Apps before using the script installer.'
+    }
+}
+
 if ($Uninstall) {
+    if (@(Get-CloCloSetupEntries).Count -or @(Get-CloCloMsiEntries).Count) {
+        throw 'This PC has a setup-managed CloClo install. Uninstall it from Settings > Apps; the script uninstaller cannot safely remove MSI-managed files.'
+    }
     $userInstallParent = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($userDir))
     Assert-SafeOutputDirectory $userDir $userInstallParent
+    # The source-tree uninstall removes both script install locations. Clear
+    # startup before stopping the process or deleting shortcuts/files, but
+    # only when this value points at one of those CloClo executables.
+    $startup = (Get-ItemProperty -Path $runKey -Name $runValue -ErrorAction SilentlyContinue).$runValue
+    $scriptExes = @((Join-Path $userDir $exeName), (Join-Path $machineDir $exeName))
+    $ownedCommands = @($scriptExes | ForEach-Object { @($_, "`"$_`"", "`"$_`" --wait-for-security") })
+    if ($startup -and $startup.Trim() -in $ownedCommands) {
+        Remove-ItemProperty -Path $runKey -Name $runValue
+    }
+    if (-not (Get-ItemProperty -Path $runKey -Name $runValue -ErrorAction SilentlyContinue).$runValue) {
+        $approvedKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run'
+        Remove-ItemProperty -Path $approvedKey -Name $runValue -ErrorAction SilentlyContinue
+    }
     Stop-RunningWidget
     Remove-Item $startMenu, $desktop -Force -ErrorAction SilentlyContinue
-    Remove-ItemProperty -Path $runKey -Name $runValue -ErrorAction SilentlyContinue
     Remove-Item $userDir -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath "HKCU:\$uninstallKey" -Recurse -Force -ErrorAction SilentlyContinue
     if ((Test-Path $machineDir) -or (Test-Path -LiteralPath "HKLM:\$uninstallKey")) {
@@ -278,6 +331,7 @@ $root = if ($PSScriptRoot) { [IO.Path]::GetFullPath([IO.Path]::Combine($PSScript
 if (-not (Test-Path (Join-Path $root 'CloCloWidget.csproj'))) {
     throw "CloCloWidget.csproj not found in $root - run this from the cloclo-widget folder: .\scripts\install.ps1"
 }
+Assert-NoExistingSetup
 
 # --- pre-check: has the source changed since the last install? ------------
 # The installed copy carries a record of the source it was built from, and
@@ -606,7 +660,7 @@ foreach ($path in $targets) {
 # means CloClo won't start, and that folder is writable by any program
 # running as this user.
 if ((Get-ItemProperty -Path $runKey -Name $runValue -ErrorAction SilentlyContinue) -or -not $installed) {
-    $wanted = "`"$installExe`""
+    $wanted = "`"$installExe`" --wait-for-security"
     New-Item -Path $runKey -Force | Out-Null
     New-ItemProperty -Path $runKey -Name $runValue -Value $wanted -PropertyType String -Force | Out-Null
     $now = (Get-ItemProperty -Path $runKey -Name $runValue).$runValue

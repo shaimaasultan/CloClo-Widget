@@ -12,10 +12,15 @@ public static class Program
     internal static SingleInstance? Instance { get; private set; }
 
     [STAThread]
-    public static int Main()
+    public static int Main(string[] args)
     {
         ProcessHardening.Apply(NativeLibraryCheck.ExtractionDirectories());
         if (!NativeLibraryCheck.EnsureTrusted()) return 1;
+
+        // A sign-in launch waits without holding the single-instance mutex.
+        // A manual launch can start immediately while this one is waiting.
+        if (args.Length == 1 && args[0] == StartupRegistration.SecurityWaitArgument)
+            StartupReadiness.WaitForSecurityServices();
 
         // Taken only after the checks: their "re-extract and restart once"
         // path starts a fresh copy, which then needs to be the one that runs.

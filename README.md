@@ -207,12 +207,18 @@ stops with a message there rather than waiting for an answer it can't get.
 Every install closes a running CloClo first, so the exe can be replaced, and
 enables "Start with Windows" for the current user on a first install. Upgrades
 keep the user's on/off choice and move an enabled entry to the installed copy.
+At sign-in, CloClo waits for Defender, Windows Security, and Security Center
+services to report running before showing the widget. If those services are
+unavailable, it starts after at most 90 seconds; opening CloClo manually is
+immediate. CloClo does not change security settings or require administrator
+rights to run.
 
 CloClo then appears in **Settings → Apps → Installed apps** (an entry in your
 own account's registry, for both kinds of install), and can be uninstalled
 from there. That runs the `uninstall.ps1` installed next to the
 exe, which removes the program, its shortcuts and its "Start with Windows"
-entry (asking for administrator rights for a Program Files copy) but leaves
+entry and its Windows Startup apps record (asking for administrator rights for
+a Program Files copy) but leaves
 your settings and dictation files in AppData. `.\scripts\install.ps1 -Uninstall`
 from the project folder does the same.
 
@@ -257,7 +263,8 @@ normal user.
 
 To switch back to a per-user install, run `.\scripts\install.ps1 -Uninstall` first
 (it asks for administrator rights to remove the Program Files copy), then
-install without `-ProgramFiles`.
+install without `-ProgramFiles`. If the Program Files copy was installed by
+`CloClo-Setup.exe`, uninstall it from Settings > Apps first.
 
 ### Signing
 
@@ -385,7 +392,8 @@ or source folder needed there:
 - It installs to Program Files\CloClo with Start Menu and public desktop
   shortcuts, enables "Start with Windows" for the installing user, closes a
   running CloClo first, and a newer setup replaces an older install in place.
-  The widget's menu can turn startup off again.
+  The sign-in launch waits for the Windows security services as described
+  above. The widget's menu can turn startup off again.
 - The last page has a **Launch** button, which starts CloClo as you, not as
   administrator.
 - To uninstall: Settings > Apps > CloClo > Uninstall, or run the setup again
@@ -409,7 +417,8 @@ it from Settings > Apps > Installed apps before running the setup. The setup
 shows this instruction and disables Install until you close and reopen it after
 removing the old installation. Direct MSI and silent installs also refuse to
 install while the script registration remains. A newer MSI setup replaces an
-older MSI setup through Windows Installer.
+older MSI setup through Windows Installer. The script installer also refuses
+to copy over an MSI-managed installation until it is uninstalled.
 Uninstalling leaves your settings (%AppData%\CloCloWidget) and dictation files.
 
 ## Checking the source

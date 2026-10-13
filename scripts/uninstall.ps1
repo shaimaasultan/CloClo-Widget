@@ -5,8 +5,8 @@
   > CloClo > Uninstall runs it - no project folder needed.
 
 .DESCRIPTION
-  Removes, for the copy in this script's own folder: the running widget,
-  the Start Menu and desktop shortcuts and the "Start with Windows" entry
+  Removes, for the copy in this script's own folder: the "Start with Windows"
+  entry first, then the running widget and Start Menu and desktop shortcuts
   (only those that point at this copy), the Installed apps entry and the
   folder itself. Settings and dictation files in AppData are left alone.
 
@@ -45,7 +45,23 @@ if ($Elevated) {
     exit 0
 }
 
-# --- the user's side: only what points at this copy -------------------------
+# --- the user's side: remove startup before touching files or shortcuts ----
+$runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$run = (Get-ItemProperty -Path $runKey -Name CloCloWidget -ErrorAction SilentlyContinue).CloCloWidget
+if ($run -and $run.Trim() -in @($exe, "`"$exe`"", "`"$exe`" --wait-for-security")) {
+    Remove-ItemProperty -Path $runKey -Name CloCloWidget
+}
+
+# Task Manager can retain this Windows-owned enable/disable record after the
+# Run entry has gone, leaving an orphaned CloClo item in Startup apps. Remove
+# only CloClo's value, and only if no active Run entry now uses that name.
+if (-not (Get-ItemProperty -Path $runKey -Name CloCloWidget -ErrorAction SilentlyContinue).CloCloWidget) {
+    $approvedKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run'
+    if ((Get-ItemProperty -Path $approvedKey -Name CloCloWidget -ErrorAction SilentlyContinue).CloCloWidget) {
+        Remove-ItemProperty -Path $approvedKey -Name CloCloWidget
+    }
+}
+
 Stop-ThisCopy
 
 $shell = New-Object -ComObject WScript.Shell
@@ -54,12 +70,6 @@ foreach ($link in (Join-Path ([Environment]::GetFolderPath('Programs')) 'CloClo.
     if ((Test-Path -LiteralPath $link) -and ($shell.CreateShortcut($link).TargetPath -ieq $exe)) {
         Remove-Item -LiteralPath $link -Force
     }
-}
-
-$runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-$run = (Get-ItemProperty -Path $runKey -Name CloCloWidget -ErrorAction SilentlyContinue).CloCloWidget
-if ($run -and $run.Trim().Trim('"') -ieq $exe) {
-    Remove-ItemProperty -Path $runKey -Name CloCloWidget
 }
 
 # The Installed apps entry lives in the user's own registry - removed here,
