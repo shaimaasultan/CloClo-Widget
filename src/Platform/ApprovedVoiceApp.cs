@@ -133,7 +133,7 @@ internal static class ApprovedVoiceAppLauncher
                 app = ApprovedVoiceApp.Settings; return true;
             case "youtube" or "you tube" or "يوتيوب" or "اليوتيوب" or "يو تيوب":
                 app = ApprovedVoiceApp.YouTube; return true;
-            case "spotify" or "سبوتيفاي" or "سبوتيفي" or "سبوتفاي":
+            case "spotify" or "spot if i" or "سبوتيفاي" or "سبوتيفي" or "سبوتفاي":
                 app = ApprovedVoiceApp.Spotify; return true;
             case "word" or "microsoft word" or "وورد" or "الوورد" or "مايكروسوفت وورد":
                 app = ApprovedVoiceApp.Word; return true;
@@ -159,7 +159,11 @@ internal static class ApprovedVoiceAppLauncher
                 case ApprovedVoiceApp.Settings:
                     return ActivatePackagedApp("windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel");
                 case ApprovedVoiceApp.Spotify:
-                    return ActivatePackagedApp("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify");
+                    // Only the Store package has a fixed identity; the desktop
+                    // installer puts an unsigned-by-Microsoft exe in a folder the
+                    // user (and any program running as them) can replace.
+                    try { return ActivatePackagedApp("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify"); }
+                    catch (COMException) { return "Spotify from the Microsoft Store is not installed."; }
                 case ApprovedVoiceApp.YouTube:
                     foreach (var folder in new[] {
                         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
@@ -174,8 +178,12 @@ internal static class ApprovedVoiceAppLauncher
                         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
                         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86) })
                     {
-                        var path = Path.Combine(folder, "Microsoft Office", "root", "Office16", "WINWORD.EXE");
-                        if (File.Exists(path)) return StartTrustedExecutable(path);
+                        // Click-to-Run (Microsoft 365, retail) and MSI (volume
+                        // licensed) Office use different fixed folders.
+                        foreach (var path in new[] {
+                            Path.Combine(folder, "Microsoft Office", "root", "Office16", "WINWORD.EXE"),
+                            Path.Combine(folder, "Microsoft Office", "Office16", "WINWORD.EXE") })
+                            if (File.Exists(path)) return StartTrustedExecutable(path);
                     }
                     return "Microsoft Word was not found in Program Files.";
                 case ApprovedVoiceApp.OneDrive:
