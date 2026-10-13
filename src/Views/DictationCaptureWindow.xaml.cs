@@ -171,7 +171,7 @@ public partial class DictationCaptureWindow : Window
         if (_playback != null) return;
         if (PlaybackToggle.IsChecked != true || !IsLoaded) return;
         PlaybackToggle.Content = "Transcribe playing audio: Preparing";
-        Instructions.Text = "Verifying the bundled speech model. Playback audio stays on this PC.";
+        Instructions.Text = PreparingMessage("Playback audio stays on this PC.");
         var session = new LocalAudioTranscriber(AudioCaptureSource.Playback);
         _playback = session;
         AttachRecognizedText(session);
@@ -189,7 +189,7 @@ public partial class DictationCaptureWindow : Window
             await session.StartAsync(_currentLanguageTag);
             if (_playback != session) return;
             PlaybackToggle.Content = "Transcribe playing audio: On";
-            Instructions.Text = "Transcribing locally phrase by phrase from the default output device. Turn this off to stop; only Save writes text to a file.";
+            Instructions.Text = $"Transcribing locally with the {session.Engine}, phrase by phrase, from the default output device. Turn this off to stop; only Save writes text to a file.";
         }
         catch (Exception ex)
         {
@@ -221,6 +221,12 @@ public partial class DictationCaptureWindow : Window
         if (session != null) _playbackStop = session.DisposeAsync().AsTask();
         await _playbackStop;
     }
+
+    // Arabic may load the large model onto a dedicated GPU, which takes
+    // longer to verify and to prepare than the base model.
+    private string PreparingMessage(string privacy) => _currentLanguageTag == ArabicLanguageTag
+        ? $"Verifying and loading the Arabic speech model. With a dedicated GPU the first start can take up to a minute. {privacy}"
+        : $"Verifying the bundled speech model. {privacy}";
 
     private static bool CanRunLocalTranscription() =>
         OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000) &&
@@ -257,7 +263,7 @@ public partial class DictationCaptureWindow : Window
         if (_microphone != null) return;
         if (MicToggle.IsChecked != true || !IsLoaded) return;
         MicToggle.Content = "Dictate: Preparing";
-        Instructions.Text = "Verifying the bundled speech model. Microphone audio stays on this PC.";
+        Instructions.Text = PreparingMessage("Microphone audio stays on this PC.");
         var session = new LocalAudioTranscriber(AudioCaptureSource.Microphone,
             reduceMicrophoneNoise: ReduceNoiseToggle.IsChecked == true,
             useHighResolutionMicrophone: HighResolutionMicToggle.IsChecked == true);
@@ -277,7 +283,7 @@ public partial class DictationCaptureWindow : Window
             await session.StartAsync(_currentLanguageTag);
             if (_microphone != session) return;
             MicToggle.Content = "Dictate: On";
-            Instructions.Text = $"Transcribing locally from {MicrophoneLabel(session)} phrase by phrase. Turn this off to stop; only Save writes text to a file.";
+            Instructions.Text = $"Transcribing locally from {MicrophoneLabel(session)} with the {session.Engine}, phrase by phrase. Turn this off to stop; only Save writes text to a file.";
         }
         catch (Exception ex)
         {

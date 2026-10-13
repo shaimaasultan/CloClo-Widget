@@ -462,6 +462,11 @@ if (-not (Test-Path -LiteralPath $builtModel) -or
     (Get-FileHash -LiteralPath $builtModel -Algorithm SHA256).Hash -ne '60ED5BC3DD14EEA856493D334349B405782DDCAF0028D4B5DF4088345FBA2EFE') {
     throw 'The bundled speech model is missing or altered in publish\. Check Git LFS and rebuild.'
 }
+$builtArabicModel = Join-Path $publishDir 'ggml-large-v3-turbo-q5_0.bin'
+if (-not (Test-Path -LiteralPath $builtArabicModel) -or
+    (Get-FileHash -LiteralPath $builtArabicModel -Algorithm SHA256).Hash -ne '394221709CD5AD1F40C46E6031CA61BCE88931E6E088C188294C6D5A55FFA7E2') {
+    throw 'The Arabic speech model is missing or altered in publish\. Delete obj\whisper-models and rebuild.'
+}
 & $checkSource -Root $root -Manifest $sourceRecord -Quiet
 if ($LASTEXITCODE -ne 0) {
     throw "Source files in $root changed while building, so the build can't be tied to a known state. Nothing was installed - run it again."
@@ -504,15 +509,32 @@ Stop-RunningWidget   # again, in case one was started while building
 # folder), and the source record with its checker (for Check-Source.cmd).
 Copy-Item -LiteralPath (Join-Path $root 'scripts\uninstall.ps1'), $checkSource, $sourceRecord -Destination $publishDir -Force
 $files = @(Get-ChildItem -LiteralPath $publishDir -File | Where-Object {
-    $_.Extension -in '.exe', '.dll', '.ps1', '.json' -or $_.Name -eq 'ggml-base.bin'
+    $_.Extension -in '.exe', '.dll', '.ps1', '.json' -or $_.Name -in 'ggml-base.bin', 'ggml-large-v3-turbo-q5_0.bin'
 })
+# The GPU speech runtime has the same file names as the CPU set, so it
+# lives in gpu\. Every file carries its path relative to the install folder.
+foreach ($f in $files) { $f | Add-Member -NotePropertyName Rel -NotePropertyValue $f.Name }
+$gpuPublish = Join-Path $publishDir 'gpu'
+if (Test-Path -LiteralPath $gpuPublish) {
+    foreach ($f in @(Get-ChildItem -LiteralPath $gpuPublish -File -Filter '*.dll')) {
+        $f | Add-Member -NotePropertyName Rel -NotePropertyValue ('gpu\' + $f.Name)
+        $files += $f
+    }
+}
+# Every file and the gpu\ folder, as paths relative to an install folder.
+function Get-InstalledEntries([string]$dir) {
+    @(Get-ChildItem -LiteralPath $dir -Force -Recurse | ForEach-Object {
+        $rel = $_.FullName.Substring($dir.TrimEnd('\').Length + 1)
+        if ($_.PSIsContainer) { if ($rel -ne 'gpu') { "$rel\" } } else { $rel }
+    })
+}
 $version = (Get-Item -LiteralPath $builtExe).VersionInfo.ProductVersion -replace '\+.*$', ''
 $totalBytes = ($files | Measure-Object Length -Sum).Sum
 if ($ProgramFiles) {
     # The SHA-256 of every file as built, taken here as the user who built
     # them. place.ps1 copies them into a staging folder in Program Files,
     # checks everything there and only then swaps it in (see place.ps1).
-    $expected = ($files | ForEach-Object { "$($_.Name)=$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)" }) -join ';'
+    $expected = ($files | ForEach-Object { "$($_.Rel)=$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)" }) -join ';'
     # What runs as administrator is a short bootstrap - which is all the UAC
     # prompt's "Show more details" shows: place.ps1's path and SHA-256, then
     # the data. As administrator it reads place.ps1's bytes once, checks them
@@ -568,16 +590,17 @@ if ($ProgramFiles) {
 
     Reset-SafeOutputDirectory $stageDir $installParent
     try {
-        foreach ($f in $files) { Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $stageDir $f.Name) }
-        $stagedEntries = @(Get-ChildItem -LiteralPath $stageDir -Force)
-        if ($stagedEntries.Count -ne $files.Count -or @($stagedEntries | Where-Object { $_.PSIsContainer }).Count) {
+        if (@($files | Where-Object { $_.Rel -like 'gpu\*' }).Count) { New-Item -ItemType Directory -Path (Join-Path $stageDir 'gpu') | Out-Null }
+        foreach ($f in $files) { Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $stageDir $f.Rel) }
+        $stagedEntries = Get-InstalledEntries $stageDir
+        if ($stagedEntries.Count -ne $files.Count -or @($stagedEntries | Where-Object { $files.Rel -notcontains $_ }).Count) {
             throw 'The staged per-user install has an unexpected file set.'
         }
         foreach ($f in $files) {
-            $staged = Join-Path $stageDir $f.Name
+            $staged = Join-Path $stageDir $f.Rel
             if (-not (Test-Path -LiteralPath $staged -PathType Leaf) -or
                 (Get-FileHash -LiteralPath $staged -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash) {
-                throw "The staged per-user file '$($f.Name)' doesn't match the build."
+                throw "The staged per-user file '$($f.Rel)' doesn't match the build."
             }
         }
     } catch {
@@ -592,15 +615,15 @@ if ($ProgramFiles) {
     }
     try {
         Move-Item -LiteralPath $stageDir -Destination $userDir
-        $installedEntries = @(Get-ChildItem -LiteralPath $userDir -Force)
-        if ($installedEntries.Count -ne $files.Count -or @($installedEntries | Where-Object { $_.PSIsContainer }).Count) {
+        $installedEntries = Get-InstalledEntries $userDir
+        if ($installedEntries.Count -ne $files.Count -or @($installedEntries | Where-Object { $files.Rel -notcontains $_ }).Count) {
             throw 'The installed per-user folder has an unexpected file set.'
         }
         foreach ($f in $files) {
-            $installedFile = Join-Path $userDir $f.Name
+            $installedFile = Join-Path $userDir $f.Rel
             if (-not (Test-Path -LiteralPath $installedFile -PathType Leaf) -or
                 (Get-FileHash -LiteralPath $installedFile -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash) {
-                throw "The installed per-user file '$($f.Name)' doesn't match the build."
+                throw "The installed per-user file '$($f.Rel)' doesn't match the build."
             }
         }
     } catch {
@@ -624,11 +647,11 @@ if ($ProgramFiles) {
 
 # Check from this (normal) side too that the install folder now holds
 # exactly the files that were built - nothing missing, changed or extra.
-$present = @(Get-ChildItem -LiteralPath $installDir -Force)
+$present = Get-InstalledEntries $installDir
 $differs = @($files | Where-Object {
-    $inst = Join-Path $installDir $_.Name
+    $inst = Join-Path $installDir $_.Rel
     -not (Test-Path -LiteralPath $inst) -or (Get-FileHash -LiteralPath $inst -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
-} | ForEach-Object Name) + @($present | Where-Object { $files.Name -notcontains $_.Name } | ForEach-Object Name)
+} | ForEach-Object Rel) + @($present | Where-Object { $files.Rel -notcontains $_ })
 if ($differs.Count) { throw "Install verification failed in $installDir; files differ from the build: $($differs -join ', ')" }
 else { Write-Host "Checked: $installDir holds exactly the $($files.Count) files that were built." }
 

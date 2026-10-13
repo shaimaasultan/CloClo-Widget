@@ -42,6 +42,9 @@ namespace CloCloWidget;
 // the exe only CloClo's own files may be there (the exe, its pinned DLLs, the
 // uninstaller, the source checker and its record), and in the unpack folder
 // only the pinned DLLs - any other file or any subfolder counts as tampering.
+// The one allowed subfolder is gpu\ beside the exe, holding only the pinned
+// Vulkan speech runtime (same file names as the CPU set, other hashes),
+// signed like the CPU set by the exe's own signer.
 //
 // Every DLL that passes is kept open for as long as CloClo runs, shared for
 // reading only: Windows can still load it, but nothing can change, rename or
@@ -60,8 +63,10 @@ public static partial class NativeLibraryCheck
     private static readonly HashSet<string> AllowedAppFiles = new(StringComparer.OrdinalIgnoreCase)
     {
         "uninstall.ps1", "check-source.ps1", "source-manifest.json", "CloCloWidget.pdb",
-        "ggml-base.bin", // inert model data, SHA-256 checked before it reaches Whisper
+        // Inert model data, SHA-256 checked before it reaches Whisper.
+        "ggml-base.bin", "ggml-large-v3-turbo-q5_0.bin",
     };
+    private const string GpuRuntimeFolder = "gpu";
 
     // The verified DLLs, held open (read-share only) for the process's lifetime.
     private static readonly List<FileStream> HeldOpen = new();
@@ -129,7 +134,14 @@ public static partial class NativeLibraryCheck
         foreach (var entry in Directory.EnumerateFileSystemEntries(appDir))
         {
             var name = Path.GetFileName(entry);
-            if (Directory.Exists(entry)) strangers.Add(name + "\\");
+            if (Directory.Exists(entry))
+            {
+                if (!name.Equals(GpuRuntimeFolder, StringComparison.OrdinalIgnoreCase) ||
+                    new DirectoryInfo(entry).Attributes.HasFlag(FileAttributes.ReparsePoint))
+                    strangers.Add(name + "\\");
+                else
+                    strangers.AddRange(UnverifiedGpuRuntimeEntries(entry).Select(n => name + "\\" + n));
+            }
             else if (name.Equals(exeName, StringComparison.OrdinalIgnoreCase) || AllowedAppFiles.Contains(name)) continue;
             else if (!name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || !HoldIfVerified(entry)) strangers.Add(name);
         }
@@ -175,10 +187,30 @@ public static partial class NativeLibraryCheck
         return false;
     }
 
+    // gpu\ may hold only the pinned Vulkan runtime DLLs: no subfolders, links
+    // or other files. Windows also searches this folder first for the GPU
+    // runtime's own imports, so nothing else may be placed there.
+    private static IEnumerable<string> UnverifiedGpuRuntimeEntries(string folder)
+    {
+        var bad = new List<string>();
+        foreach (var entry in Directory.EnumerateFileSystemEntries(folder))
+        {
+            var name = Path.GetFileName(entry);
+            if (Directory.Exists(entry)) bad.Add(name + "\\");
+            else if (!name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ||
+                     File.GetAttributes(entry).HasFlag(FileAttributes.ReparsePoint) ||
+                     !HoldIfVerified(entry, PinnedWhisperGpuLibraries)) bad.Add(name);
+        }
+        return bad;
+    }
+
     // Opens the DLL shared for reading only and keeps it open: Windows can still
     // load it, but nothing can change, rename or delete it from now on. The hash
     // is read through this same handle, so the checked bytes are the loaded ones.
-    private static bool HoldIfVerified(string path)
+    private static bool HoldIfVerified(string path) => HoldIfVerified(path, null);
+
+    // With gpuPins, only those pins (and the exe's own signer) are accepted.
+    private static bool HoldIfVerified(string path, HashSet<string>? gpuPins)
     {
         FileStream? stream = null;
         try
@@ -186,8 +218,11 @@ public static partial class NativeLibraryCheck
             stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
             var hash = Convert.ToHexString(SHA256.HashData(stream));
             var identity = $"{Path.GetFileName(path)}|{hash}";
-            if ((PinnedLibraries.Contains(identity) && IsMicrosoftSigned(path)) ||
-                (PinnedWhisperLibraries.Contains(identity) && HasSameSignerAsExe(path)))
+            var verified = gpuPins != null
+                ? gpuPins.Contains(identity) && HasSameSignerAsExe(path)
+                : (PinnedLibraries.Contains(identity) && IsMicrosoftSigned(path)) ||
+                  (PinnedWhisperLibraries.Contains(identity) && HasSameSignerAsExe(path));
+            if (verified)
             {
                 HeldOpen.Add(stream);
                 return true;

@@ -8,6 +8,7 @@
 # it sets first:
 #   $Source            the folder with the built files (the project's publish\)
 #   $Expected          'name=SHA-256;name=SHA-256;...' of every file as built
+#                      (the GPU speech runtime is named 'gpu\<file>.dll')
 #   $AcceptThumbprint  a changed signing certificate (or 'unsigned') that the
 #                      user confirmed with YES, otherwise ''
 #
@@ -22,7 +23,7 @@
 #   is exactly what gets installed: the same set of files, the same SHA-256,
 #   the exe signed by the same certificate as the installed copy (unless the
 #   user accepted the change), each WPF DLL signed by Microsoft and each
-#   Whisper CPU DLL signed by the new exe's signer;
+#   Whisper CPU or GPU DLL signed by the new exe's signer;
 # - then the folders are swapped by renaming, which fails as a whole while
 #   the old copy is in use; on any failure the previous copy is put back.
 # It writes no registry keys and no log files. The result is the exit code:
@@ -47,25 +48,39 @@ try {
 Clear-Dir $stage
 Clear-Dir $old
 New-Item -ItemType Directory -Path $stage | Out-Null
+$models = @('ggml-base.bin', 'ggml-large-v3-turbo-q5_0.bin')
+$gpuDlls = @('ggml-base-whisper.dll', 'ggml-cpu-whisper.dll', 'ggml-vulkan-whisper.dll', 'ggml-whisper.dll', 'whisper.dll')
 $want = @{}
 foreach ($pair in $Expected.Split(';')) {
 $kv = $pair.Split('=', 2)
 if ($kv.Count -ne 2 -or
-    ($kv[0] -notmatch '^[A-Za-z0-9_.-]+\.(exe|dll|ps1|json)$' -and $kv[0] -cne 'ggml-base.bin') -or
+    ($kv[0] -notmatch '^[A-Za-z0-9_.-]+\.(exe|dll|ps1|json)$' -and $kv[0] -cnotin $models -and
+     -not ($kv[0] -cmatch '^gpu\\(.+)$' -and $Matches[1] -cin $gpuDlls)) -or
     $kv[1] -notmatch '^[0-9A-F]{64}$') { Fail 5 }
 $want[$kv[0]] = $kv[1]
 }
 if (-not $want.ContainsKey($exeName)) { Fail 5 }
 if (-not $want.ContainsKey('ggml-base.bin')) { Fail 5 }
+if (@($want.Keys | Where-Object { $_ -like 'gpu\*' }).Count) {
+$gpuSource = Get-Item -LiteralPath (Join-Path $Source 'gpu') -Force
+if ($gpuSource.Attributes -band [IO.FileAttributes]::ReparsePoint) { Fail 5 }
+New-Item -ItemType Directory -Path (Join-Path $stage 'gpu') | Out-Null
+}
 foreach ($n in @($want.Keys)) {
 $item = Get-Item -LiteralPath (Join-Path $Source $n) -Force
 if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { Fail 5 }
-Copy-Item -LiteralPath $item.FullName -Destination $stage
+Copy-Item -LiteralPath $item.FullName -Destination (Join-Path $stage $n)
 }
 # Checked inside Program Files: exactly the expected files, each exactly as built.
-$staged = @(Get-ChildItem -LiteralPath $stage -Force)
+# The only folder allowed is gpu\, and only when the build has one.
+$folders = @(Get-ChildItem -LiteralPath $stage -Force -Recurse -Directory)
+if ($folders.Count -gt 1 -or ($folders.Count -eq 1 -and $folders[0].FullName -ne (Join-Path $stage 'gpu'))) { Fail 7 }
+$staged = @(Get-ChildItem -LiteralPath $stage -Force -Recurse -File)
 if ($staged.Count -ne $want.Count) { Fail 7 }
-foreach ($f in $staged) { if (-not $want.ContainsKey($f.Name) -or (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash -ne $want[$f.Name]) { Fail 7 } }
+foreach ($f in $staged) {
+$rel = $f.FullName.Substring($stage.Length + 1)
+if (-not $want.ContainsKey($rel) -or (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash -ne $want[$rel]) { Fail 7 }
+}
 # The exe: an intact signature, from the same signer as the installed copy unless the user accepted the change.
 $newSig = Get-AuthenticodeSignature -LiteralPath (Join-Path $stage $exeName)
 if ($newSig.Status -in 'HashMismatch', 'NotSupportedFileFormat', 'Incompatible') { Fail 2 }
@@ -75,12 +90,14 @@ if (Test-Path -LiteralPath $installed) {
 $oldSigner = (Get-AuthenticodeSignature -LiteralPath $installed).SignerCertificate
 if ($oldSigner -and $oldSigner.Thumbprint -ne $newThumb -and $newThumb -ne $AcceptThumbprint) { Fail 3 }
 }
-# WPF DLLs are Microsoft-signed. The four optional local transcription DLLs
-# are pinned during the build and signed by CloClo's own protected key.
+# WPF DLLs are Microsoft-signed. The local transcription DLLs (four beside
+# the exe, five in gpu\) are pinned during the build and signed by CloClo's
+# own protected key.
 $whisperDlls = @('ggml-base-whisper.dll', 'ggml-cpu-whisper.dll', 'ggml-whisper.dll', 'whisper.dll')
 foreach ($f in @($staged | Where-Object { $_.Extension -eq '.dll' })) {
 $s = Get-AuthenticodeSignature -LiteralPath $f.FullName
-if ($f.Name -in $whisperDlls) {
+$inGpu = $f.DirectoryName -ne $stage
+if (($inGpu -and $f.Name -in $gpuDlls) -or (-not $inGpu -and $f.Name -in $whisperDlls)) {
     if ($newThumb -eq 'unsigned') {
         if ($s.Status -ne 'NotSigned') { Fail 4 }
     } elseif (-not $s.SignerCertificate -or $s.SignerCertificate.Thumbprint -ne $newThumb -or

@@ -1,6 +1,8 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -36,6 +38,8 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
     // process. Keep these handles alive too; the model and recorder remain
     // scoped to each transcription session.
     private static IntPtr[]? runtimeHandles;
+    // Set when the Vulkan runtime set was loaded for a dedicated GPU.
+    private static string? gpuName;
     private readonly CancellationTokenSource _stop = new();
     private Task? _worker;
     private volatile PcmQueueStream? _input;
@@ -48,6 +52,7 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
     private string? _deviceName;
     private string? _captureFormat;
     private int _captureBytesPerSecond = SampleRate * sizeof(short);
+    private string? _engine;
 
     public event Action<string>? TextRecognized;
     public event Action<int, int, long>? ProgressChanged;
@@ -55,6 +60,8 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
     public string? DeviceName => Volatile.Read(ref _deviceName);
     public string? CaptureFormat => Volatile.Read(ref _captureFormat);
     public int CaptureBytesPerSecond => Volatile.Read(ref _captureBytesPerSecond);
+    // The model and processor in use, for the editor's status line.
+    public string? Engine => Volatile.Read(ref _engine);
 
     public void SetMicrophoneNoiseReduction(bool enabled)
     {
@@ -78,10 +85,26 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
         WasapiRecorder? recorder = null;
         try
         {
-            var modelBytes = await PlaybackModelStore.ReadVerifiedBytesAsync(_stop.Token);
             EnsureNativeRuntimeLoaded();
-            using var factory = WhisperFactory.FromBuffer(modelBytes);
             var arabic = languageTag.StartsWith("ar", StringComparison.OrdinalIgnoreCase);
+            // Arabic dictation and playback use the large model on a dedicated
+            // GPU, where it is about as fast as base on the CPU and makes far
+            // fewer mistakes. Everything else, and every PC without such a
+            // GPU, keeps the base model on the CPU.
+            var useGpu = gpuName != null && arabic && recognitionPrompt == null;
+            WhisperFactory factory;
+            try
+            {
+                factory = await CreateFactoryAsync(useGpu ? SpeechModel.LargeV3Turbo : SpeechModel.Base, useGpu);
+            }
+            catch (Exception ex) when (useGpu && ex is not OperationCanceledException)
+            {
+                // Out of video memory or a driver failure: stay on the CPU.
+                useGpu = false;
+                factory = await CreateFactoryAsync(SpeechModel.Base, useGpu: false);
+            }
+            using var ownedFactory = factory;
+            Volatile.Write(ref _engine, useGpu ? $"large-v3-turbo model on {gpuName}" : "base model on the CPU");
             var builder = factory.CreateBuilder().WithLanguage(arabic ? "ar" : "en");
             if (recognitionPrompt != null) builder.WithPrompt(recognitionPrompt);
             else
@@ -95,6 +118,13 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                         ? EgyptianArabicPrompt : ArabicPrompt);
             }
             using var processor = builder.Build();
+            if (useGpu)
+            {
+                // The first GPU run prepares its shaders, which can take many
+                // seconds (longest after a driver update). Do it while the
+                // editor still says Preparing, not on the first spoken phrase.
+                await foreach (var _ in processor.ProcessAsync(new float[MinimumWhisperSamples], CancellationToken.None)) { }
+            }
 
             _stop.Token.ThrowIfCancellationRequested();
             void AttachRecorderEvents(WasapiRecorder capture)
@@ -287,51 +317,87 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
         _stop.Dispose();
     }
 
+    private async Task<WhisperFactory> CreateFactoryAsync(SpeechModel model, bool useGpu)
+    {
+        var modelBytes = await PlaybackModelStore.ReadVerifiedBytesAsync(model, _stop.Token);
+        return WhisperFactory.FromBuffer(modelBytes,
+            new WhisperFactoryOptions { UseGpu = useGpu, UseFlashAttention = useGpu });
+    }
+
+    private static readonly string[] CpuRuntime =
+        ["ggml-base-whisper.dll", "ggml-cpu-whisper.dll", "ggml-whisper.dll", "whisper.dll"];
+    private static readonly string[] GpuRuntime =
+        ["ggml-base-whisper.dll", "ggml-cpu-whisper.dll", "ggml-vulkan-whisper.dll", "ggml-whisper.dll", "whisper.dll"];
+
     private static void EnsureNativeRuntimeLoaded()
     {
         lock (RuntimeLock)
         {
             if (runtimeHandles != null) return;
 
-            // The signed install keeps these four pinned DLLs beside the exe.
-            // Whisper.net's automatic loader searches runtimes/win-x64 instead,
-            // so load this exact set in dependency order and use its supported
-            // manual-load mode. NativeLibraryCheck has verified and held each
-            // installed DLL open before this code runs.
-            string[] names =
-            [
-                "ggml-base-whisper.dll", "ggml-cpu-whisper.dll",
-                "ggml-whisper.dll", "whisper.dll"
-            ];
-            var loaded = new IntPtr[names.Length];
-            var count = 0;
-            try
+            // Both sets use the same file names, and Windows binds an import
+            // to an already-loaded module of that name, so one set is chosen
+            // for the life of the process. The Vulkan set in gpu\ also has a
+            // CPU backend, so base-model sessions keep working on it.
+            var gpuDirectory = Path.Combine(AppContext.BaseDirectory, "gpu");
+            if (Directory.Exists(gpuDirectory) && PlaybackModelStore.IsInstalled(SpeechModel.LargeV3Turbo) &&
+                VulkanGpuProbe.FindDedicatedGpu() is { } gpu)
             {
-                foreach (var name in names)
+                try
                 {
-                    var path = Path.Combine(AppContext.BaseDirectory, name);
-                    if (!File.Exists(path))
-                        throw new FileNotFoundException("The local speech runtime is missing a file.", path);
-                    loaded[count++] = NativeLibrary.Load(path);
+                    // Hybrid laptops list the integrated GPU first, and the
+                    // runtime would use it. Restrict it to the probed device.
+                    NativeEnvironment.Set("GGML_VK_VISIBLE_DEVICES", gpu.Index.ToString(CultureInfo.InvariantCulture));
+                    runtimeHandles = LoadRuntime(gpuDirectory, VulkanGpuProbe.LoaderPath, GpuRuntime);
+                    RuntimeOptions.LoadedLibrary = RuntimeLibrary.Vulkan;
+                    gpuName = gpu.Name;
+                    return;
                 }
+                catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException or FileNotFoundException)
+                {
+                    // An unusable Vulkan driver: fall back to the CPU set.
+                }
+            }
+            runtimeHandles = LoadRuntime(AppContext.BaseDirectory, null, CpuRuntime);
+            RuntimeOptions.LoadedLibrary = RuntimeLibrary.Cpu;
+        }
+    }
 
-                // Manual mode imports "libwhisper", while the runtime package
-                // calls the actual Windows file "whisper.dll". Resolve only
-                // that import to the exact absolute-path handle loaded above.
-                var whisperHandle = loaded[^1];
-                NativeLibrary.SetDllImportResolver(typeof(WhisperFactory).Assembly,
-                    (libraryName, _, _) =>
-                        libraryName == "libwhisper" ? whisperHandle : IntPtr.Zero);
-                RuntimeOptions.LoadedLibrary = RuntimeLibrary.Cpu;
-                runtimeHandles = loaded;
-            }
-            catch
+    // The signed install keeps each pinned set in a fixed folder. Whisper.net's
+    // automatic loader searches runtimes/win-x64 instead, so load the exact set
+    // in dependency order and use its supported manual-load mode.
+    // NativeLibraryCheck has verified and held each installed DLL open before
+    // this code runs.
+    private static IntPtr[] LoadRuntime(string directory, string? systemLibrary, string[] names)
+    {
+        var loaded = new List<IntPtr>();
+        try
+        {
+            // vulkan-1.dll by its System32 path first, so the GPU runtime's
+            // import binds to it instead of a same-named file elsewhere.
+            if (systemLibrary != null) loaded.Add(NativeLibrary.Load(systemLibrary));
+            foreach (var name in names)
             {
-                runtimeHandles = null;
-                for (var i = count - 1; i >= 0; i--)
-                    if (loaded[i] != IntPtr.Zero) NativeLibrary.Free(loaded[i]);
-                throw;
+                var path = Path.Combine(directory, name);
+                if (!File.Exists(path))
+                    throw new FileNotFoundException("The local speech runtime is missing a file.", path);
+                loaded.Add(NativeLibrary.Load(path));
             }
+
+            // Manual mode imports "libwhisper", while the runtime package
+            // calls the actual Windows file "whisper.dll". Resolve only
+            // that import to the exact absolute-path handle loaded above.
+            // The resolver can be set once, so only after a complete load.
+            var whisperHandle = loaded[^1];
+            NativeLibrary.SetDllImportResolver(typeof(WhisperFactory).Assembly,
+                (libraryName, _, _) =>
+                    libraryName == "libwhisper" ? whisperHandle : IntPtr.Zero);
+            return loaded.ToArray();
+        }
+        catch
+        {
+            for (var i = loaded.Count - 1; i >= 0; i--) NativeLibrary.Free(loaded[i]);
+            throw;
         }
     }
 

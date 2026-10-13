@@ -40,12 +40,58 @@
     <!-- The CPU runtime is copied as four explicit win-x64 files below. Its
          default build target copies other architectures into subdirectories. -->
     <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" GeneratePathProperty="true" ExcludeAssets="build" />
+    <!-- The Vulkan runtime is a complete second set with the same file names,
+         copied as five explicit files into gpu\ below. It is loaded instead
+         of the CPU set only when a dedicated GPU is found (see
+         LocalAudioTranscriber.EnsureNativeRuntimeLoaded). -->
+    <PackageReference Include="Whisper.net.Runtime.Vulkan" Version="1.9.1" GeneratePathProperty="true" ExcludeAssets="build" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(RuntimeIdentifier)' == 'win-x64'">
     <Content Include="$(IntermediateOutputPath)whisper-runtime\ggml-base-whisper.dll;$(IntermediateOutputPath)whisper-runtime\ggml-cpu-whisper.dll;$(IntermediateOutputPath)whisper-runtime\ggml-whisper.dll;$(IntermediateOutputPath)whisper-runtime\whisper.dll"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="%(Filename)%(Extension)" />
+    <!-- Published by CopyWhisperRuntimeToPublish into gpu\, never bundled. -->
+    <Content Include="$(IntermediateOutputPath)whisper-runtime\gpu\ggml-base-whisper.dll;$(IntermediateOutputPath)whisper-runtime\gpu\ggml-cpu-whisper.dll;$(IntermediateOutputPath)whisper-runtime\gpu\ggml-vulkan-whisper.dll;$(IntermediateOutputPath)whisper-runtime\gpu\ggml-whisper.dll;$(IntermediateOutputPath)whisper-runtime\gpu\whisper.dll"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" Link="gpu\%(Filename)%(Extension)" />
+    <Content Include="$(ArabicWhisperModel)" Link="ggml-large-v3-turbo-q5_0.bin"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
+             ExcludeFromSingleFile="true" />
   </ItemGroup>
+
+  <!-- Arabic dictation on a dedicated GPU uses large-v3-turbo (q5_0). At
+       574 MB it is not kept in git: the build downloads it once from a fixed
+       Hugging Face revision into obj\whisper-models\ and accepts only these
+       exact bytes. obj\ is outside the source record, so check-source.ps1 is
+       unaffected. PlaybackModelStore checks the same size and SHA-256 again
+       before every use. -->
+  <PropertyGroup>
+    <ArabicWhisperModelDir>$(MSBuildProjectDirectory)\obj\whisper-models\</ArabicWhisperModelDir>
+    <ArabicWhisperModel>$(ArabicWhisperModelDir)ggml-large-v3-turbo-q5_0.bin</ArabicWhisperModel>
+    <ArabicWhisperModelSha256>394221709CD5AD1F40C46E6031CA61BCE88931E6E088C188294C6D5A55FFA7E2</ArabicWhisperModelSha256>
+    <ArabicWhisperModelUrl>https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q5_0.bin</ArabicWhisperModelUrl>
+  </PropertyGroup>
+
+  <Target Name="FetchArabicWhisperModel" BeforeTargets="CoreCompile" Condition="'$(RuntimeIdentifier)' == 'win-x64'">
+    <PropertyGroup><_ArabicModelPartial>$(ArabicWhisperModel).download</_ArabicModelPartial></PropertyGroup>
+    <Delete Files="$(_ArabicModelPartial)" Condition="!Exists('$(ArabicWhisperModel)')" />
+    <Message Importance="high" Condition="!Exists('$(ArabicWhisperModel)')"
+             Text="Downloading the pinned Arabic Whisper model (574 MB, once)..." />
+    <DownloadFile Condition="!Exists('$(ArabicWhisperModel)')" SourceUrl="$(ArabicWhisperModelUrl)"
+                  DestinationFolder="$(ArabicWhisperModelDir)" DestinationFileName="ggml-large-v3-turbo-q5_0.bin.download"
+                  Retries="2" RetryDelayMilliseconds="5000" />
+    <GetFileHash Files="$(_ArabicModelPartial)" Algorithm="SHA256" Condition="Exists('$(_ArabicModelPartial)')">
+      <Output TaskParameter="Items" ItemName="_ArabicModelDownloadHash" />
+    </GetFileHash>
+    <Delete Files="$(_ArabicModelPartial)" Condition="Exists('$(_ArabicModelPartial)') and '@(_ArabicModelDownloadHash->'%(FileHash)')' != '$(ArabicWhisperModelSha256)'" />
+    <Error Condition="!Exists('$(ArabicWhisperModel)') and !Exists('$(_ArabicModelPartial)')"
+           Text="The downloaded Arabic Whisper model did not match its pinned SHA-256 and was deleted." />
+    <Move SourceFiles="$(_ArabicModelPartial)" DestinationFiles="$(ArabicWhisperModel)" Condition="Exists('$(_ArabicModelPartial)')" />
+    <GetFileHash Files="$(ArabicWhisperModel)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_ArabicModelHash" />
+    </GetFileHash>
+    <Error Condition="'@(_ArabicModelHash->'%(FileHash)')' != '$(ArabicWhisperModelSha256)'"
+           Text="$(ArabicWhisperModel) is altered or incomplete. Delete it and build again to download the pinned model." />
+  </Target>
 
   <!-- Keep the verified model as a separate installed data file. Bundling it
        into the exe would inflate the executable and duplicate it in memory. -->
@@ -84,12 +130,31 @@
     <ItemGroup>
       <_WhisperCopy Include="$(_WhisperOut)ggml-base-whisper.dll;$(_WhisperOut)ggml-cpu-whisper.dll;$(_WhisperOut)ggml-whisper.dll;$(_WhisperOut)whisper.dll" />
     </ItemGroup>
+    <ItemGroup>
+      <_WhisperGpuSource Include="$(PkgWhisper_net_Runtime_Vulkan)\build\win-x64\ggml-base-whisper.dll" ExpectedHash="0FAFF6AB28A1E10DFC7319DC92608259D1F68AACB897B8DBFF60323DCE46BCB8" />
+      <_WhisperGpuSource Include="$(PkgWhisper_net_Runtime_Vulkan)\build\win-x64\ggml-cpu-whisper.dll" ExpectedHash="98120D5EBB99BEB37A319D9DE624FFDB61BFE528A9829F9A6A1A55AF3DAB06C5" />
+      <_WhisperGpuSource Include="$(PkgWhisper_net_Runtime_Vulkan)\build\win-x64\ggml-vulkan-whisper.dll" ExpectedHash="E325725C18B88BED00443A2CA4AC3D6FDB7587FB055B52C623DF3B04E87FB039" />
+      <_WhisperGpuSource Include="$(PkgWhisper_net_Runtime_Vulkan)\build\win-x64\ggml-whisper.dll" ExpectedHash="4566056B3A710FFDF89C7627AA3AB7A73FB0F78374E14F13198628DCBF27CC2D" />
+      <_WhisperGpuSource Include="$(PkgWhisper_net_Runtime_Vulkan)\build\win-x64\whisper.dll" ExpectedHash="56FE7C2E626FC0C981E87638D3E8C8BEC39DE8877636AC885929212B81DDB9ED" />
+    </ItemGroup>
+    <GetFileHash Files="@(_WhisperGpuSource)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_WhisperGpuSourceHash" />
+    </GetFileHash>
+    <Error Condition="'%(_WhisperGpuSourceHash.FileHash)' != '%(_WhisperGpuSourceHash.ExpectedHash)'"
+           Text="Whisper Vulkan runtime differs from the pinned 1.9.1 package: %(_WhisperGpuSourceHash.Identity)" />
+    <MakeDir Directories="$(_WhisperOut)gpu\" />
+    <Copy SourceFiles="@(_WhisperGpuSource)" DestinationFolder="$(_WhisperOut)gpu\" />
+    <ItemGroup>
+      <_WhisperGpuCopy Include="$(_WhisperOut)gpu\ggml-base-whisper.dll;$(_WhisperOut)gpu\ggml-cpu-whisper.dll;$(_WhisperOut)gpu\ggml-vulkan-whisper.dll;$(_WhisperOut)gpu\ggml-whisper.dll;$(_WhisperOut)gpu\whisper.dll" />
+    </ItemGroup>
     <!-- WPF compiles a temporary *_wpftmp.csproj for markup references. It
          does not ship, so signing its disposable runtime copies would prompt
          for the protected key a second time. The real publish signs and pins
          its own copies below. -->
     <Exec Condition="'$(_SignEnabled)' == 'true' and !$(MSBuildProjectFile.EndsWith('_wpftmp.csproj'))"
           Command="$(_SignCommand) -Path &quot;%(_WhisperCopy.FullPath)&quot;" />
+    <Exec Condition="'$(_SignEnabled)' == 'true' and !$(MSBuildProjectFile.EndsWith('_wpftmp.csproj'))"
+          Command="$(_SignCommand) -Path &quot;%(_WhisperGpuCopy.FullPath)&quot;" />
   </Target>
 
   <!--
@@ -121,6 +186,9 @@
     <GetFileHash Files="@(_WhisperCopy)" Algorithm="SHA256" Condition="'@(_WhisperCopy)' != ''">
       <Output TaskParameter="Items" ItemName="_WhisperPin" />
     </GetFileHash>
+    <GetFileHash Files="@(_WhisperGpuCopy)" Algorithm="SHA256" Condition="'@(_WhisperGpuCopy)' != ''">
+      <Output TaskParameter="Items" ItemName="_WhisperGpuPin" />
+    </GetFileHash>
     <PropertyGroup>
       <_NativePinsFile>$(IntermediateOutputPath)NativeLibraryPins.g.cs</_NativePinsFile>
     </PropertyGroup>
@@ -136,6 +204,10 @@
       <_NativePinLine Include="    private static readonly System.Collections.Generic.HashSet&lt;string&gt; PinnedWhisperLibraries = new(System.StringComparer.OrdinalIgnoreCase)" />
       <_NativePinLine Include="    {" />
       <_NativePinLine Include="@(_WhisperPin->'        &quot;%(Filename)%(Extension)|%(FileHash)&quot;,')" />
+      <_NativePinLine Include="    }%3B" />
+      <_NativePinLine Include="    private static readonly System.Collections.Generic.HashSet&lt;string&gt; PinnedWhisperGpuLibraries = new(System.StringComparer.OrdinalIgnoreCase)" />
+      <_NativePinLine Include="    {" />
+      <_NativePinLine Include="@(_WhisperGpuPin->'        &quot;%(Filename)%(Extension)|%(FileHash)&quot;,')" />
       <_NativePinLine Include="    }%3B" />
       <_NativePinLine Include="}" />
     </ItemGroup>
@@ -187,7 +259,7 @@
            copied beside the exe, where startup pins them. Do not also put
            copies inside the single-file bundle or re-evaluate their locally
            untrusted self-signed certificate in sign.ps1. -->
-      <_WhisperExternal Include="@(FilesToBundle)" Condition="'%(Filename)%(Extension)' == 'ggml-base-whisper.dll' or '%(Filename)%(Extension)' == 'ggml-cpu-whisper.dll' or '%(Filename)%(Extension)' == 'ggml-whisper.dll' or '%(Filename)%(Extension)' == 'whisper.dll'" />
+      <_WhisperExternal Include="@(FilesToBundle)" Condition="'%(Filename)%(Extension)' == 'ggml-base-whisper.dll' or '%(Filename)%(Extension)' == 'ggml-cpu-whisper.dll' or '%(Filename)%(Extension)' == 'ggml-vulkan-whisper.dll' or '%(Filename)%(Extension)' == 'ggml-whisper.dll' or '%(Filename)%(Extension)' == 'whisper.dll'" />
       <FilesToBundle Remove="@(_WhisperExternal)" />
       <!-- DLLs only: the one .exe in here is the host stub the bundle gets
            appended to, and a signature on it would be broken by that —
@@ -223,6 +295,7 @@
   <Target Name="CopyWhisperRuntimeToPublish" AfterTargets="Publish"
           Condition="'$(RuntimeIdentifier)' == 'win-x64' and '@(_WhisperCopy)' != ''">
     <Copy SourceFiles="@(_WhisperCopy)" DestinationFolder="$(PublishDir)" />
+    <Copy SourceFiles="@(_WhisperGpuCopy)" DestinationFolder="$(PublishDir)gpu\" />
   </Target>
 
   <Target Name="SignPublishedExe" AfterTargets="Publish" DependsOnTargets="CopyWhisperRuntimeToPublish" Condition="'$(_SignEnabled)' == 'true'">

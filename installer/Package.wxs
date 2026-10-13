@@ -51,6 +51,12 @@
         <Files Include="$(AppDir)\*.exe" />
         <Files Include="$(AppDir)\*.dll" />
         <Files Include="$(AppDir)\ggml-base.bin" />
+        <Files Include="$(AppDir)\ggml-large-v3-turbo-q5_0.bin" />
+        <!-- The pinned Vulkan speech runtime, used only with a dedicated GPU.
+             Same file names as the CPU set, so it needs its own folder. -->
+        <Directory Id="GpuRuntimeFolder" Name="gpu">
+          <Files Include="$(AppDir)\gpu\*.dll" />
+        </Directory>
       </Directory>
     </StandardDirectory>
 
