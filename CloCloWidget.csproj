@@ -84,7 +84,11 @@
     <ItemGroup>
       <_WhisperCopy Include="$(_WhisperOut)ggml-base-whisper.dll;$(_WhisperOut)ggml-cpu-whisper.dll;$(_WhisperOut)ggml-whisper.dll;$(_WhisperOut)whisper.dll" />
     </ItemGroup>
-    <Exec Condition="'$(_SignEnabled)' == 'true'"
+    <!-- WPF compiles a temporary *_wpftmp.csproj for markup references. It
+         does not ship, so signing its disposable runtime copies would prompt
+         for the protected key a second time. The real publish signs and pins
+         its own copies below. -->
+    <Exec Condition="'$(_SignEnabled)' == 'true' and !$(MSBuildProjectFile.EndsWith('_wpftmp.csproj'))"
           Command="$(_SignCommand) -Path &quot;%(_WhisperCopy.FullPath)&quot;" />
   </Target>
 

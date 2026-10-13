@@ -23,7 +23,7 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
     private const int SampleRate = 16000;
     private const int HighResolutionSampleRate = 48000;
     private const int ChunkSeconds = 10;
-    private const int VoiceCommandChunkSeconds = 5;
+    private const int VoiceCommandFallbackChunkSeconds = 3;
     private const int VoiceCommandMaximumSeconds = 8;
     private const int MaxQueuedPackets = 512;
     private static readonly object RuntimeLock = new();
@@ -167,7 +167,7 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
 
             // Wake phrases and short commands should reach the matcher promptly.
             // Dictation and playback keep the longer context that helps accuracy.
-            var chunkSeconds = recognitionPrompt == null ? ChunkSeconds : VoiceCommandChunkSeconds;
+            var chunkSeconds = recognitionPrompt == null ? ChunkSeconds : VoiceCommandFallbackChunkSeconds;
             var pcm = new byte[SampleRate * 2 * chunkSeconds];
             // Only microphone audio can use this optional in-memory filter.
             // Keep its state across Whisper chunks to avoid clicks at boundaries.
@@ -328,7 +328,7 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
         // phrase so Whisper can recognize "now" without waiting for a fixed
         // five-second window. The bounded maximum handles continuous noise.
         const int frameSamples = SampleRate / 50;
-        const int trailingSilenceSamples = SampleRate * 3 / 4;
+        const int trailingSilenceSamples = SampleRate * 2 / 5;
         var frame = new byte[frameSamples * sizeof(short)];
         var leadIn = new float[SampleRate / 5];
         var leadInCount = 0;

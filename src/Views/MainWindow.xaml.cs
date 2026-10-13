@@ -2053,7 +2053,9 @@ public partial class MainWindow : Window
         _settings.Save();
         try
         {
-            await StopVoiceActivationAsync(abortPendingAudio: true);
+            // Abort capture immediately; native cleanup can finish while the
+            // fixed response plays. No more microphone data is accepted.
+            var captureStop = StopVoiceActivationAsync(abortPendingAudio: true);
             Keeper.SetVoiceStatus("off");
             if (!_voiceActivationClosing)
             {
@@ -2061,6 +2063,7 @@ public partial class MainWindow : Window
                 try { await SpeakFixedVoiceResponseAsync("Okay, stopping voice now."); }
                 catch { /* Spoken feedback is optional; capture is already off. */ }
             }
+            await captureStop;
         }
         finally
         {
@@ -2075,13 +2078,17 @@ public partial class MainWindow : Window
             if (_voiceActivation != session) return;
             // End this capture before displaying a modal question. No new
             // microphone session starts until the question is dismissed.
-            await StopVoiceActivationAsync(abortPendingAudio: true);
-            if (!_settings.VoiceActivationEnabled || _voiceActivationClosing) return;
+            var captureStop = StopVoiceActivationAsync(abortPendingAudio: true);
             var name = ApprovedVoiceAppLauncher.DisplayName(app);
-            // Acknowledge the recognized command while the microphone is off,
-            // before asking for confirmation. No app starts until Yes is chosen.
-            try { await SpeakVoiceCommandAcknowledgementAsync(name); }
-            catch { /* Spoken feedback is optional; confirmation still follows. */ }
+            // Capture has been aborted synchronously. Start the fixed response
+            // while Whisper finishes cleanup, then wait for cleanup before the
+            // confirmation dialog. No app starts until Yes is chosen.
+            if (_settings.VoiceActivationEnabled && !_voiceActivationClosing)
+            {
+                try { await SpeakVoiceCommandAcknowledgementAsync(name); }
+                catch { /* Spoken feedback is optional; confirmation still follows. */ }
+            }
+            await captureStop;
             if (!_settings.VoiceActivationEnabled || _voiceActivationClosing) return;
             if (Visibility != Visibility.Visible)
             {
