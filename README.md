@@ -117,7 +117,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   | GPU info | Shows the graphics cards in this PC |
   | Read selection aloud | Opens the shared speech editor, adds highlighted text, and reads it from the editor (up to 5,000 characters per reading) |
   | Selection details | Shows word, character and line counts and a short preview of highlighted text; nothing is saved (the fallback briefly copies selected text) |
-  | Dictate | Opens the shared speech editor. **Dictate** uses the default microphone and bundled local Whisper model; **Read aloud** speaks the editor's text; **Transcribe playing audio** captures the default speaker output with the same local model. Load a text file (up to 256 KiB), explicitly save text to the private dictation file, or open that folder from the window. Capture continues until its toggle is turned off or the window closes |
+  | Dictate | Opens the shared speech editor. **Dictate** uses the default microphone and bundled local Whisper model; **Read aloud** speaks the editor's text; **Transcribe playing audio** captures the web browser playing sound (or, with **Browser audio only** turned off, everything on the default speaker output) with the same local model. Load a text file (up to 256 KiB), explicitly save text to the private dictation file, or open that folder from the window. Capture continues until its toggle is turned off or the window closes |
   | Convert units | Converts a highlighted "5 km", "98 F"… (km/mi/m/ft, kg/lb, °C/°F/K) |
   | Color picker | Pick any color on screen; its hex code is copied (Esc cancels) |
   | QR code from selection | Makes a QR code of the highlighted text or link |
@@ -533,8 +533,16 @@ records the SHA-256 of every native runtime DLL it ships
   The spoken text is limited to 5,000 characters; the selection-details preview
   is cleared on close. The shared speech editor reads its own text; the read
   icon adds selected text to that editor. **Dictate** captures the default
-  microphone; **Transcribe playing audio** captures all sound on the default
-  output device, including other apps and system sounds. Only one capture
+  microphone; **Transcribe playing audio** captures audio as Windows plays
+  it, never through the speakers and microphone. With **Browser audio only**
+  (on by default) it uses Windows' per-app capture for the browser playing
+  sound (Edge, Chrome, Firefox, Brave, Opera, or Vivaldi, including its tabs'
+  child processes), so notification sounds, calls, and other apps are left
+  out; turned off, it captures all sound on the default output device. The
+  browser is picked when capture starts, preferring the one playing sound,
+  and the editor names it. Playback is taken at Windows' own 48 kHz float
+  mix and converted to Whisper's 16 kHz mono inside CloClo with the WDL
+  resampler, rather than by Windows' quicker conversion. Only one capture
   toggle can run at a time. Audio stays in a bounded memory queue for local
   recognition and is discarded when capture stops. Both use Whisper's CPU
   runtime phrase by phrase: audio is split at natural pauses (at most 15

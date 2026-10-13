@@ -7,6 +7,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 using Whisper.net;
@@ -20,7 +21,8 @@ internal enum AudioCaptureSource { Microphone, Playback }
 // for a session and disposed when its toggle is turned off or the window closes.
 // Recognition text is emitted as data; this service cannot execute actions.
 internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool reduceMicrophoneNoise = false,
-    bool useHighResolutionMicrophone = false, string? recognitionPrompt = null) : IAsyncDisposable
+    bool useHighResolutionMicrophone = false, string? recognitionPrompt = null,
+    uint? playbackProcessId = null) : IAsyncDisposable
 {
     private const int SampleRate = 16000;
     private const int HighResolutionSampleRate = 48000;
@@ -33,6 +35,10 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
     private const string EgyptianArabicPrompt = "أهلاً، إزيك؟ النهارده هنتكلم شوية بالعربي.";
     private const string ArabicPrompt = "مرحباً، كيف حالك؟ سنتحدث اليوم باللغة العربية.";
     private const int MaxQueuedPackets = 512;
+    // Playback is taken as Windows mixes it, 48 kHz float stereo, so its
+    // queue holds more packets and bytes for the same seconds of audio.
+    private const int PlaybackSampleRate = 48000;
+    private const int PlaybackMaxQueuedPackets = 4096;
     private static readonly object RuntimeLock = new();
     // Whisper.net's manual-load mode binds native imports for the life of the
     // process. Keep these handles alive too; the model and recorder remain
@@ -79,8 +85,11 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
     private async Task RunAsync(string languageTag, TaskCompletionSource started)
     {
         var highResolution = source == AudioCaptureSource.Microphone && useHighResolutionMicrophone;
-        using var input = new PcmQueueStream(MaxQueuedPackets, _stop.Token,
-            highResolution ? 8 * 1024 * 1024 : 2 * 1024 * 1024);
+        var playback = source == AudioCaptureSource.Playback;
+        // Both are converted to Whisper's 16 kHz mono here, not by Windows.
+        var convertLocally = highResolution || playback;
+        using var input = new PcmQueueStream(playback ? PlaybackMaxQueuedPackets : MaxQueuedPackets, _stop.Token,
+            playback ? 16 * 1024 * 1024 : highResolution ? 8 * 1024 * 1024 : 2 * 1024 * 1024);
         _input = input;
         WasapiRecorder? recorder = null;
         try
@@ -133,7 +142,7 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                 {
                     if (Volatile.Read(ref _finishing) != 0) return;
                     if (buffer.Length == 0) return;
-                    if (buffer.Length > 65536 || !input.TryWrite(buffer))
+                    if (buffer.Length > 262144 || !input.TryWrite(buffer))
                     {
                         Failed?.Invoke(recognitionPrompt == null
                             ? "Local transcription cannot keep up with the audio. Turn it off and try again."
@@ -157,14 +166,27 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                 };
             }
 
-            WasapiRecorder BuildRecorder(bool communicationsMode)
+            async Task<WasapiRecorder> BuildRecorderAsync(bool communicationsMode)
             {
+                if (playback)
+                {
+                    // Windows mixes at 48 kHz float. Take that unchanged rather
+                    // than Windows' quick conversion to 16 kHz; it is converted
+                    // below with the 24-bit microphone mode's resampler.
+                    var playbackBuilder = new WasapiRecorderBuilder()
+                        .WithFormat(WaveFormat.CreateIeeeFloatWaveFormat(PlaybackSampleRate, 2));
+                    // With a process id, only that app and its child processes
+                    // are captured (per-app loopback, Windows 10 2004 or later),
+                    // so notification sounds and other apps are left out.
+                    return playbackProcessId is { } processId
+                        ? await playbackBuilder.WithProcessLoopback(processId, ProcessLoopbackMode.IncludeTargetProcessTree).BuildAsync()
+                        : playbackBuilder.WithLoopbackCapture().Build();
+                }
                 var format = highResolution
                     ? new WaveFormat(HighResolutionSampleRate, 24, 1)
                     : new WaveFormat(SampleRate, 16, 1);
                 var builder = new WasapiRecorderBuilder().WithFormat(format);
-                if (source == AudioCaptureSource.Playback) builder.WithLoopbackCapture();
-                else if (communicationsMode) builder.WithCommunicationsMode();
+                if (communicationsMode) builder.WithCommunicationsMode();
                 // Without loopback the recorder uses the default capture device.
                 return builder.Build();
             }
@@ -172,7 +194,7 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
             _stop.Token.ThrowIfCancellationRequested();
             try
             {
-                recorder = BuildRecorder(source == AudioCaptureSource.Microphone);
+                recorder = await BuildRecorderAsync(source == AudioCaptureSource.Microphone);
                 AttachRecorderEvents(recorder);
                 recorder.StartRecording();
             }
@@ -187,7 +209,7 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                 recorder = null;
                 Interlocked.Exchange(ref _finishing, 0);
                 _stop.Token.ThrowIfCancellationRequested();
-                recorder = BuildRecorder(false);
+                recorder = await BuildRecorderAsync(false);
                 AttachRecorderEvents(recorder);
                 recorder.StartRecording();
             }
@@ -203,13 +225,12 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
             _recorder = recorder;
             _stop.Token.ThrowIfCancellationRequested();
 
-            // Keep the 24-bit stream intact until this managed converter reads
-            // it. WDL low-pass resampling produces the 16 kHz mono floats that
-            // Whisper requires; no audio or intermediate file leaves memory.
-            using var rawStream = highResolution ? new RawSourceWaveStream(input, captureFormat) : null;
-            ISampleProvider? resampler = highResolution
-                ? new WdlResamplingSampleProvider(new Pcm24BitToSampleProvider(rawStream!), SampleRate)
-                : null;
+            // Keep the full-quality stream intact until this managed converter
+            // reads it. Channels are averaged to mono, then WDL low-pass
+            // resampling produces the 16 kHz mono floats that Whisper requires;
+            // no audio or intermediate file leaves memory.
+            using var rawStream = convertLocally ? new RawSourceWaveStream(input, captureFormat) : null;
+            ISampleProvider? resampler = convertLocally ? ToWhisperInput(rawStream!) : null;
             started.TrySetResult();
 
             // Each phrase ends at a natural pause, so Whisper never receives
@@ -315,6 +336,17 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
         else _stop.Cancel();
         if (_worker != null) await _worker;
         _stop.Dispose();
+    }
+
+    private static ISampleProvider ToWhisperInput(WaveStream raw)
+    {
+        var samples = raw.ToSampleProvider();
+        if (samples.WaveFormat.Channels == 2) samples = samples.ToMono(0.5f, 0.5f);
+        else if (samples.WaveFormat.Channels != 1)
+            throw new InvalidDataException("The audio device did not provide mono or stereo capture.");
+        return samples.WaveFormat.SampleRate == SampleRate
+            ? samples
+            : new WdlResamplingSampleProvider(samples, SampleRate);
     }
 
     private async Task<WhisperFactory> CreateFactoryAsync(SpeechModel model, bool useGpu)

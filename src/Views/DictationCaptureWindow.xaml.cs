@@ -151,6 +151,16 @@ public partial class DictationCaptureWindow : Window
             Instructions.Text = "Turn Dictate off and on to switch microphone capture format. The current session keeps its displayed format.";
     }
 
+    // Takes effect immediately: a running playback capture restarts with the
+    // new source, as it does when the dictation language changes.
+    private async void BrowserOnlyToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (_playback == null) return;
+        await StopPlaybackAsync();
+        PlaybackToggle.IsChecked = true;
+        await StartPlaybackAsync();
+    }
+
     private async void PlaybackToggle_Click(object sender, RoutedEventArgs e)
     {
         if (PlaybackToggle.IsChecked == true && IsLoaded) await StartPlaybackAsync();
@@ -170,15 +180,27 @@ public partial class DictationCaptureWindow : Window
         await _playbackStop;
         if (_playback != null) return;
         if (PlaybackToggle.IsChecked != true || !IsLoaded) return;
+        BrowserAudioTarget.Target? browser = null;
+        if (BrowserOnlyToggle.IsChecked == true)
+        {
+            browser = BrowserAudioTarget.Find();
+            if (browser == null)
+            {
+                PlaybackToggle.IsChecked = false;
+                Instructions.Text = "No web browser is running. Start the video in your browser first, or turn off Browser audio only to transcribe all playing audio.";
+                return;
+            }
+        }
+        var heardFrom = browser != null ? $"{browser.Name} only" : "the default output device";
         PlaybackToggle.Content = "Transcribe playing audio: Preparing";
         Instructions.Text = PreparingMessage("Playback audio stays on this PC.");
-        var session = new LocalAudioTranscriber(AudioCaptureSource.Playback);
+        var session = new LocalAudioTranscriber(AudioCaptureSource.Playback, playbackProcessId: browser?.ProcessId);
         _playback = session;
         AttachRecognizedText(session);
         session.ProgressChanged += (recognized, _, bytes) => Dispatcher.BeginInvoke(new Action(() =>
         {
             if (_playback != session || !IsLoaded) return;
-            Instructions.Text = $"Listening to speaker output: {recognized} segments transcribed, {bytes / 32000} seconds of audio received. Only Save writes text to a file.";
+            Instructions.Text = $"Listening to {heardFrom}: {recognized} segments transcribed, {bytes / session.CaptureBytesPerSecond} seconds of audio received. Only Save writes text to a file.";
         }));
         session.Failed += message => Dispatcher.BeginInvoke(new Action(() =>
         {
@@ -189,7 +211,7 @@ public partial class DictationCaptureWindow : Window
             await session.StartAsync(_currentLanguageTag);
             if (_playback != session) return;
             PlaybackToggle.Content = "Transcribe playing audio: On";
-            Instructions.Text = $"Transcribing locally with the {session.Engine}, phrase by phrase, from the default output device. Turn this off to stop; only Save writes text to a file.";
+            Instructions.Text = $"Transcribing locally with the {session.Engine}, phrase by phrase, from {heardFrom}. Turn this off to stop; only Save writes text to a file.";
         }
         catch (Exception ex)
         {
