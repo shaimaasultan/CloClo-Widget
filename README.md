@@ -548,7 +548,11 @@ records the SHA-256 of every native runtime DLL it ships
   runtime phrase by phrase: audio is split at natural pauses (at most 15
   seconds, cut at the quietest moment so words stay whole), silence before
   speech is skipped, and capture continues until turned off or the editor
-  closes. Dictation uses beam search, and Arabic dictation gives Whisper a
+  closes. While a phrase is being spoken, a grey line under the editor shows
+  what CloClo has heard so far, updated about once a second (a fast preview
+  pass while the phrase is under 10 seconds, skipped whenever capture has
+  fallen behind); when the phrase ends, its final text goes into the editor
+  and the line clears. Dictation uses beam search, and Arabic dictation gives Whisper a
   short Arabic (Egyptian for ar-EG) example sentence to steer script and
   spelling. Recognized text is tidied locally: Arabic punctuation after Arabic
   words, no tatweel or doubled diacritics, and segments Whisper commonly

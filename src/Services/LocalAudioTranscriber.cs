@@ -28,6 +28,11 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
     private const int HighResolutionSampleRate = 48000;
     private const int DictationMaximumSeconds = 15;
     private const int VoiceCommandMaximumSeconds = 8;
+    // Live preview: an update per second of new audio while the phrase is at
+    // most 10 s long, which a 512-frame (10.24 s) audio window covers.
+    private const int InterimEverySeconds = 1;
+    private const int InterimLimitSeconds = 10;
+    private const int InterimAudioContext = 512;
     // Whisper returns nothing for less than one second of audio.
     private const int MinimumWhisperSamples = SampleRate * 11 / 10;
     // Decoding hints for dictation. They show Whisper the expected script,
@@ -62,6 +67,9 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
     private string? _engine;
 
     public event Action<string>? TextRecognized;
+    // The phrase being spoken right now, as heard so far: replaced about once
+    // a second, then cleared ("") when the phrase's final text arrives.
+    public event Action<string>? InterimTextRecognized;
     public event Action<int, int, long>? ProgressChanged;
     public event Action<string>? Failed;
     public string? DeviceName => Volatile.Read(ref _deviceName);
@@ -148,12 +156,31 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                         ? EgyptianArabicPrompt : ArabicPrompt);
             }
             using var processor = builder.Build();
+            // Live preview for dictation and playback: a fast greedy pass over
+            // the phrase so far, with a 10-second audio window. On the test
+            // clips it took about 0.6 s per update on a GPU (turbo) and 0.35 s
+            // on the CPU (base). The final beam-search pass replaces it.
+            using var interimProcessor = recognitionPrompt != null ? null : BuildInterimProcessor();
+            WhisperProcessor BuildInterimProcessor()
+            {
+                var interim = factory.CreateBuilder().WithLanguage(arabic ? "ar" : "en")
+                    .WithThreads(WhisperThreads.Value)
+                    .WithAudioContextSize(InterimAudioContext)
+                    .WithSingleSegment()
+                    .WithMaxTokensPerSegment(96);
+                if (arabic)
+                    interim.WithPrompt(languageTag.Equals("ar-EG", StringComparison.OrdinalIgnoreCase)
+                        ? EgyptianArabicPrompt : ArabicPrompt);
+                return interim.Build();
+            }
             if (useGpu)
             {
                 // The first GPU run prepares its shaders, which can take many
                 // seconds (longest after a driver update). Do it while the
                 // editor still says Preparing, not on the first spoken phrase.
                 await foreach (var _ in processor.ProcessAsync(new float[MinimumWhisperSamples], CancellationToken.None)) { }
+                if (interimProcessor != null)
+                    await foreach (var _ in interimProcessor.ProcessAsync(new float[MinimumWhisperSamples], CancellationToken.None)) { }
             }
 
             _stop.Token.ThrowIfCancellationRequested();
@@ -284,14 +311,34 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                     startThreshold: 0.004f)
                 : new SpeechPhraseReader(readFrame, SampleRate * DictationMaximumSeconds,
                     pauseSamples: SampleRate / 2, minimumPhraseSamples: SampleRate * 3, longPauseSamples: SampleRate * 6 / 5,
-                    startThreshold: source == AudioCaptureSource.Playback ? 0.002f : 0.004f);
+                    startThreshold: source == AudioCaptureSource.Playback ? 0.002f : 0.004f,
+                    interimEverySamples: SampleRate * InterimEverySeconds,
+                    interimLimitSamples: SampleRate * InterimLimitSeconds);
+            // Previews are skipped whenever unread audio has built up, so they
+            // never delay final text; they resume once capture is caught up.
+            bool CaughtUp() => input.QueuedBytes <= CaptureBytesPerSecond / 2;
             // Only microphone audio can use this optional in-memory filter.
             // Keep its state across Whisper chunks to avoid clicks at boundaries.
             MicrophoneNoiseFilter? noiseFilter = null;
             while (!_stop.IsCancellationRequested)
             {
-                var (samples, voicedSamples, endOfStream, hitLimit) = phrases.ReadPhrase();
+                var (samples, voicedSamples, endOfStream, hitLimit, isInterim) =
+                    phrases.ReadPhrase(interimProcessor != null ? CaughtUp : null);
                 if (samples.Length == 0) break;
+                if (isInterim)
+                {
+                    // A copy of the phrase so far; the noise filter keeps its
+                    // state for the final pass and is not applied here.
+                    if (samples.Length < MinimumWhisperSamples) Array.Resize(ref samples, MinimumWhisperSamples);
+                    var heard = new System.Text.StringBuilder();
+                    await foreach (var segment in interimProcessor!.ProcessAsync(samples, CancellationToken.None))
+                        heard.Append(segment.Text);
+                    var preview = TranscriptCleanup.Clean(heard.ToString());
+                    if (!_stop.IsCancellationRequested && preview.Length > 0 &&
+                        !TranscriptCleanup.IsLikelyHallucination(preview))
+                        InterimTextRecognized?.Invoke(preview);
+                    continue;
+                }
                 // A cough or click alone is skipped; Whisper tends to turn very
                 // short sounds into invented words. A confirmed voice command
                 // may be a single short word.
@@ -330,6 +377,7 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                         ReportProgress();
                     }
                 }
+                if (interimProcessor != null && !_stop.IsCancellationRequested) InterimTextRecognized?.Invoke("");
                 if (endOfStream) break;
             }
         }
@@ -507,38 +555,54 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
     // longer than maximumSamples is cut at the quietest frame of its last
     // 1.5 seconds and the rest begins the next phrase, so a long sentence is
     // not split in the middle of a word.
+    //
+    // With interimEverySamples set, ReadPhrase also returns a copy of the
+    // phrase so far (IsInterim) each time that much more audio has arrived,
+    // while the phrase is at most interimLimitSamples long and allowInterim
+    // agrees, then continues the same phrase on the next call.
     private sealed class SpeechPhraseReader(Func<float[], int> readFrame, int maximumSamples,
-        int pauseSamples, int minimumPhraseSamples, int longPauseSamples, float startThreshold)
+        int pauseSamples, int minimumPhraseSamples, int longPauseSamples, float startThreshold,
+        int interimEverySamples = 0, int interimLimitSamples = 0)
     {
         public const int FrameSamples = SampleRate / 50;
         private const int LeadInSamples = SampleRate / 4;
         private const int CutSearchSamples = SampleRate * 3 / 2;
+        // Show nothing until there is clearly speech to show.
+        private const int InterimMinimumVoicedSamples = SampleRate * 7 / 10;
         private readonly float[] _frame = new float[FrameSamples];
         private float[] _carry = [];
         private float _noiseFloor = 0.0015f;
+        private Phrase? _phrase;
 
-        public (float[] Samples, int VoicedSamples, bool EndOfStream, bool HitLimit) ReadPhrase()
+        private sealed class Phrase(int maximumSamples)
         {
-            var captured = new float[maximumSamples];
-            var count = 0;
-            var voiced = 0;
-            var started = false;
+            public readonly float[] Captured = new float[maximumSamples];
+            public readonly float[] LeadIn = new float[LeadInSamples];
+            public int Count, Voiced, LeadInCount, QuietSamples, LastInterimAt;
+            public bool Started;
+            public int BestCut = -1;
+            public float BestCutRms = float.MaxValue;
+        }
+
+        public (float[] Samples, int VoicedSamples, bool EndOfStream, bool HitLimit, bool IsInterim) ReadPhrase(
+            Func<bool>? allowInterim = null)
+        {
+            var phrase = _phrase;
+            if (phrase == null)
+            {
+                _phrase = phrase = new Phrase(maximumSamples);
+                if (_carry.Length > 0)
+                {
+                    // The remainder of a phrase cut at the length limit is speech.
+                    Array.Copy(_carry, phrase.Captured, _carry.Length);
+                    phrase.Count = phrase.Voiced = _carry.Length;
+                    phrase.Started = true;
+                    _carry = [];
+                }
+            }
+            var captured = phrase.Captured;
             var endOfStream = false;
             var hitLimit = false;
-            var leadIn = new float[LeadInSamples];
-            var leadInCount = 0;
-            var quietSamples = 0;
-            var bestCut = -1;
-            var bestCutRms = float.MaxValue;
-
-            if (_carry.Length > 0)
-            {
-                // The remainder of a phrase cut at the length limit is speech.
-                Array.Copy(_carry, captured, _carry.Length);
-                count = voiced = _carry.Length;
-                started = true;
-                _carry = [];
-            }
 
             while (true)
             {
@@ -549,55 +613,65 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                 var rms = MathF.Sqrt(energy / available);
                 var loud = rms >= MathF.Max(startThreshold, _noiseFloor * 3);
 
-                if (!started)
+                if (!phrase.Started)
                 {
                     if (!loud)
                     {
                         _noiseFloor = Math.Clamp(_noiseFloor * 0.98f + rms * 0.02f, 0.0005f, 0.02f);
-                        if (leadInCount + available > leadIn.Length)
+                        if (phrase.LeadInCount + available > phrase.LeadIn.Length)
                         {
-                            var shift = leadInCount + available - leadIn.Length;
-                            Array.Copy(leadIn, shift, leadIn, 0, leadInCount - shift);
-                            leadInCount -= shift;
+                            var shift = phrase.LeadInCount + available - phrase.LeadIn.Length;
+                            Array.Copy(phrase.LeadIn, shift, phrase.LeadIn, 0, phrase.LeadInCount - shift);
+                            phrase.LeadInCount -= shift;
                         }
-                        Array.Copy(_frame, 0, leadIn, leadInCount, available);
-                        leadInCount += available;
+                        Array.Copy(_frame, 0, phrase.LeadIn, phrase.LeadInCount, available);
+                        phrase.LeadInCount += available;
                         if (available < FrameSamples) { endOfStream = true; break; }
                         continue;
                     }
-                    Array.Copy(leadIn, captured, leadInCount);
-                    count = leadInCount;
-                    started = true;
+                    Array.Copy(phrase.LeadIn, captured, phrase.LeadInCount);
+                    phrase.Count = phrase.LeadInCount;
+                    phrase.Started = true;
                 }
 
-                if (count + available > captured.Length)
+                if (phrase.Count + available > captured.Length)
                 {
-                    var cut = bestCut > 0 ? bestCut : count;
-                    _carry = new float[count - cut + available];
-                    Array.Copy(captured, cut, _carry, 0, count - cut);
-                    Array.Copy(_frame, 0, _carry, count - cut, available);
-                    count = cut;
+                    var cut = phrase.BestCut > 0 ? phrase.BestCut : phrase.Count;
+                    _carry = new float[phrase.Count - cut + available];
+                    Array.Copy(captured, cut, _carry, 0, phrase.Count - cut);
+                    Array.Copy(_frame, 0, _carry, phrase.Count - cut, available);
+                    phrase.Count = cut;
                     hitLimit = true;
                     break;
                 }
 
-                Array.Copy(_frame, 0, captured, count, available);
-                count += available;
-                if (loud) voiced += available;
-                if (count >= captured.Length - CutSearchSamples && rms < bestCutRms)
+                Array.Copy(_frame, 0, captured, phrase.Count, available);
+                phrase.Count += available;
+                if (loud) phrase.Voiced += available;
+                if (phrase.Count >= captured.Length - CutSearchSamples && rms < phrase.BestCutRms)
                 {
-                    bestCutRms = rms;
-                    bestCut = count;
+                    phrase.BestCutRms = rms;
+                    phrase.BestCut = phrase.Count;
                 }
-                quietSamples = rms < MathF.Max(startThreshold * 0.75f, _noiseFloor * 2) ? quietSamples + available : 0;
-                if (quietSamples >= longPauseSamples ||
-                    (quietSamples >= pauseSamples && count >= minimumPhraseSamples)) break;
+                phrase.QuietSamples = rms < MathF.Max(startThreshold * 0.75f, _noiseFloor * 2)
+                    ? phrase.QuietSamples + available : 0;
+                if (phrase.QuietSamples >= longPauseSamples ||
+                    (phrase.QuietSamples >= pauseSamples && phrase.Count >= minimumPhraseSamples)) break;
                 if (available < FrameSamples) { endOfStream = true; break; }
+
+                if (interimEverySamples > 0 && phrase.Count <= interimLimitSamples &&
+                    phrase.Voiced >= InterimMinimumVoicedSamples &&
+                    phrase.Count - phrase.LastInterimAt >= interimEverySamples &&
+                    allowInterim?.Invoke() == true)
+                {
+                    phrase.LastInterimAt = phrase.Count;
+                    return (captured[..phrase.Count], phrase.Voiced, false, false, true);
+                }
             }
 
-            if (!started) return ([], 0, endOfStream, false);
-            Array.Resize(ref captured, count);
-            return (captured, Math.Min(voiced, count), endOfStream, hitLimit);
+            _phrase = null;
+            if (!phrase.Started) return ([], 0, endOfStream, false, false);
+            return (captured[..phrase.Count], Math.Min(phrase.Voiced, phrase.Count), endOfStream, hitLimit, false);
         }
     }
 

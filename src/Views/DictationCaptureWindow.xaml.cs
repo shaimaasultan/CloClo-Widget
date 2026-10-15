@@ -240,6 +240,7 @@ public partial class DictationCaptureWindow : Window
         _playback = null;
         PlaybackToggle.IsChecked = false;
         PlaybackToggle.Content = "Transcribe playing audio: Off";
+        ShowLiveText("");
         if (session != null) _playbackStop = session.DisposeAsync().AsTask();
         await _playbackStop;
     }
@@ -256,7 +257,25 @@ public partial class DictationCaptureWindow : Window
         System.Runtime.Intrinsics.X86.Fma.IsSupported &&
         (System.Runtime.Intrinsics.X86.X86Base.CpuId(1, 0).Ecx & (1 << 29)) != 0;
 
-    private void AttachRecognizedText(LocalAudioTranscriber session) =>
+    private void AttachRecognizedText(LocalAudioTranscriber session)
+    {
+        session.InterimTextRecognized += text => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if ((_microphone != session && _drainingMicrophone != session && _playback != session) || !IsLoaded) return;
+            ShowLiveText(text);
+        }));
+        AttachFinalText(session);
+    }
+
+    private void ShowLiveText(string text)
+    {
+        LiveText.Text = text;
+        LiveText.FlowDirection = _currentLanguageTag == ArabicLanguageTag
+            ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
+        LiveText.Visibility = text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void AttachFinalText(LocalAudioTranscriber session) =>
         session.TextRecognized += text => Dispatcher.BeginInvoke(new Action(() =>
         {
             if ((_microphone != session && _drainingMicrophone != session && _playback != session) || !IsLoaded) return;
@@ -354,7 +373,11 @@ public partial class DictationCaptureWindow : Window
         // Drain text events queued by the final Whisper chunk before Save
         // reads the editor or another capture session can start.
         await Dispatcher.InvokeAsync(() => { });
-        if (_drainingMicrophone == session) _drainingMicrophone = null;
+        if (_drainingMicrophone == session)
+        {
+            _drainingMicrophone = null;
+            if (_microphone == null && IsLoaded) ShowLiveText("");
+        }
     }
 
     private async void English_Click(object sender, RoutedEventArgs e) => await SwitchLanguageAsync(EnglishLanguageTag);
