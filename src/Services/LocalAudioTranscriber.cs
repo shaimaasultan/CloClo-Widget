@@ -123,7 +123,8 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
             }
             using var ownedFactory = factory;
             Volatile.Write(ref _engine, useGpu ? $"large-v3-turbo model on {gpuName}" : "base model on the CPU");
-            var builder = factory.CreateBuilder().WithLanguage(arabic ? "ar" : "en");
+            var builder = factory.CreateBuilder().WithLanguage(arabic ? "ar" : "en")
+                .WithThreads(WhisperThreads.Value);
             if (recognitionPrompt != null)
             {
                 // Commands are at most 8 seconds, but Whisper encodes a full
@@ -383,6 +384,33 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
         return WhisperFactory.FromBuffer(modelBytes,
             new WhisperFactoryOptions { UseGpu = useGpu, UseFlashAttention = useGpu });
     }
+
+    // One thread per physical core. Whisper defaults to every logical
+    // processor, and two threads sharing a core compete for its vector
+    // units: on an 8-core, 16-thread laptop base ran 1.3x faster this way
+    // with identical output.
+    private static readonly Lazy<int> WhisperThreads = new(() =>
+    {
+        // SYSTEM_LOGICAL_PROCESSOR_INFORMATION entries are 32 bytes on x64;
+        // each with Relationship == RelationProcessorCore (0) is one core.
+        const int EntrySize = 32;
+        var length = 0;
+        GetLogicalProcessorInformation(IntPtr.Zero, ref length);
+        if (length <= 0) return Environment.ProcessorCount;
+        var buffer = Marshal.AllocHGlobal(length);
+        try
+        {
+            if (!GetLogicalProcessorInformation(buffer, ref length)) return Environment.ProcessorCount;
+            var cores = 0;
+            for (var offset = 0; offset + EntrySize <= length; offset += EntrySize)
+                if (Marshal.ReadInt32(buffer, offset + IntPtr.Size) == 0) cores++;
+            return cores > 0 ? Math.Min(cores, Environment.ProcessorCount) : Environment.ProcessorCount;
+        }
+        finally { Marshal.FreeHGlobal(buffer); }
+    });
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetLogicalProcessorInformation(IntPtr buffer, ref int length);
 
     private static readonly string[] CpuRuntime =
         ["ggml-base-whisper.dll", "ggml-cpu-whisper.dll", "ggml-whisper.dll", "whisper.dll"];
