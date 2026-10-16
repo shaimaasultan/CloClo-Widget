@@ -1,0 +1,164 @@
+<Window x:Class="CloCloWidget.LetterSignalsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="CloClo — Letter signals"
+        Width="1100" Height="860" MinWidth="820" MinHeight="660"
+        WindowStartupLocation="Manual" ShowInTaskbar="False"
+        Background="#1C2935" Foreground="White">
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="#34495B" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#526779" />
+            <Setter Property="Padding" Value="10,3" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style TargetType="RadioButton">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,14,0" />
+        </Style>
+        <Style x:Key="Field" TargetType="TextBox">
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="Padding" Value="6,2" />
+            <Setter Property="Width" Value="170" />
+            <Setter Property="Background" Value="#14202A" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#526779" />
+            <Setter Property="CaretBrush" Value="White" />
+        </Style>
+        <Style x:Key="LaneTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,10,0" />
+        </Style>
+        <Style x:Key="LaneInfo" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#9FB3C4" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="10,0,0,0" />
+        </Style>
+        <Style x:Key="Lane" TargetType="Border">
+            <Setter Property="Background" Value="#101921" />
+            <Setter Property="BorderBrush" Value="#34495B" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Margin" Value="0,4,0,0" />
+        </Style>
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="#22384A" />
+            <Setter Property="Foreground" Value="#D6E2EC" />
+            <Setter Property="Padding" Value="6,3" />
+            <Setter Property="BorderBrush" Value="#34495B" />
+            <Setter Property="BorderThickness" Value="0,0,1,1" />
+        </Style>
+    </Window.Resources>
+    <Grid Margin="16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="380" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Words, choices, signals -->
+        <Grid Grid.Column="0" Margin="0,0,16,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <WrapPanel Grid.Row="0">
+                <TextBlock Text="Word 1:" Foreground="#D6E2EC" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <TextBox x:Name="Word1Box" Style="{StaticResource Field}" Text="cloclo" Margin="0,0,20,0" />
+                <TextBlock Text="Word 2:" Foreground="#D6E2EC" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <TextBox x:Name="Word2Box" Style="{StaticResource Field}" Text="youtube" />
+            </WrapPanel>
+
+            <Border Grid.Row="1" Margin="0,10,0,0" Padding="10,8" Background="#22384A" BorderBrush="#3F6A8A" BorderThickness="1" CornerRadius="4">
+                <StackPanel>
+                    <WrapPanel>
+                        <TextBlock Text="Mouth from:" Foreground="#D6E2EC" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="SemiBold" />
+                        <RadioButton x:Name="TableMouthRadio" Content="the letter table" GroupName="Mouth" IsChecked="True" Checked="Choice_Changed" />
+                        <RadioButton x:Name="DavidMouthRadio" Content="David's letters (his mouth for each letter)" GroupName="Mouth" Checked="Choice_Changed" />
+                    </WrapPanel>
+                    <WrapPanel Margin="0,8,0,0">
+                        <TextBlock Text="Melody from:" Foreground="#D6E2EC" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="SemiBold" />
+                        <RadioButton x:Name="PlainMelodyRadio" Content="plain (110 → 85 Hz, level)" GroupName="Melody" IsChecked="True" Checked="Choice_Changed" />
+                        <RadioButton x:Name="DavidMelodyRadio" Content="David's melody for each word" GroupName="Melody" Checked="Choice_Changed" />
+                    </WrapPanel>
+                    <TextBlock x:Name="ChoiceStatus" Foreground="#9FB3C4" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,12,0,0">
+                <TextBlock x:Name="Built1Title" Style="{StaticResource LaneTitle}" Text="1 · Built from letters" Foreground="#7FD18B" />
+                <Button x:Name="PlayBuilt1Button" Content="▶ Play" Click="PlayBuilt1_Click" IsEnabled="False" />
+                <TextBlock x:Name="Built1Info" Style="{StaticResource LaneInfo}" />
+            </StackPanel>
+            <Border Grid.Row="3" Style="{StaticResource Lane}"><Canvas x:Name="Built1Canvas" ClipToBounds="True" /></Border>
+
+            <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,10,0,0">
+                <TextBlock x:Name="Built2Title" Style="{StaticResource LaneTitle}" Text="2 · Built from letters" Foreground="#7FB8E0" />
+                <Button x:Name="PlayBuilt2Button" Content="▶ Play" Click="PlayBuilt2_Click" IsEnabled="False" />
+                <TextBlock x:Name="Built2Info" Style="{StaticResource LaneInfo}" />
+            </StackPanel>
+            <Border Grid.Row="5" Style="{StaticResource Lane}"><Canvas x:Name="Built2Canvas" ClipToBounds="True" /></Border>
+
+            <StackPanel Grid.Row="6" Orientation="Horizontal" Margin="0,10,0,0">
+                <TextBlock x:Name="Real1Title" Style="{StaticResource LaneTitle}" Text="3 · David, real" Foreground="#E8A75A" />
+                <Button x:Name="PlayReal1Button" Content="▶ Play" Click="PlayReal1_Click" IsEnabled="False" />
+                <TextBlock x:Name="Real1Info" Style="{StaticResource LaneInfo}" />
+            </StackPanel>
+            <Border Grid.Row="7" Style="{StaticResource Lane}"><Canvas x:Name="Real1Canvas" ClipToBounds="True" /></Border>
+
+            <StackPanel Grid.Row="8" Orientation="Horizontal" Margin="0,10,0,0">
+                <TextBlock x:Name="Real2Title" Style="{StaticResource LaneTitle}" Text="4 · David, real" Foreground="#C98BE0" />
+                <Button x:Name="PlayReal2Button" Content="▶ Play" Click="PlayReal2_Click" IsEnabled="False" />
+                <TextBlock x:Name="Real2Info" Style="{StaticResource LaneInfo}" />
+            </StackPanel>
+            <Border Grid.Row="9" Style="{StaticResource Lane}"><Canvas x:Name="Real2Canvas" ClipToBounds="True" /></Border>
+
+            <TextBlock x:Name="ScoreText" Grid.Row="10" Margin="0,10,0,0" FontSize="13" FontFamily="Consolas" Foreground="White" TextWrapping="Wrap" />
+        </Grid>
+
+        <!-- The letter table -->
+        <DockPanel Grid.Column="1">
+            <TextBlock DockPanel.Dock="Top" Text="Letter table" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,4" />
+            <TextBlock DockPanel.Dock="Top" Foreground="#9FB3C4" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,6"
+                       Text="Each letter's mouth: F1-F3 are the three lowest ringing frequencies (Hz) for voiced sounds; Noise is the centre of the hiss or pop. Edit any number - both words are rebuilt. Spelling: c, q = k · x = k s · j = d y · ou, oo = u · ee, ea = i · ch = t sh · a final e after a consonant is silent." />
+            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
+                <Button Content="Reset table" Click="ResetTable_Click" />
+            </StackPanel>
+            <DataGrid x:Name="TableGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                      Background="#101921" RowBackground="#14202A" AlternatingRowBackground="#182634" Foreground="White"
+                      BorderBrush="#34495B" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#22384A"
+                      HeadersVisibility="Column" CellEditEnding="TableGrid_CellEditEnding">
+                <DataGrid.Resources>
+                    <!-- The edit box is light; keep the typed number readable. -->
+                    <Style TargetType="TextBox">
+                        <Setter Property="Foreground" Value="Black" />
+                    </Style>
+                </DataGrid.Resources>
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Letter" Binding="{Binding Key}" IsReadOnly="True" Width="48" />
+                    <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" IsReadOnly="True" Width="96" />
+                    <DataGridTextColumn Header="F1" Binding="{Binding F1}" Width="44" />
+                    <DataGridTextColumn Header="F2" Binding="{Binding F2}" Width="46" />
+                    <DataGridTextColumn Header="F3" Binding="{Binding F3}" Width="46" />
+                    <DataGridTextColumn Header="Noise" Binding="{Binding NoiseHz}" Width="48" />
+                    <DataGridTextColumn Header="ms" Binding="{Binding Ms}" Width="38" />
+                    <DataGridTextColumn Header="Loud" Binding="{Binding Loudness}" Width="*" />
+                </DataGrid.Columns>
+            </DataGrid>
+        </DockPanel>
+    </Grid>
+</Window>

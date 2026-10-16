@@ -46,6 +46,11 @@ public partial class MainWindow : Window
     private Window? _avatarWindow;
     private CommandSearchBar? _commandSearchBar;
     private ScientificCalculatorWindow? _calculatorWindow;
+    private SoundPatternTestWindow? _soundPatternWindow;
+    private VoiceSignalsWindow? _voiceSignalsWindow;
+    private DavidMatchWindow? _davidMatchWindow;
+    private VoiceConverterWindow? _voiceConverterWindow;
+    private LetterSignalsWindow? _letterSignalsWindow;
     private ContextMenu? _activeContextMenu;
 
     private const int GWL_EXSTYLE = -20;
@@ -507,6 +512,150 @@ public partial class MainWindow : Window
         ShowSensitive(window);
     }
 
+    // Voice activation is paused while the test listens, so saying "CloClo"
+    // into it doesn't also wake CloClo.
+    private void ShowSoundPatternTest()
+    {
+        if (_soundPatternWindow != null)
+        {
+            if (_soundPatternWindow.WindowState == WindowState.Minimized) _soundPatternWindow.WindowState = WindowState.Normal;
+            _soundPatternWindow.Activate();
+            return;
+        }
+
+        _voicePausedForEditor = true;
+        StopVoiceRetryTimer();
+        _ = StopVoiceActivationAsync();
+        var window = new SoundPatternTestWindow
+        {
+            Owner = this,
+            Topmost = _settings.AlwaysOnTop,
+        };
+        _soundPatternWindow = window;
+        window.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_soundPatternWindow, window)) _soundPatternWindow = null;
+            if (_dictationWindow == null && !VoiceTestWindowOpen) ResumeVoiceActivationAfterEditor();
+        };
+        PositionBesideWidget(window);
+        ShowSensitive(window);
+    }
+
+    // Like the sound pattern test, voice activation pauses while this window
+    // can record, so saying "CloClo" into it doesn't also wake CloClo.
+    private void ShowVoiceSignals()
+    {
+        if (_voiceSignalsWindow != null)
+        {
+            if (_voiceSignalsWindow.WindowState == WindowState.Minimized) _voiceSignalsWindow.WindowState = WindowState.Normal;
+            _voiceSignalsWindow.Activate();
+            return;
+        }
+
+        _voicePausedForEditor = true;
+        StopVoiceRetryTimer();
+        _ = StopVoiceActivationAsync();
+        var window = new VoiceSignalsWindow
+        {
+            Owner = this,
+            Topmost = _settings.AlwaysOnTop,
+        };
+        _voiceSignalsWindow = window;
+        window.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_voiceSignalsWindow, window)) _voiceSignalsWindow = null;
+            if (_dictationWindow == null && !VoiceTestWindowOpen) ResumeVoiceActivationAfterEditor();
+        };
+        PositionBesideWidget(window);
+        ShowSensitive(window);
+    }
+
+    // The voice test windows record from the microphone; voice activation
+    // stays paused while any of them is open. (The dictation editor resumes
+    // it itself when its capture stops, so it isn't counted here.)
+    private bool VoiceTestWindowOpen =>
+        _soundPatternWindow != null || _voiceSignalsWindow != null ||
+        _davidMatchWindow != null || _voiceConverterWindow != null;
+
+    // Builds words from letters - no microphone, so voice activation stays on.
+    private void ShowLetterSignals()
+    {
+        if (_letterSignalsWindow != null)
+        {
+            if (_letterSignalsWindow.WindowState == WindowState.Minimized) _letterSignalsWindow.WindowState = WindowState.Normal;
+            _letterSignalsWindow.Activate();
+            return;
+        }
+        var window = new LetterSignalsWindow
+        {
+            Owner = this,
+            Topmost = _settings.AlwaysOnTop,
+        };
+        _letterSignalsWindow = window;
+        window.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_letterSignalsWindow, window)) _letterSignalsWindow = null;
+        };
+        PositionBesideWidget(window);
+        ShowSensitive(window);
+    }
+
+    // Records like Voice signals, so voice activation pauses while it's open.
+    private void ShowVoiceConverter()
+    {
+        if (_voiceConverterWindow != null)
+        {
+            if (_voiceConverterWindow.WindowState == WindowState.Minimized) _voiceConverterWindow.WindowState = WindowState.Normal;
+            _voiceConverterWindow.Activate();
+            return;
+        }
+
+        _voicePausedForEditor = true;
+        StopVoiceRetryTimer();
+        _ = StopVoiceActivationAsync();
+        var window = new VoiceConverterWindow
+        {
+            Owner = this,
+            Topmost = _settings.AlwaysOnTop,
+        };
+        _voiceConverterWindow = window;
+        window.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_voiceConverterWindow, window)) _voiceConverterWindow = null;
+            if (_dictationWindow == null && !VoiceTestWindowOpen) ResumeVoiceActivationAfterEditor();
+        };
+        PositionBesideWidget(window);
+        ShowSensitive(window);
+    }
+
+    // Records like Voice signals, so voice activation pauses while it's open.
+    private void ShowDavidMatch()
+    {
+        if (_davidMatchWindow != null)
+        {
+            if (_davidMatchWindow.WindowState == WindowState.Minimized) _davidMatchWindow.WindowState = WindowState.Normal;
+            _davidMatchWindow.Activate();
+            return;
+        }
+
+        _voicePausedForEditor = true;
+        StopVoiceRetryTimer();
+        _ = StopVoiceActivationAsync();
+        var window = new DavidMatchWindow
+        {
+            Owner = this,
+            Topmost = _settings.AlwaysOnTop,
+        };
+        _davidMatchWindow = window;
+        window.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_davidMatchWindow, window)) _davidMatchWindow = null;
+            if (_dictationWindow == null && !VoiceTestWindowOpen) ResumeVoiceActivationAfterEditor();
+        };
+        PositionBesideWidget(window);
+        ShowSensitive(window);
+    }
+
     // Search runs only these fixed menu actions. Typed text filters labels and
     // aliases; it is never passed to a process, file path or command parser.
     private IReadOnlyList<WidgetSearchAction> BuildQuickActions()
@@ -515,6 +664,11 @@ public partial class MainWindow : Window
         {
             new("Windows status", "storage connection drive disk network wifi", WidgetSearchActionKind.OpenWindow, ShowWindowsStatus),
             new("Scientific calculator", "math arithmetic trig sin cos log square root", WidgetSearchActionKind.OpenWindow, ShowScientificCalculator),
+            new("Sound pattern test", "voice signal microphone wake word cloclo accessibility", WidgetSearchActionKind.OpenWindow, ShowSoundPatternTest),
+            new("Voice signals", "waveform david hoda microphone record compare accessibility", WidgetSearchActionKind.OpenWindow, ShowVoiceSignals),
+            new("Find it in David's words", "david match word microphone record recognise accessibility", WidgetSearchActionKind.OpenWindow, ShowDavidMatch),
+            new("Voice converter", "david convert my voice microphone record compare accessibility", WidgetSearchActionKind.OpenWindow, ShowVoiceConverter),
+            new("Letter signals", "letters formant table build word david compare signal", WidgetSearchActionKind.OpenWindow, ShowLetterSignals),
             new("Custom reminders", "reminder remainder schedule message", WidgetSearchActionKind.OpenWindow, OpenCustomReminders),
             new("Open dictation folder", "dictation files recordings", WidgetSearchActionKind.OpenFolder, OpenDictationFolder),
             new("Set location", "city place weather gps", WidgetSearchActionKind.OpenWindow, OpenLocationDialog),
@@ -1568,6 +1722,11 @@ public partial class MainWindow : Window
         menu.Items.Add(Item("Custom reminders…", OpenCustomReminders));
         menu.Items.Add(Item("Windows status…", ShowWindowsStatus));
         menu.Items.Add(Item("Scientific calculator…", ShowScientificCalculator));
+        menu.Items.Add(Item("Sound pattern test…", ShowSoundPatternTest));
+        menu.Items.Add(Item("Voice signals…", ShowVoiceSignals));
+        menu.Items.Add(Item("Find it in David's words…", ShowDavidMatch));
+        menu.Items.Add(Item("Voice converter…", ShowVoiceConverter));
+        menu.Items.Add(Item("Letter signals…", ShowLetterSignals));
         menu.Items.Add(Item("Refresh weather", () => _ = RefreshWeatherAsync()));
         menu.Items.Add(Item("Start new dictation file", StartNewDictationFile));
         menu.Items.Add(Item("Open dictation folder", OpenDictationFolder));
@@ -1940,6 +2099,7 @@ public partial class MainWindow : Window
 
     private void ResumeVoiceActivationAfterEditor()
     {
+        if (VoiceTestWindowOpen) return; // still listening; it resumes on close
         _voicePausedForEditor = false;
         StopVoiceRetryTimer();
         if (_settings.VoiceActivationEnabled) _ = StartVoiceActivationAsync();

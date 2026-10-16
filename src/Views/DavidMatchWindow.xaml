@@ -1,0 +1,174 @@
+<Window x:Class="CloCloWidget.DavidMatchWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="CloClo — Find it in David's words"
+        Width="900" Height="900" MinWidth="680" MinHeight="720"
+        WindowStartupLocation="Manual" ShowInTaskbar="False"
+        Background="#1C2935" Foreground="White">
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="#34495B" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#526779" />
+            <Setter Property="Padding" Value="12,6" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,14,0" />
+        </Style>
+        <Style x:Key="Caption" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#9FB3C4" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Margin" Value="0,10,0,4" />
+        </Style>
+        <Style x:Key="LaneTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,10,0,4" />
+        </Style>
+        <Style x:Key="LaneInfo" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#9FB3C4" />
+            <Setter Property="Margin" Value="10,10,0,4" />
+            <Setter Property="VerticalAlignment" Value="Bottom" />
+        </Style>
+    </Window.Resources>
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- David's words -->
+        <StackPanel Grid.Row="0">
+            <DockPanel>
+                <TextBlock Text="David's words (one per line or separated by commas):" Foreground="#D6E2EC" VerticalAlignment="Center" />
+                <Button x:Name="PrepareButton" DockPanel.Dock="Right" Content="Prepare David's words" Click="Prepare_Click"
+                        Padding="10,3" FontSize="12" Margin="8,0,0,0" HorizontalAlignment="Right" />
+                <TextBlock x:Name="WordsStatus" Foreground="#9FB3C4" FontSize="12" VerticalAlignment="Center" Margin="10,0,0,0" />
+            </DockPanel>
+            <CheckBox x:Name="MoreExamplesCheck" Margin="0,6,0,0" IsChecked="True" Checked="MoreExamples_Changed" Unchecked="MoreExamples_Changed"
+                      Content="More examples per word: David slow and fast too (a word counts as its closest example)" />
+            <TextBox x:Name="WordsBox" Margin="0,6,0,0" Height="56" AcceptsReturn="True" TextWrapping="Wrap"
+                     VerticalScrollBarVisibility="Auto" FontSize="14" Padding="6,4" Background="#14202A" Foreground="White"
+                     BorderBrush="#526779" CaretBrush="White"
+                     Text="cloclo, now, new, no, youtube, stop, open, notepad, spotify, music, weather, yes, calculator, close, volume up" />
+        </StackPanel>
+
+        <!-- David's filters -->
+        <Border Grid.Row="1" Margin="0,10,0,0" Padding="10,8" Background="#22384A" BorderBrush="#3F6A8A" BorderThickness="1" CornerRadius="4">
+            <StackPanel>
+                <WrapPanel>
+                    <CheckBox x:Name="ConvertCheck" Content="Say me in David's style first" IsChecked="True" FontWeight="SemiBold"
+                              Checked="Option_Changed" Unchecked="Option_Changed" />
+                    <TextBlock Text="pitch" Foreground="#D6E2EC" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <Slider x:Name="PitchSlider" Width="120" Minimum="60" Maximum="160" Value="84" TickFrequency="1" IsSnapToTickEnabled="True"
+                            VerticalAlignment="Center" ValueChanged="Pitch_Changed" />
+                    <TextBlock x:Name="PitchText" Foreground="#D6E2EC" VerticalAlignment="Center" Width="52" Margin="6,0,10,0" Text="84 Hz" />
+                    <CheckBox x:Name="IntonationCheck" Content="follow my intonation" IsChecked="True" Checked="Option_Changed" Unchecked="Option_Changed" />
+                    <TextBlock Text="mouth size" Foreground="#D6E2EC" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <ComboBox x:Name="MouthBox" SelectedIndex="0" VerticalAlignment="Center" Margin="0,0,14,0" SelectionChanged="MouthBox_Changed">
+                        <ComboBoxItem Content="as mine" Tag="1" />
+                        <ComboBoxItem Content="male (−15%)" Tag="0.85" />
+                        <ComboBoxItem Content="fit to David's voice" Tag="voice"
+                                      ToolTip="Your average mouth against his average mouth over all his words" />
+                    </ComboBox>
+                    <CheckBox x:Name="ColourCheck" Content="David's colour (his whole voice)" Checked="Option_Changed" Unchecked="Option_Changed"
+                              ToolTip="His average tone over all his words in place of yours - chosen before knowing the word" />
+                </WrapPanel>
+                <TextBlock x:Name="OptionsNote" Foreground="#9FB3C4" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap"
+                           Text="These change your voice towards David's voice in general - his pitch, mouth size and colour - and keep your word, so the comparison is about what you said. Your changed word and each of David's words are stretched evenly to the same length and compared moment by moment. (David's melody, loudness and mouth belong to one particular word and replace yours with his; they're on the Voice signals page for listening.)" />
+            </StackPanel>
+        </Border>
+
+        <!-- Record -->
+        <WrapPanel Grid.Row="2" Margin="0,12,0,0">
+            <Button x:Name="RecordButton" Content="● Record me" Click="Record_Click" Background="#8A3B3B" FontSize="16" Padding="16,8" />
+            <Button x:Name="HearMeButton" Content="▶ Hear me" Click="HearMe_Click" IsEnabled="False" />
+            <Button x:Name="HearConvertedButton" Content="▶ Hear me as David" Click="HearConverted_Click" IsEnabled="False" />
+            <Button x:Name="ThatsItButton" Content="✓ That's what I said" Click="ThatsIt_Click" IsEnabled="False" Background="#2F6B4A"
+                    ToolTip="Pick the word you really said in the list, then press this: your recording becomes one more example of that word for this session." />
+            <TextBlock x:Name="RecordStatus" Foreground="#D6E2EC" VerticalAlignment="Center" Margin="6,0,0,0" TextWrapping="Wrap" MaxWidth="420"
+                       Text="Prepare David's words, then record yourself saying one of them." />
+        </WrapPanel>
+
+        <!-- Best match and ranking -->
+        <Border Grid.Row="3" Margin="0,12,0,0" Padding="12,8" Background="#14202A" BorderBrush="#34495B" BorderThickness="1" CornerRadius="4">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Margin="0,0,20,0" MinWidth="220">
+                    <TextBlock Text="Closest of David's words" Foreground="#9FB3C4" FontSize="12" />
+                    <TextBlock x:Name="BestWordText" FontSize="34" FontWeight="SemiBold" Foreground="#E8A75A" Text="—" />
+                    <TextBlock x:Name="BestScoreText" FontSize="13" Foreground="#D6E2EC" />
+                    <Button x:Name="HearDavidButton" Content="▶ Hear David say it" Click="HearDavid_Click" IsEnabled="False"
+                            Margin="0,8,0,0" HorizontalAlignment="Left" />
+                    <TextBlock x:Name="ExampleText" Foreground="#9FB3C4" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                </StackPanel>
+                <ListBox x:Name="RankingList" Grid.Column="1" Height="150" Background="#101921" BorderBrush="#34495B" Foreground="White"
+                         SelectionChanged="Ranking_SelectionChanged" ToolTip="Pick a word to compare with it and hear David say it">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Width="520">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="26" />
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="120" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding Rank}" Foreground="#9FB3C4" />
+                                <TextBlock Grid.Column="1" Text="{Binding Text}" FontWeight="SemiBold" />
+                                <Border Grid.Column="2" Background="#22384A" Height="10" Margin="0,0,8,0" VerticalAlignment="Center">
+                                    <Rectangle Fill="#E8A75A" Width="{Binding BarWidth}" HorizontalAlignment="Left" />
+                                </Border>
+                                <TextBlock Grid.Column="3" Text="{Binding Detail}" Foreground="#9FB3C4" FontSize="12" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Border>
+
+        <!-- Signals -->
+        <StackPanel Grid.Row="5" Orientation="Horizontal">
+            <TextBlock Style="{StaticResource LaneTitle}" Text="You (microphone)" Foreground="#7FB8E0" />
+            <TextBlock x:Name="MeInfo" Style="{StaticResource LaneInfo}" />
+        </StackPanel>
+        <Border Grid.Row="6" Background="#101921" BorderBrush="#34495B" BorderThickness="1">
+            <Canvas x:Name="MeCanvas" ClipToBounds="True" />
+        </Border>
+        <StackPanel Grid.Row="7" Orientation="Horizontal">
+            <TextBlock Style="{StaticResource LaneTitle}" Text="You, as compared" Foreground="#7FD18B" />
+            <TextBlock x:Name="ComparedInfo" Style="{StaticResource LaneInfo}" />
+        </StackPanel>
+        <Border Grid.Row="8" Background="#101921" BorderBrush="#34495B" BorderThickness="1">
+            <Canvas x:Name="ComparedCanvas" ClipToBounds="True" />
+        </Border>
+        <StackPanel Grid.Row="9" Orientation="Horizontal">
+            <TextBlock x:Name="DavidTitle" Style="{StaticResource LaneTitle}" Text="Windows David" Foreground="#E8A75A" />
+            <TextBlock x:Name="DavidInfo" Style="{StaticResource LaneInfo}" />
+        </StackPanel>
+        <Border Grid.Row="10" Background="#101921" BorderBrush="#34495B" BorderThickness="1">
+            <Canvas x:Name="DavidCanvas" ClipToBounds="True" />
+        </Border>
+
+        <TextBlock Grid.Row="11" Margin="0,8,0,0" Foreground="#9FB3C4" FontSize="12" TextWrapping="Wrap"
+                   Text="Score = how alike the green and orange signals are, moment by moment at the same fixed length: mouth shapes, averaged with loudness and zero-crossings. No model, no FFT. Nothing is saved." />
+    </Grid>
+</Window>

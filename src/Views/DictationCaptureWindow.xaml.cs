@@ -27,6 +27,9 @@ public partial class DictationCaptureWindow : Window
     private Task _microphoneStop = Task.CompletedTask;
     private Task _playbackStop = Task.CompletedTask;
     private string? _lastSavedText;
+    private LocalAudioTranscriber? _liveTextSession;
+    private string _liveText = "";
+    private int _liveTextStart;
 
     // The parent retains the existing restricted append-to-dictation-folder flow.
     public event Func<string, string?>? SaveRequested;
@@ -240,7 +243,7 @@ public partial class DictationCaptureWindow : Window
         _playback = null;
         PlaybackToggle.IsChecked = false;
         PlaybackToggle.Content = "Transcribe playing audio: Off";
-        ShowLiveText("");
+        ClearLiveText(session);
         if (session != null) _playbackStop = session.DisposeAsync().AsTask();
         await _playbackStop;
     }
@@ -262,23 +265,61 @@ public partial class DictationCaptureWindow : Window
         session.InterimTextRecognized += text => Dispatcher.BeginInvoke(new Action(() =>
         {
             if ((_microphone != session && _drainingMicrophone != session && _playback != session) || !IsLoaded) return;
-            ShowLiveText(text);
+            SetLiveText(session, text);
         }));
         AttachFinalText(session);
     }
 
-    private void ShowLiveText(string text)
+    private void SetLiveText(LocalAudioTranscriber session, string text)
     {
-        LiveText.Text = text;
-        LiveText.FlowDirection = _currentLanguageTag == ArabicLanguageTag
-            ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
-        LiveText.Visibility = text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (_liveTextSession != null && _liveTextSession != session) ClearLiveText(_liveTextSession);
+        ClearLiveText(session);
+        if (text.Length == 0) return;
+
+        var separator = CaptureBox.Text.Length > 0 && !char.IsWhiteSpace(CaptureBox.Text[^1]) ? " " : "";
+        var provisional = separator + text;
+        if (CaptureBox.Text.Length + provisional.Length > CaptureBox.MaxLength) return;
+        var selectionStart = CaptureBox.SelectionStart;
+        var selectionLength = CaptureBox.SelectionLength;
+        _liveTextStart = CaptureBox.Text.Length;
+        _liveText = provisional;
+        _liveTextSession = session;
+        CaptureBox.AppendText(provisional);
+        CaptureBox.Select(selectionStart, selectionLength);
+        CaptureBox.ScrollToEnd();
+    }
+
+    private void ClearLiveText(LocalAudioTranscriber? session)
+    {
+        if (session == null || _liveTextSession != session) return;
+        var start = _liveTextStart;
+        if (start > CaptureBox.Text.Length ||
+            _liveText.Length > CaptureBox.Text.Length - start ||
+            string.CompareOrdinal(CaptureBox.Text, start, _liveText, 0, _liveText.Length) != 0)
+        {
+            // Edits before the preview can move it; it remains the exact
+            // suffix until the user edits the preview itself.
+            start = CaptureBox.Text.EndsWith(_liveText, StringComparison.Ordinal)
+                ? CaptureBox.Text.Length - _liveText.Length : -1;
+        }
+        if (start >= 0)
+        {
+            var selectionStart = CaptureBox.SelectionStart;
+            var selectionLength = CaptureBox.SelectionLength;
+            CaptureBox.Select(start, _liveText.Length);
+            CaptureBox.SelectedText = "";
+            CaptureBox.Select(Math.Min(selectionStart, start),
+                selectionStart < start ? Math.Min(selectionLength, start - selectionStart) : 0);
+        }
+        _liveTextSession = null;
+        _liveText = "";
     }
 
     private void AttachFinalText(LocalAudioTranscriber session) =>
         session.TextRecognized += text => Dispatcher.BeginInvoke(new Action(() =>
         {
             if ((_microphone != session && _drainingMicrophone != session && _playback != session) || !IsLoaded) return;
+            ClearLiveText(session);
             var separator = CaptureBox.Text.Length > 0 && !char.IsWhiteSpace(CaptureBox.Text[^1]) ? " " : "";
             if (CaptureBox.Text.Length + separator.Length + text.Length > CaptureBox.MaxLength)
             {
@@ -376,7 +417,7 @@ public partial class DictationCaptureWindow : Window
         if (_drainingMicrophone == session)
         {
             _drainingMicrophone = null;
-            if (_microphone == null && IsLoaded) ShowLiveText("");
+            if (_microphone == null && IsLoaded) ClearLiveText(session);
         }
     }
 

@@ -106,6 +106,14 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   It supports typed expressions, a keypad, degree/radian mode, trigonometry,
   logarithms, roots, powers, factorials and `Ans`. Calculations use a bounded
   local arithmetic parser, not a scripting engine or network service.
+- **Voice signal tools:** the search box and right-click menu open Sound pattern
+  test, Voice signals, Find it in David's words, Voice converter, and Letter
+  signals. These local experiments compare microphone samples with synthesized
+  Windows voices. Recordings stay in memory and stop when their windows close.
+  Sound pattern test can save measured sound pieces to
+  `%AppData%\CloCloWidget\sound-pieces.json` only when you choose to teach or
+  save them; the file contains measurements and your letter, word, and speaker
+  labels, but no recorded audio.
 - **Icon bar** under the temperature — up to 7 of these at a time, picked in
   right-click → **Icons**:
 

@@ -1,0 +1,148 @@
+<Window x:Class="CloCloWidget.VoiceSignalsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="CloClo — Voice signals"
+        Width="860" Height="960" MinWidth="640" MinHeight="760"
+        WindowStartupLocation="Manual" ShowInTaskbar="False"
+        Background="#1C2935" Foreground="White">
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="#34495B" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#526779" />
+            <Setter Property="Padding" Value="12,6" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style x:Key="LaneTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,12,0,4" />
+        </Style>
+        <Style x:Key="LaneInfo" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#9FB3C4" />
+            <Setter Property="Margin" Value="10,12,0,4" />
+            <Setter Property="VerticalAlignment" Value="Bottom" />
+        </Style>
+    </Window.Resources>
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBox x:Name="WordBox" Grid.Row="0" FontSize="22" Padding="8,4" Background="#14202A" Foreground="White"
+                 BorderBrush="#526779" CaretBrush="White" Text="cloclo"
+                 ToolTip="The word to draw, in Latin or Arabic letters. Each voice gets it written in the letters it reads." />
+
+        <StackPanel Grid.Row="1">
+        <WrapPanel Margin="0,10,0,0">
+            <Button x:Name="DavidButton" Content="▶ Hear David" Click="David_Click" />
+            <Button x:Name="HodaButton" Content="▶ Hear Hoda" Click="Hoda_Click" />
+            <Button x:Name="RecordButton" Content="● Record me" Click="Record_Click" Background="#8A3B3B" />
+            <Button x:Name="HearMeButton" Content="▶ Hear me" Click="HearMe_Click" IsEnabled="False" />
+        </WrapPanel>
+
+        <WrapPanel Margin="0,10,0,0">
+            <TextBlock Text="Time:" Foreground="#D6E2EC" VerticalAlignment="Center" Margin="0,0,10,0" />
+            <RadioButton x:Name="AsRecordedRadio" Content="As recorded" GroupName="TimeMode" IsChecked="True" Foreground="White"
+                         Margin="0,0,14,0" Checked="Redraw" ToolTip="Real time: a slower speaker is drawn wider." />
+            <RadioButton x:Name="StretchedRadio" Content="Stretched to the same length" GroupName="TimeMode" Foreground="White"
+                         Margin="0,0,14,0" Checked="Redraw" ToolTip="Each word evenly stretched or squeezed to your length." />
+            <RadioButton x:Name="LinedUpRadio" Content="Lined up with me (DTW)" GroupName="TimeMode" Foreground="White"
+                         Checked="Redraw" ToolTip="Each part stretched separately so syllables and pauses meet yours." />
+        </WrapPanel>
+        </StackPanel>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal">
+            <TextBlock Style="{StaticResource LaneTitle}" Text="Windows David" Foreground="#E8A75A" />
+            <TextBlock x:Name="DavidInfo" Style="{StaticResource LaneInfo}" />
+        </StackPanel>
+        <Border Grid.Row="3" Background="#101921" BorderBrush="#34495B" BorderThickness="1">
+            <Canvas x:Name="DavidCanvas" ClipToBounds="True" />
+        </Border>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal">
+            <ComboBox x:Name="ArabicVoiceBox" Margin="0,10,0,4" MinWidth="200" SelectedIndex="0"
+                      SelectionChanged="ArabicVoice_Changed" ToolTip="The Windows voice that says the word in Arabic">
+                <ComboBoxItem Content="Windows Hoda (female, Egyptian)" Tag="Hoda" />
+                <ComboBoxItem Content="Windows Naayf (male, Saudi)" Tag="Naayf" />
+            </ComboBox>
+            <TextBlock x:Name="HodaInfo" Style="{StaticResource LaneInfo}" />
+        </StackPanel>
+        <Border Grid.Row="5" Background="#101921" BorderBrush="#34495B" BorderThickness="1">
+            <Canvas x:Name="HodaCanvas" ClipToBounds="True" />
+        </Border>
+
+        <StackPanel Grid.Row="6" Orientation="Horizontal">
+            <TextBlock Style="{StaticResource LaneTitle}" Text="You (microphone)" Foreground="#7FB8E0" />
+            <TextBlock x:Name="MeInfo" Style="{StaticResource LaneInfo}" />
+        </StackPanel>
+        <Border Grid.Row="7" Background="#101921" BorderBrush="#34495B" BorderThickness="1">
+            <Canvas x:Name="MeCanvas" ClipToBounds="True" />
+        </Border>
+
+        <WrapPanel Grid.Row="8">
+            <TextBlock Style="{StaticResource LaneTitle}" Text="You → David style" Foreground="#7FD18B" Margin="0,12,12,4" />
+            <TextBlock Text="pitch" Foreground="#D6E2EC" VerticalAlignment="Bottom" Margin="0,0,6,6" />
+            <Slider x:Name="PitchSlider" Width="120" Minimum="60" Maximum="160" Value="84" TickFrequency="1" IsSnapToTickEnabled="True"
+                    VerticalAlignment="Bottom" Margin="0,0,4,6" ValueChanged="ConversionOption_Changed" />
+            <TextBlock x:Name="PitchText" Foreground="#D6E2EC" VerticalAlignment="Bottom" Width="52" Margin="0,0,10,6" Text="84 Hz" />
+            <CheckBox x:Name="IntonationCheck" Content="follow my intonation" IsChecked="True" Foreground="White"
+                      VerticalAlignment="Bottom" Margin="0,0,12,6" Checked="ConversionOption_Changed" Unchecked="ConversionOption_Changed"
+                      ToolTip="On: rises and falls like you, moved down to this pitch. Off: one flat pitch." />
+            <TextBlock Text="mouth size" Foreground="#D6E2EC" VerticalAlignment="Bottom" Margin="0,0,6,6" />
+            <ComboBox x:Name="MouthBox" SelectedIndex="0" VerticalAlignment="Bottom" Margin="0,0,12,3" SelectionChanged="MouthBox_Changed"
+                      ToolTip="A larger (male) mouth rings lower. “Fit to David” tries sizes and keeps the one closest to his.">
+                <ComboBoxItem Content="as mine" Tag="1" />
+                <ComboBoxItem Content="male (−15%)" Tag="0.85" />
+                <ComboBoxItem Content="fit to David" Tag="fit" />
+            </ComboBox>
+            <CheckBox x:Name="ColourCheck" Content="David's colour" Foreground="White"
+                      VerticalAlignment="Bottom" Margin="0,0,12,6" Checked="ConversionOption_Changed" Unchecked="ConversionOption_Changed"
+                      ToolTip="His average tone in place of yours (your mouth, microphone and room together). Needs David's word." />
+            <CheckBox x:Name="MelodyCheck" Content="David's melody" Foreground="White"
+                      VerticalAlignment="Bottom" Margin="0,0,12,6" Checked="ConversionOption_Changed" Unchecked="ConversionOption_Changed"
+                      ToolTip="His pitch rising and falling, moment by moment, lined up with yours. Needs David's word." />
+            <CheckBox x:Name="LoudnessCheck" Content="David's loudness" Foreground="White"
+                      VerticalAlignment="Bottom" Margin="0,0,12,6" Checked="ConversionOption_Changed" Unchecked="ConversionOption_Changed"
+                      ToolTip="How loud he is, moment by moment, lined up with yours. Needs David's word." />
+            <CheckBox x:Name="MouthShapeCheck" Content="David's mouth" Foreground="White"
+                      VerticalAlignment="Bottom" Margin="0,0,12,6" Checked="ConversionOption_Changed" Unchecked="ConversionOption_Changed"
+                      ToolTip="His mouth shape, moment by moment - the word itself - and whether each moment is voiced or hissed. With every box ticked you hear David's own word rebuilt, whatever you said. Needs David's word." />
+            <CheckBox x:Name="TimingCheck" Content="David's timing" Foreground="White"
+                      VerticalAlignment="Bottom" Margin="0,0,12,6" Checked="ConversionOption_Changed" Unchecked="ConversionOption_Changed"
+                      ToolTip="Your word re-timed onto his: each part as long as his. Needs David's word." />
+            <Button x:Name="HearConvertedButton" Content="▶ Hear it" Click="HearConverted_Click" IsEnabled="False"
+                    Padding="10,2" FontSize="12" VerticalAlignment="Bottom" Margin="0,0,10,4" />
+            <TextBlock x:Name="ConvertedInfo" Style="{StaticResource LaneInfo}" Margin="0,0,0,6" TextWrapping="Wrap" MaxWidth="520" />
+        </WrapPanel>
+        <Border Grid.Row="9" Background="#101921" BorderBrush="#34495B" BorderThickness="1">
+            <Canvas x:Name="ConvertedCanvas" ClipToBounds="True" />
+        </Border>
+
+        <StackPanel Grid.Row="10" Orientation="Horizontal">
+            <TextBlock Style="{StaticResource LaneTitle}" Text="Loudness outlines, all three" Foreground="#D6E2EC" />
+            <TextBlock x:Name="ScoresText" Style="{StaticResource LaneInfo}" Foreground="White" TextWrapping="Wrap" MaxWidth="560" />
+        </StackPanel>
+        <Border Grid.Row="11" Background="#101921" BorderBrush="#34495B" BorderThickness="1">
+            <Canvas x:Name="OutlineCanvas" ClipToBounds="True" />
+        </Border>
+
+        <TextBlock x:Name="StatusText" Grid.Row="12" Margin="0,8,0,0" Foreground="#9FB3C4" FontSize="12" TextWrapping="Wrap"
+                   Text="Type a word, then hear David and the Arabic voice, and record yourself saying it. Outline = how loud each 10 ms is, compared to the word's loudest part. Nothing is saved." />
+    </Grid>
+</Window>

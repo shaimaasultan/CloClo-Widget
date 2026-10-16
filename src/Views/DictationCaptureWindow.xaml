@@ -52,7 +52,6 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <WrapPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
             <ToggleButton x:Name="MicToggle" Content="Dictate: Off"
@@ -82,11 +81,7 @@
         <TextBox x:Name="CaptureBox" Grid.Row="6" Padding="8" Background="#1e1610" Foreground="#f3ecdd"
                  BorderBrush="#8a6a2f" CaretBrush="#f3ecdd" AcceptsReturn="True" TextWrapping="Wrap"
                  VerticalScrollBarVisibility="Auto" MaxLength="262144" />
-        <!-- Live preview of the phrase being spoken; final text goes into the box above. -->
-        <TextBlock x:Name="LiveText" Grid.Row="7" Foreground="#b8a98a" FontStyle="Italic"
-                   TextWrapping="Wrap" Margin="2,8,2,0" Visibility="Collapsed"
-                   ToolTip="What CloClo is hearing right now. When you pause, the final text replaces it in the box above." />
-        <WrapPanel Grid.Row="8" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+        <WrapPanel Grid.Row="7" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
             <Button Content="Load text file" Click="Load_Click" />
             <Button Content="Save to dictation file" Click="Save_Click" />
             <Button Content="Open folder" Click="OpenFolder_Click" ToolTip="Open the CloClo dictation folder in Explorer" />
