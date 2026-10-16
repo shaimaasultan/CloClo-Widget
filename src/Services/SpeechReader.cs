@@ -33,8 +33,10 @@ public static class SpeechReader
     // document would otherwise be synthesized in full, all in memory.
     public const int MaxSpokenChars = 5000;
 
-    // Raised (on a background thread) when reading stops, after the
-    // synthesized audio has been let go - a moment to free memory.
+    // Raised (possibly on a background thread) when reading stops, after the
+    // synthesized audio has been let go - a moment to free memory. Every
+    // reading ends with it: finished, stopped (even before playback began)
+    // or failed. A request replaced by a newer one ends with the newer one.
     public static event Action? Finished;
 
     static SpeechReader()
@@ -72,7 +74,14 @@ public static class SpeechReader
     public static void Stop()
     {
         Interlocked.Increment(ref _requestVersion);
-        if (Player.Source == null) return;
+        if (Player.Source == null)
+        {
+            // Nothing playing yet (or still synthesizing): reading is over
+            // all the same, and listeners such as the microphone pause for
+            // reminders must hear about it.
+            Finished?.Invoke();
+            return;
+        }
         Player.Pause();
         Release();
     }
@@ -122,6 +131,7 @@ public static class SpeechReader
                 {
                     try { onFailed?.Invoke(); }
                     catch { /* A visual callback must not affect speech playback. */ }
+                    Finished?.Invoke();
                 }
                 return;
             }
@@ -158,6 +168,7 @@ public static class SpeechReader
             {
                 try { onFailed?.Invoke(); }
                 catch { /* A visual callback must not affect speech playback. */ }
+                Finished?.Invoke();
             }
             // No matching voice, no audio device, etc. — reading aloud is a
             // bonus on top of the label already showing the text, not worth

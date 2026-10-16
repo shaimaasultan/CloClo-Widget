@@ -174,8 +174,10 @@ public partial class MainWindow : Window
     private bool _voiceActivationStarting;
     private bool _voiceActivationClosing;
     private bool _voicePausedForEditor;
-    // The microphone is released while the azan plays and reopened after.
-    private bool _voicePausedForAzan;
+    // The microphone is released while the azan or a custom reminder plays
+    // (its audio file and spoken text) and reopened after.
+    private bool _voicePausedForAudio;
+    private bool _reminderSpeaking;
     private bool _voiceActionPending;
     private bool _voiceArmed;
     private DateTime _voiceArmedUntil;
@@ -227,6 +229,7 @@ public partial class MainWindow : Window
         // one background collection after their references have been cleared.
         _memoryRelease.Tick += (_, _) => { _memoryRelease.Stop(); _ = Task.Run(ReleaseMemory); };
         SpeechReader.Finished += () => Dispatcher.BeginInvoke(new Action(ScheduleMemoryRelease));
+        SpeechReader.Finished += () => Dispatcher.BeginInvoke(new Action(ReminderSpeechEnded));
         SourceInitialized += MainWindow_SourceInitialized;
         Loaded += MainWindow_Loaded;
         Closing += (_, _) =>
@@ -1494,12 +1497,12 @@ public partial class MainWindow : Window
                 if (_azanPlayer == null)
                 {
                     _azanPlayer = new LocalAudioPlayer();
-                    _azanPlayer.Finished += ResumeVoiceAfterAzan;
+                    _azanPlayer.Finished += ResumeVoiceAfterAudio;
                 }
                 if (_azanPlayer.TryPlay(_settings.PrayerAzanAudioPath))
                 {
                     ShowOneShotLabel($"{prayer.Name} prayer time", _settings.City);
-                    PauseVoiceForAzan();
+                    PauseVoiceForAudio();
                 }
                 break;
             }
@@ -1507,21 +1510,25 @@ public partial class MainWindow : Window
         _playedPrayerInstants.RemoveWhere(ticks => ticks < now.AddDays(-2).UtcTicks);
     }
 
-    // Voice activation keeps the microphone open. Close it for the azan so
-    // Windows shows no microphone use and nothing listens during it.
-    private void PauseVoiceForAzan()
+    // Voice activation keeps the microphone open. Close it while the azan or
+    // a custom reminder plays, so Windows shows no microphone use and
+    // nothing listens during it.
+    private bool CloCloSoundPlaying =>
+        _azanPlayer?.IsPlaying == true || _reminderAudioPlayer?.IsPlaying == true || _reminderSpeaking;
+
+    private void PauseVoiceForAudio()
     {
-        if (_voicePausedForAzan) return;
-        _voicePausedForAzan = true;
+        if (_voicePausedForAudio) return;
+        _voicePausedForAudio = true;
         StopVoiceRetryTimer();
         _spokenConfirmationCancellation?.Cancel();
         if (_voiceActivation != null) _ = StopVoiceActivationAsync(abortPendingAudio: true);
     }
 
-    private void ResumeVoiceAfterAzan()
+    private void ResumeVoiceAfterAudio()
     {
-        if (!_voicePausedForAzan) return;
-        _voicePausedForAzan = false;
+        if (!_voicePausedForAudio || CloCloSoundPlaying) return;
+        _voicePausedForAudio = false;
         if (_settings.VoiceActivationEnabled && !_voicePausedForEditor && !_voiceActivationClosing)
             _ = StartVoiceActivationAsync();
     }
@@ -1570,10 +1577,15 @@ public partial class MainWindow : Window
                 _reminderAudioPlayer.Finished += ReminderAudioFinished;
             }
             _reminderSpeechAfterAudio = reminder.Speak ? reminder.Message : null;
-            if (_reminderAudioPlayer.TryPlay(reminder.AudioPath)) return;
+            if (_reminderAudioPlayer.TryPlay(reminder.AudioPath))
+            {
+                PauseVoiceForAudio();
+                return;
+            }
             _reminderSpeechAfterAudio = null;
         }
-        if (reminder.Speak) SpeechReader.Speak(reminder.Message);
+        if (reminder.Speak) SpeakReminder(reminder.Message);
+        else ResumeVoiceAfterAudio(); // an earlier reminder was cut short
     }
 
     private void ReminderAudioFinished()
@@ -1581,7 +1593,27 @@ public partial class MainWindow : Window
         var message = _reminderSpeechAfterAudio;
         _reminderSpeechAfterAudio = null;
         if (message != null && !_voiceActivationClosing && _azanPlayer?.IsPlaying != true)
-            SpeechReader.Speak(message);
+            SpeakReminder(message);
+        else
+            ResumeVoiceAfterAudio();
+    }
+
+    private void SpeakReminder(string message)
+    {
+        _reminderSpeaking = true;
+        PauseVoiceForAudio();
+        // SpeechReader.Finished follows every reading, including a failed
+        // or stopped one, so the microphone always comes back.
+        SpeechReader.Speak(message);
+    }
+
+    // SpeechReader.Finished fires for any reading; only a reminder's own
+    // speech reopens the microphone, and only once nothing else is playing.
+    private void ReminderSpeechEnded()
+    {
+        if (!_reminderSpeaking) return;
+        _reminderSpeaking = false;
+        ResumeVoiceAfterAudio();
     }
 
     private void ShowCustomReminder(string message)
@@ -2060,6 +2092,7 @@ public partial class MainWindow : Window
         if (saved != true) return;
         _reminderAudioPlayer?.Stop();
         _reminderSpeechAfterAudio = null;
+        ResumeVoiceAfterAudio();
         _settings.CustomReminders = dialog.Reminders.ToList();
         _settings.Save();
         var now = DateTime.Now;
@@ -2097,7 +2130,7 @@ public partial class MainWindow : Window
         _lastPrayerCheckUtc = DateTimeOffset.UtcNow;
         _playedPrayerInstants.Clear();
         _azanPlayer?.Stop();
-        ResumeVoiceAfterAzan();
+        ResumeVoiceAfterAudio();
         if (!_settings.PrayerAzanEnabled)
         {
             _azanPlayer?.Dispose();
@@ -2313,7 +2346,7 @@ public partial class MainWindow : Window
     private async Task StartVoiceActivationAsync()
     {
         if (_voiceActivationStarting || _voiceActivation != null || _voiceActionPending ||
-            !_settings.VoiceActivationEnabled || _voicePausedForEditor || _voicePausedForAzan ||
+            !_settings.VoiceActivationEnabled || _voicePausedForEditor || _voicePausedForAudio ||
             _voiceActivationClosing) return;
         StopVoiceRetryTimer();
         _voiceActivationStarting = true;
@@ -2327,7 +2360,7 @@ public partial class MainWindow : Window
                 throw new NotSupportedException("Local voice activation needs Windows 11 and AVX2, FMA, and F16C.");
 
             await _voiceActivationStop;
-            if (!_settings.VoiceActivationEnabled || _voicePausedForEditor || _voicePausedForAzan ||
+            if (!_settings.VoiceActivationEnabled || _voicePausedForEditor || _voicePausedForAudio ||
                 _voiceActivationClosing) return;
             var arabicCommands = _settings.VoiceCommandsInArabic;
             var session = new LocalAudioTranscriber(AudioCaptureSource.Microphone,
@@ -2365,7 +2398,7 @@ public partial class MainWindow : Window
         {
             _voiceActivationStarting = false;
             if (_settings.VoiceActivationEnabled && _voiceActivation == null &&
-                !_voicePausedForEditor && !_voicePausedForAzan && !_voiceActivationClosing &&
+                !_voicePausedForEditor && !_voicePausedForAudio && !_voiceActivationClosing &&
                 !_voiceActionPending && _voiceRetryTimer == null)
                 ScheduleVoiceActivationRetry("Voice capture was interrupted.");
         }
@@ -2701,7 +2734,7 @@ public partial class MainWindow : Window
 
     private void ScheduleVoiceActivationRetry(string message)
     {
-        if (!_settings.VoiceActivationEnabled || _voicePausedForEditor || _voicePausedForAzan ||
+        if (!_settings.VoiceActivationEnabled || _voicePausedForEditor || _voicePausedForAudio ||
             _voiceActivationClosing || _voiceRetryTimer != null) return;
         var delay = _voiceRetryDelaySeconds;
         _voiceRetryDelaySeconds = Math.Min(delay * 2, 60);
