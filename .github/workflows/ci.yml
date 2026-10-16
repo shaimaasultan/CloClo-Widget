@@ -1,0 +1,58 @@
+name: CloClo build and dependency audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "23 13 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-audit:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      NUGET_XMLDOC_MODE: skip
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore with NuGet vulnerability audit
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $audit = @('-p:NuGetAudit=true', '-p:NuGetAuditLevel=low', '-p:WarningsAsErrors=NU1901;NU1902;NU1903;NU1904')
+          function Invoke-Dotnet([string[]]$Arguments) {
+            & dotnet @Arguments
+            if ($LASTEXITCODE -ne 0) { throw "dotnet $($Arguments[0]) failed with exit code $LASTEXITCODE." }
+          }
+          Invoke-Dotnet (@('restore', 'CloCloWidget.csproj', '--runtime', 'win-x64', '-p:SelfContained=true') + $audit)
+          Invoke-Dotnet (@('restore', 'installer\CloClo.Package.wixproj') + $audit)
+          Invoke-Dotnet (@('restore', 'installer\CloClo.Bundle.wixproj') + $audit)
+
+      - name: Publish app and build installer
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $audit = @('-p:NuGetAudit=true', '-p:NuGetAuditLevel=low', '-p:WarningsAsErrors=NU1901;NU1902;NU1903;NU1904')
+          function Invoke-Dotnet([string[]]$Arguments) {
+            & dotnet @Arguments
+            if ($LASTEXITCODE -ne 0) { throw "dotnet $($Arguments[0]) failed with exit code $LASTEXITCODE." }
+          }
+          $appDir = Join-Path $env:RUNNER_TEMP 'cloclo-widget-publish'
+          Invoke-Dotnet (@('publish', 'CloCloWidget.csproj', '--no-restore', '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=false', '-p:DebugType=none', '-p:Version=1.0.0.0', '-o', $appDir) + $audit)
+          Invoke-Dotnet (@('build', 'installer\CloClo.Package.wixproj', '--no-restore', '-c', 'Release', '-p:AppDir=' + $appDir, '-p:SetupVersion=1.0.0') + $audit)
+          $msi = Join-Path (Get-Location).Path 'bin\installer\CloClo.Package\Release\CloClo.msi'
+          Invoke-Dotnet (@('build', 'installer\CloClo.Bundle.wixproj', '--no-restore', '-c', 'Release', '-p:MsiPath=' + $msi, '-p:SetupVersion=1.0.0') + $audit)
