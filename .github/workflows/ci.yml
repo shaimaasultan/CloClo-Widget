@@ -25,6 +25,10 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The bundled Whisper model (Assets/Models/ggml-base.bin) is in Git
+          # LFS; without it the build's model hash check fails.
+          lfs: true
 
       - name: Install .NET SDK
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -34,7 +38,7 @@ jobs:
       - name: Restore with NuGet vulnerability audit
         run: |
           $ErrorActionPreference = 'Stop'
-          $audit = @('-p:NuGetAudit=true', '-p:NuGetAuditLevel=low', '-p:WarningsAsErrors=NU1901;NU1902;NU1903;NU1904')
+          $audit = @('-p:NuGetAudit=true', '-p:NuGetAuditLevel=low', '-p:WarningsAsErrors=NU1901%3BNU1902%3BNU1903%3BNU1904')
           function Invoke-Dotnet([string[]]$Arguments) {
             & dotnet @Arguments
             if ($LASTEXITCODE -ne 0) { throw "dotnet $($Arguments[0]) failed with exit code $LASTEXITCODE." }
@@ -46,7 +50,7 @@ jobs:
       - name: Publish app and build installer
         run: |
           $ErrorActionPreference = 'Stop'
-          $audit = @('-p:NuGetAudit=true', '-p:NuGetAuditLevel=low', '-p:WarningsAsErrors=NU1901;NU1902;NU1903;NU1904')
+          $audit = @('-p:NuGetAudit=true', '-p:NuGetAuditLevel=low', '-p:WarningsAsErrors=NU1901%3BNU1902%3BNU1903%3BNU1904')
           function Invoke-Dotnet([string[]]$Arguments) {
             & dotnet @Arguments
             if ($LASTEXITCODE -ne 0) { throw "dotnet $($Arguments[0]) failed with exit code $LASTEXITCODE." }
