@@ -2478,18 +2478,17 @@ public partial class MainWindow : Window
         try
         {
             if (_voiceActivation != session) return;
-            // End command capture before either confirmation path. Spoken
-            // confirmation starts a separate microphone session only after
-            // its prompt has finished, so CloClo cannot hear its own voice.
-            var captureStop = StopVoiceActivationAsync(abortPendingAudio: true);
+            // Keep one Windows microphone session for wake listening and
+            // confirmation. The transcriber discards input during our speech
+            // and the visual dialog, so it cannot act on its own response.
+            session.PauseVoiceRecognition();
             var name = ApprovedVoiceAppLauncher.DisplayName(app);
             var spokenMode = _settings.SpokenVoiceConfirmationEnabled;
             bool confirmed;
             if (spokenMode)
             {
-                await captureStop;
                 if (!_settings.VoiceActivationEnabled || _voiceActivationClosing) return;
-                confirmed = await AskForSpokenAppConfirmationAsync(app) == true;
+                confirmed = await AskForSpokenAppConfirmationAsync(session, app) == true;
                 if (!confirmed && _settings.SpokenVoiceConfirmationEnabled &&
                     _settings.VoiceActivationEnabled && !_voiceActivationClosing)
                 {
@@ -2506,7 +2505,6 @@ public partial class MainWindow : Window
                     try { await SpeakVoiceCommandAcknowledgementAsync(name); }
                     catch { /* Spoken feedback is optional; confirmation still follows. */ }
                 }
-                await captureStop;
                 if (!_settings.VoiceActivationEnabled || _voiceActivationClosing) return;
                 if (Visibility != Visibility.Visible)
                 {
@@ -2517,7 +2515,8 @@ public partial class MainWindow : Window
                 confirmed = MessageBox.Show(this, $"Open {name}?", "Confirm voice command",
                     MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
             }
-            if (!_settings.VoiceActivationEnabled || _voiceActivationClosing) return;
+            if (!_settings.VoiceActivationEnabled || _voiceActivationClosing ||
+                _voiceActivation != session) return;
             if (!confirmed)
             {
                 Keeper.SetVoiceStatus("failed");
@@ -2547,11 +2546,20 @@ public partial class MainWindow : Window
         finally
         {
             _voiceActionPending = false;
-            if (_settings.VoiceActivationEnabled) _ = StartVoiceActivationAsync();
+            if (_settings.VoiceActivationEnabled && !_voiceActivationClosing &&
+                !_voicePausedForEditor && _voiceActivation == session)
+            {
+                session.ResumeVoiceRecognition();
+                // The capture state was left at "processing" or the reply's
+                // "armed"; a completed/failed result still shows briefly.
+                Keeper.SetVoiceStatus("wake");
+            }
+            else if (_settings.VoiceActivationEnabled)
+                _ = StartVoiceActivationAsync();
         }
     }
 
-    private async Task<bool?> AskForSpokenAppConfirmationAsync(ApprovedVoiceApp app)
+    private async Task<bool?> AskForSpokenAppConfirmationAsync(LocalAudioTranscriber session, ApprovedVoiceApp app)
     {
         var arabic = _settings.VoiceCommandsInArabic &&
             SpeechReader.IsVoiceAvailable(ReadAloudVoice.ArabicHoda);
@@ -2569,22 +2577,22 @@ public partial class MainWindow : Window
             if (cancellation.IsCancellationRequested || !_settings.SpokenVoiceConfirmationEnabled ||
                 !_settings.VoiceActivationEnabled || _voiceActivationClosing) return null;
 
-            // No recognition prompt: it could bias uncertain background audio
-            // toward a confirmation. Only a reply naming this app is accepted.
+            // The same microphone capture switches to a local decoder with no
+            // wake prompt. Only a reply naming this fixed app is accepted.
             var answer = new TaskCompletionSource<bool?>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var replySession = new LocalAudioTranscriber(AudioCaptureSource.Microphone,
-                recognitionPrompt: string.Empty);
+            void OnAnswer(string text)
+            {
+                var match = ApprovedVoiceAppLauncher.MatchSpokenConfirmation(text, app);
+                if (match.HasValue) answer.TrySetResult(match);
+            }
+            void OnFailure(string _) => answer.TrySetResult(null);
+            session.ConfirmationTextRecognized += OnAnswer;
+            session.Failed += OnFailure;
             try
             {
-                replySession.TextRecognized += text =>
-                {
-                    var match = ApprovedVoiceAppLauncher.MatchSpokenConfirmation(text, app);
-                    if (match.HasValue) answer.TrySetResult(match);
-                };
-                replySession.Failed += _ => answer.TrySetResult(null);
-                await replySession.StartAsync(arabic ? "ar-EG" : "en-US");
                 if (cancellation.IsCancellationRequested || !_settings.VoiceActivationEnabled ||
-                    _voiceActivationClosing) return null;
+                    _voiceActivationClosing || _voiceActivation != session) return null;
+                session.BeginVoiceConfirmation();
                 Keeper.SetVoiceStatus("armed");
                 try { return await answer.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellation.Token); }
                 catch (TimeoutException) { return null; }
@@ -2592,7 +2600,9 @@ public partial class MainWindow : Window
             }
             finally
             {
-                await replySession.AbortAsync();
+                session.PauseVoiceRecognition();
+                session.ConfirmationTextRecognized -= OnAnswer;
+                session.Failed -= OnFailure;
             }
         }
         finally

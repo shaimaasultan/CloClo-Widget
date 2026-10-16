@@ -13,10 +13,15 @@ internal enum ApprovedVoiceApp { Notepad, Paint, OneDrive, SnippingTool, Setting
 // user for confirmation before any activation.
 internal static class ApprovedVoiceAppLauncher
 {
-    // Prompt only the wake name. Full example commands can bias uncertain
-    // background audio toward a command that was never spoken.
-    internal const string RecognitionPrompt = "CloClo.";
-    internal const string ArabicRecognitionPrompt = "كلوكلو.";
+    // The command vocabulary steers the base model's spelling. With only the
+    // wake name, real speech came out as "Open the node bed nail" and
+    // "CloCloStopVoysNail"; with this prompt the same recordings matched,
+    // while ordinary speech was transcribed unchanged. Every app still needs
+    // the wake name, a verb, a finish word and confirmation.
+    internal const string RecognitionPrompt =
+        "CloClo, open Notepad now. CloClo, open Paint, OneDrive, Snipping Tool, Settings, YouTube, Spotify or Word now. CloClo, stop voice now.";
+    internal const string ArabicRecognitionPrompt =
+        "كلوكلو، افتح المفكرة دلوقتي. كلوكلو، افتح الرسام، ون درايف، أداة القص، الإعدادات، يوتيوب، سبوتيفاي أو وورد دلوقتي. كلوكلو، وقف الصوت دلوقتي.";
     // Phrases are compared after TranscriptCleanup.MatchingKey, so Arabic
     // entries here use its unified spelling (ا for أ/إ/آ, ه for ة, ي for ى).
     private static readonly string[] WakeNames =
@@ -182,14 +187,121 @@ internal static class ApprovedVoiceAppLauncher
                 app = ApprovedVoiceApp.SnippingTool; return true;
             case "settings" or "windows settings" or "الاعدادات" or "اعدادات":
                 app = ApprovedVoiceApp.Settings; return true;
-            case "youtube" or "you tube" or "يوتيوب" or "اليوتيوب" or "يو تيوب":
+            case "youtube" or "you tube" or "u tube" or "يوتيوب" or "اليوتيوب" or "يو تيوب":
                 app = ApprovedVoiceApp.YouTube; return true;
             case "spotify" or "spot if i" or "سبوتيفاي" or "سبوتيفي" or "سبوتفاي":
                 app = ApprovedVoiceApp.Spotify; return true;
             case "word" or "microsoft word" or "وورد" or "الوورد" or "مايكروسوفت وورد":
                 app = ApprovedVoiceApp.Word; return true;
-            default: return false;
+            default: return TryMatchBySound(phrase, out app);
         }
+    }
+
+    // Whisper spells app names inconsistently ("nodepad", "notepadd", "one
+    // drive"). Names are also compared by a sound key; only these fixed names
+    // can match, and every match still needs the user's confirmation.
+    private static readonly (ApprovedVoiceApp App, string Name)[] SpokenNames =
+    [
+        (ApprovedVoiceApp.Notepad, "notepad"), (ApprovedVoiceApp.Notepad, "المفكره"),
+        (ApprovedVoiceApp.Notepad, "نوت باد"),
+        (ApprovedVoiceApp.Paint, "paint"), (ApprovedVoiceApp.Paint, "الرسام"),
+        (ApprovedVoiceApp.Paint, "باينت"),
+        (ApprovedVoiceApp.OneDrive, "onedrive"), (ApprovedVoiceApp.OneDrive, "ون درايف"),
+        (ApprovedVoiceApp.SnippingTool, "snipping tool"), (ApprovedVoiceApp.SnippingTool, "اداه القص"),
+        (ApprovedVoiceApp.Settings, "settings"), (ApprovedVoiceApp.Settings, "الاعدادات"),
+        (ApprovedVoiceApp.YouTube, "youtube"), (ApprovedVoiceApp.YouTube, "يوتيوب"),
+        (ApprovedVoiceApp.Spotify, "spotify"), (ApprovedVoiceApp.Spotify, "سبوتيفاي"),
+        (ApprovedVoiceApp.Word, "word"), (ApprovedVoiceApp.Word, "وورد"),
+    ];
+
+    private static bool TryMatchBySound(string phrase, out ApprovedVoiceApp app)
+    {
+        app = default;
+        foreach (var brand in new[] { "microsoft ", "windows ", "مايكروسوفت " })
+        {
+            if (!phrase.StartsWith(brand, StringComparison.Ordinal)) continue;
+            phrase = phrase[brand.Length..];
+            break;
+        }
+        var key = SoundKey(phrase);
+        if (key.Length < 2) return false;
+        var best = int.MaxValue;
+        var tied = false;
+        foreach (var (candidate, name) in SpokenNames)
+        {
+            var target = SoundKey(name);
+            // Short names must sound the same; longer ones may differ by
+            // one sound (two for the longest), as in "sniping tool".
+            var allowed = target.Length >= 7 ? 2 : target.Length >= 5 ? 1 : 0;
+            var distance = EditDistance(key, target);
+            if (distance > allowed || distance > best) continue;
+            if (distance == best && candidate != app) tied = true;
+            else if (distance < best) tied = false;
+            best = distance;
+            app = candidate;
+        }
+        // Two different apps sounding equally close is not a choice.
+        return best != int.MaxValue && !tied;
+    }
+
+    // A rough sound key for MatchingKey text, English or Arabic: letters that
+    // Whisper confuses share one symbol, vowels after the first letter are
+    // dropped, word gaps are ignored and repeated sounds count once.
+    private static string SoundKey(string phrase)
+    {
+        var words = phrase.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        for (var i = 0; i < words.Length; i++)
+            if (words[i].Length > 3 && words[i].StartsWith("ال", StringComparison.Ordinal)) words[i] = words[i][2..];
+        var text = string.Concat(words);
+        var key = new System.Text.StringBuilder(text.Length);
+        for (var i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+            var next = i + 1 < text.Length ? text[i + 1] : '\0';
+            var first = key.Length == 0;
+            char sound = c switch
+            {
+                'a' or 'e' or 'i' or 'o' or 'u' => first ? 'a' : '\0',
+                'h' or 'w' or 'y' => first ? c : '\0',
+                'p' when next == 'h' => 'f',
+                'c' when next is 'e' or 'i' or 'y' => 's',
+                'b' => 'p',
+                'd' => 't',
+                'c' or 'g' or 'k' or 'q' => 'k',
+                'v' => 'f',
+                'z' => 's',
+                'x' => 'k',
+                'ا' or 'ع' or 'ء' => first ? 'ا' : '\0',
+                'و' or 'ي' => first ? c : '\0',
+                'ط' => 'ت',
+                'ض' => 'د',
+                'ظ' or 'ذ' => 'ز',
+                'ص' or 'ث' => 'س',
+                'ق' => 'ك',
+                'ح' => 'ه',
+                _ => c,
+            };
+            if (sound == '\0' || (key.Length > 0 && key[^1] == sound)) continue;
+            key.Append(sound);
+            if (c == 'x') key.Append('s');
+        }
+        return key.ToString();
+    }
+
+    private static int EditDistance(string a, string b)
+    {
+        var previous = new int[b.Length + 1];
+        var current = new int[b.Length + 1];
+        for (var j = 0; j <= b.Length; j++) previous[j] = j;
+        for (var i = 1; i <= a.Length; i++)
+        {
+            current[0] = i;
+            for (var j = 1; j <= b.Length; j++)
+                current[j] = Math.Min(Math.Min(current[j - 1], previous[j]) + 1,
+                    previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
+            (previous, current) = (current, previous);
+        }
+        return previous[b.Length];
     }
 
     private static string Normalize(string transcript) =>

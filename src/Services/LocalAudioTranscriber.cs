@@ -60,6 +60,11 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
     private long _lastProgressBytes;
     private int _recognizedPhrases;
     private int _finishing;
+    // Voice commands keep one Windows microphone session open. While CloClo
+    // speaks or waits for a visual answer, captured bytes are replaced with
+    // silence before they enter the queue. Confirmation uses a separate local
+    // decoder without the wake-word prompt, on the same capture session.
+    private int _voiceRecognitionMode; // 0 = wake, 1 = silent, 2 = confirmation
     private volatile bool _reduceMicrophoneNoise = reduceMicrophoneNoise;
     private string? _deviceName;
     private string? _captureFormat;
@@ -67,6 +72,7 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
     private string? _engine;
 
     public event Action<string>? TextRecognized;
+    public event Action<string>? ConfirmationTextRecognized;
     // The phrase being spoken right now, as heard so far: replaced about once
     // a second, then cleared ("") when the phrase's final text arrives.
     public event Action<string>? InterimTextRecognized;
@@ -82,6 +88,28 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
     {
         if (source == AudioCaptureSource.Microphone)
             _reduceMicrophoneNoise = enabled;
+    }
+
+    public void PauseVoiceRecognition()
+    {
+        SetVoiceRecognitionMode(1);
+    }
+
+    public void BeginVoiceConfirmation()
+    {
+        SetVoiceRecognitionMode(2);
+    }
+
+    public void ResumeVoiceRecognition()
+    {
+        SetVoiceRecognitionMode(0);
+    }
+
+    private void SetVoiceRecognitionMode(int mode)
+    {
+        if (recognitionPrompt == null) return;
+        Volatile.Write(ref _voiceRecognitionMode, mode);
+        _input?.AdvanceEpoch(); // discard every packet from the previous mode
     }
 
     public Task StartAsync(string languageTag)
@@ -156,6 +184,14 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                         ? EgyptianArabicPrompt : ArabicPrompt);
             }
             using var processor = builder.Build();
+            using var confirmationProcessor = recognitionPrompt != null
+                ? factory.CreateBuilder().WithLanguage(arabic ? "ar" : "en")
+                    .WithThreads(WhisperThreads.Value)
+                    .WithAudioContextSize(arabic ? 1024 : 512)
+                    .WithSingleSegment()
+                    .WithMaxTokensPerSegment(32)
+                    .Build()
+                : null;
             // Live preview for dictation and playback: a fast greedy pass over
             // the phrase so far, with a 10-second audio window. On the test
             // clips it took about 0.6 s per update on a GPU (turbo) and 0.35 s
@@ -190,7 +226,11 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                 {
                     if (Volatile.Read(ref _finishing) != 0) return;
                     if (buffer.Length == 0) return;
-                    if (buffer.Length > 262144 || !input.TryWrite(buffer))
+                    // Keep the WASAPI session open without retaining or
+                    // transcribing CloClo's own voice or ambient prompt audio.
+                    var capturedBuffer = voiceCommands && Volatile.Read(ref _voiceRecognitionMode) == 1
+                        ? new byte[buffer.Length] : buffer;
+                    if (buffer.Length > 262144 || !input.TryWrite(capturedBuffer))
                     {
                         Failed?.Invoke(recognitionPrompt == null
                             ? "Local transcription cannot keep up with the audio. Turn it off and try again."
@@ -234,6 +274,11 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                     ? new WaveFormat(HighResolutionSampleRate, 24, 1)
                     : new WaveFormat(SampleRate, 16, 1);
                 var builder = new WasapiRecorderBuilder().WithFormat(format);
+                // Communications mode is what echo-cancels CloClo's own voice
+                // and other speaker audio. Default-device stream routing
+                // (NAudio 3.1) silently drops it, so wake listening keeps the
+                // fixed default device; an invalidated endpoint still triggers
+                // recovery, which reopens the current default.
                 if (communicationsMode) builder.WithCommunicationsMode();
                 // Without loopback the recorder uses the default capture device.
                 return builder.Build();
@@ -308,7 +353,7 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
             var phrases = recognitionPrompt != null
                 ? new SpeechPhraseReader(readFrame, SampleRate * VoiceCommandMaximumSeconds,
                     pauseSamples: SampleRate * 2 / 5, minimumPhraseSamples: 0, longPauseSamples: SampleRate * 2 / 5,
-                    startThreshold: 0.004f)
+                    startThreshold: 0.004f, readEpoch: () => input.Epoch)
                 : new SpeechPhraseReader(readFrame, SampleRate * DictationMaximumSeconds,
                     pauseSamples: SampleRate / 2, minimumPhraseSamples: SampleRate * 3, longPauseSamples: SampleRate * 6 / 5,
                     startThreshold: source == AudioCaptureSource.Playback ? 0.002f : 0.004f,
@@ -322,9 +367,10 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
             MicrophoneNoiseFilter? noiseFilter = null;
             while (!_stop.IsCancellationRequested)
             {
-                var (samples, voicedSamples, endOfStream, hitLimit, isInterim) =
+                var (samples, voicedSamples, endOfStream, hitLimit, isInterim, phraseEpoch) =
                     phrases.ReadPhrase(interimProcessor != null ? CaughtUp : null);
                 if (samples.Length == 0) break;
+                if (voiceCommands && phraseEpoch != input.Epoch) continue;
                 if (isInterim)
                 {
                     // A copy of the phrase so far; the noise filter keeps its
@@ -350,6 +396,8 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                     ? voicedSamples >= SampleRate / 10 && !hitLimit &&
                       input.QueuedBytes <= VoiceCommandStaleSeconds * CaptureBytesPerSecond
                     : voicedSamples >= SampleRate / 5;
+                var voiceMode = voiceCommands ? Volatile.Read(ref _voiceRecognitionMode) : 0;
+                if (voiceMode == 1) worthDecoding = false;
                 if (worthDecoding)
                 {
                     if (source == AudioCaptureSource.Microphone && _reduceMicrophoneNoise)
@@ -363,7 +411,8 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                     // processor/model at that point can leave native code using
                     // freed memory. Let this bounded chunk finish before cleanup.
                     string? previousText = null;
-                    await foreach (var segment in processor.ProcessAsync(samples, CancellationToken.None))
+                    var activeProcessor = voiceMode == 2 ? confirmationProcessor! : processor;
+                    await foreach (var segment in activeProcessor.ProcessAsync(samples, CancellationToken.None))
                     {
                         if (_stop.IsCancellationRequested) continue;
                         var text = TranscriptCleanup.Clean(segment.Text);
@@ -373,7 +422,14 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                             TranscriptCleanup.IsLikelyHallucination(text)) continue;
                         previousText = text;
                         Interlocked.Increment(ref _recognizedPhrases);
-                        TextRecognized?.Invoke(text);
+                        // A mode change while Whisper was decoding invalidates
+                        // that result. In particular, pre-prompt speech must
+                        // never become a spoken confirmation.
+                        if (voiceCommands && (Volatile.Read(ref _voiceRecognitionMode) != voiceMode ||
+                                              input.Epoch != phraseEpoch))
+                            continue;
+                        if (voiceMode == 2) ConfirmationTextRecognized?.Invoke(text);
+                        else TextRecognized?.Invoke(text);
                         ReportProgress();
                     }
                 }
@@ -562,7 +618,7 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
     // agrees, then continues the same phrase on the next call.
     private sealed class SpeechPhraseReader(Func<float[], int> readFrame, int maximumSamples,
         int pauseSamples, int minimumPhraseSamples, int longPauseSamples, float startThreshold,
-        int interimEverySamples = 0, int interimLimitSamples = 0)
+        int interimEverySamples = 0, int interimLimitSamples = 0, Func<long>? readEpoch = null)
     {
         public const int FrameSamples = SampleRate / 50;
         private const int LeadInSamples = SampleRate / 4;
@@ -573,6 +629,7 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
         private float[] _carry = [];
         private float _noiseFloor = 0.0015f;
         private Phrase? _phrase;
+        private long _epoch;
 
         private sealed class Phrase(int maximumSamples)
         {
@@ -584,7 +641,8 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
             public float BestCutRms = float.MaxValue;
         }
 
-        public (float[] Samples, int VoicedSamples, bool EndOfStream, bool HitLimit, bool IsInterim) ReadPhrase(
+        public (float[] Samples, int VoicedSamples, bool EndOfStream, bool HitLimit, bool IsInterim,
+            long Epoch) ReadPhrase(
             Func<bool>? allowInterim = null)
         {
             var phrase = _phrase;
@@ -601,12 +659,26 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                 }
             }
             var captured = phrase.Captured;
+            bool ResetForNewEpoch()
+            {
+                var currentEpoch = readEpoch?.Invoke() ?? 0;
+                if (currentEpoch == _epoch) return false;
+                _epoch = currentEpoch;
+                _carry = [];
+                _phrase = phrase = new Phrase(maximumSamples);
+                captured = phrase.Captured;
+                return true;
+            }
             var endOfStream = false;
             var hitLimit = false;
 
             while (true)
             {
+                ResetForNewEpoch();
                 var available = readFrame(_frame);
+                // A mode change can happen while Read waits for the next
+                // packet. Never mix old captured speech into the new mode.
+                if (ResetForNewEpoch()) continue;
                 if (available == 0) { endOfStream = true; break; }
                 var energy = 0f;
                 for (var i = 0; i < available; i++) energy += _frame[i] * _frame[i];
@@ -665,13 +737,14 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                     allowInterim?.Invoke() == true)
                 {
                     phrase.LastInterimAt = phrase.Count;
-                    return (captured[..phrase.Count], phrase.Voiced, false, false, true);
+                    return (captured[..phrase.Count], phrase.Voiced, false, false, true, _epoch);
                 }
             }
 
             _phrase = null;
-            if (!phrase.Started) return ([], 0, endOfStream, false, false);
-            return (captured[..phrase.Count], Math.Min(phrase.Voiced, phrase.Count), endOfStream, hitLimit, false);
+            if (!phrase.Started) return ([], 0, endOfStream, false, false, _epoch);
+            return (captured[..phrase.Count], Math.Min(phrase.Voiced, phrase.Count), endOfStream,
+                hitLimit, false, _epoch);
         }
     }
 
@@ -680,13 +753,18 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
     {
         // A sanity bound only; maxQueuedBytes is the real limit.
         private const int MaxPackets = 65536;
-        private readonly BlockingCollection<byte[]> _packets = new(MaxPackets);
+        private readonly record struct PcmPacket(byte[] Data, long Epoch);
+        private readonly BlockingCollection<PcmPacket> _packets = new(MaxPackets);
         private byte[]? _current;
+        private long _currentEpoch;
         private int _offset;
         private int _queuedBytes;
+        private long _epoch;
 
         // Audio captured but not yet read by the phrase reader.
         public int QueuedBytes => Volatile.Read(ref _queuedBytes);
+        public long Epoch => Interlocked.Read(ref _epoch);
+        public void AdvanceEpoch() => Interlocked.Increment(ref _epoch);
 
         public bool TryWrite(ReadOnlySpan<byte> pcm)
         {
@@ -695,13 +773,13 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
             try
             {
                 while (total > maxQueuedBytes && dropOldestWhenFull && _packets.TryTake(out var oldest))
-                    total = Interlocked.Add(ref _queuedBytes, -oldest.Length);
+                    total = Interlocked.Add(ref _queuedBytes, -oldest.Data.Length);
                 if (total > maxQueuedBytes)
                 {
                     Interlocked.Add(ref _queuedBytes, -pcm.Length);
                     return false;
                 }
-                if (_packets.TryAdd(pcm.ToArray())) return true;
+                if (_packets.TryAdd(new PcmPacket(pcm.ToArray(), Epoch))) return true;
                 Interlocked.Add(ref _queuedBytes, -pcm.Length);
                 return false;
             }
@@ -717,11 +795,16 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
             var total = 0;
             while (total < count)
             {
+                if (_current != null && _currentEpoch != Epoch) _current = null;
                 if (_current == null || _offset == _current.Length)
                 {
-                    try { _current = _packets.Take(cancellationToken); }
+                    PcmPacket packet;
+                    try { packet = _packets.Take(cancellationToken); }
                     catch (InvalidOperationException) { break; }
-                    Interlocked.Add(ref _queuedBytes, -_current.Length);
+                    Interlocked.Add(ref _queuedBytes, -packet.Data.Length);
+                    if (packet.Epoch != Epoch) continue;
+                    _current = packet.Data;
+                    _currentEpoch = packet.Epoch;
                     _offset = 0;
                 }
                 var length = Math.Min(count - total, _current.Length - _offset);

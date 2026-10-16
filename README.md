@@ -626,6 +626,16 @@ records the SHA-256 of every native runtime DLL it ships
   "CloClo open OneDrive now", "CloClo open Snipping Tool now",
   "CloClo open Settings now", "CloClo open YouTube now",
   "CloClo open Spotify now", or "CloClo open Word now".
+  App names are also matched by sound, so a transcript such as "nodepad",
+  "notepadd", "won drive" or "sniping tool" still selects that fixed app;
+  similar-sounding words for different apps, or for no app, match nothing.
+  The wake name, the verb, the finish word and "stop voice" are matched as
+  before, and every app still needs confirmation. Recognition is steered with
+  the command words themselves (wake name, "open", the app names, "stop
+  voice", "now", or their Arabic forms); with only the wake name, the base
+  model wrote real commands as "Open the node bed nail". The base model
+  stays in use: large-v3-turbo on the CPU took 7–18 seconds per phrase and
+  was no more accurate.
   With **Voice commands in Arabic** turned on in Privacy, recognition is
   steered toward Arabic and the same fixed commands can be said in Arabic,
   for example "كلوكلو افتح المفكرة دلوقتي" or "كلوكلو وقف الصوت دلوقتي"
@@ -664,6 +674,15 @@ records the SHA-256 of every native runtime DLL it ships
   followed by that app's name, or "cancel"; silence or an unclear answer
   cancels after 15 seconds. In Arabic command mode it uses Hoda when available.
   The original Yes/No dialog remains the default.
+  App confirmation reuses the wake-listening microphone session. CloClo
+  discards microphone audio while it speaks or shows the Yes/No dialog, then
+  resumes wake listening; the spoken-confirmation reply uses that same capture
+  with a separate local decoder. Windows can still record microphone access
+  when voice activation starts or stops, but ordinary app confirmations do
+  not restart capture. Wake listening keeps the Windows communications
+  capture mode, whose echo cancellation removes CloClo's own voice and other
+  speaker audio; if the default microphone goes away, the existing retry path
+  reopens the current default device.
   The model is tracked with Git LFS; clone the project with Git LFS enabled
   before building an installer. The installed package is about 142 MiB larger.
   Text that cannot be selected and copied is unavailable to the selection reader.
