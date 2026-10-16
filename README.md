@@ -98,10 +98,21 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
 - **Reminders:** **Workout reminder** offers a fixed activity interval.
   **Custom reminders…** lets you keep up to five messages, each with a
   choice of 15, 30, 45, 60, 90 or 120 minutes, active hours, an on/off switch
-  and optional speech. They use your PC's local time and show while the avatar
+  and optional speech or a chosen local MP3/WAV sound. Audio plays before
+  speech when both are enabled. They use your PC's local time and show while the avatar
   is awake; the reminder outfit returns to normal after the message. The optional startup
   greeting speaks the local account name and briefly salutes; turn it off
   under **Privacy**.
+- **Prayer times and azan:** open **Prayer times and azan…** from the menu or
+  search. CloClo calculates Fajr, Dhuhr, Asr, Maghrib and Isha locally from
+  your saved location. ISNA is the default; Muslim World League and Egyptian
+  methods, plus Standard or Hanafi Asr, are selectable. Times are displayed in
+  the saved location's time zone when available. Changing **Set location…**
+  recalculates the schedule for that city. Automatic azan is off until you
+  choose a local MP3 or WAV recording and enable it. CloClo plays the
+  recording at the five prayer times while it is running; it does not replay
+  prayers missed while the PC is
+  asleep or CloClo is closed. Compare calculated times with your local mosque.
 - **Scientific calculator:** open it from the search box or right-click menu.
   It supports typed expressions, a keypad, degree/radian mode, trigonometry,
   logarithms, roots, powers, factorials and `Ans`. Calculations use a bounded
@@ -140,6 +151,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
 
   The search box below the widget finds right-click menu actions, including
   **Windows status**, **Scientific calculator**, **Custom reminders**,
+  **Prayer times and azan**,
   **Open dictation folder**, and avatar, weather and privacy settings.
   Suggestions open below or beside the box; choose with the mouse or arrow
   keys and Enter. Esc closes them. Coloured badges distinguish windows,
@@ -161,7 +173,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   never activates the source app.
 - **Right-click** (or double-click) for the menu: **Set location…**, **Avatar**,
   **Weather**, **Icons**, **Motion**, **Sleep after**, **Workout reminder**,
-  **Custom reminders…**, **Windows status** (local connection and fixed-drive
+  **Custom reminders…**, **Prayer times and azan…**, **Windows status** (local connection and fixed-drive
   free space), **Scientific calculator…**, **Refresh weather**, **Start new
   dictation file**, **Open dictation folder**, **Privacy**, **Always on top**,
   **Start with Windows** and **Exit**.
@@ -647,6 +659,11 @@ records the SHA-256 of every native runtime DLL it ships
   signed executables at fixed Program Files paths. YouTube opens a fixed HTTPS
   address in a Microsoft-signed Edge executable from Program Files. The raw transcript is never a path,
   argument, URI, or shell command. Declining the confirmation opens nothing.
+  **Confirm app opening by voice** in Privacy is a separate opt-in mode for
+  hands-free use. CloClo speaks the app it heard, then listens for "confirm"
+  followed by that app's name, or "cancel"; silence or an unclear answer
+  cancels after 15 seconds. In Arabic command mode it uses Hoda when available.
+  The original Yes/No dialog remains the default.
   The model is tracked with Git LFS; clone the project with Git LFS enabled
   before building an installer. The installed package is about 142 MiB larger.
   Text that cannot be selected and copied is unavailable to the selection reader.

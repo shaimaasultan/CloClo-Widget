@@ -140,8 +140,8 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                 // second) made English commands about 3x faster with the same
                 // matches; Arabic needed 1024 to keep "وقف الصوت" intact. One
                 // short segment bounds the work when noise is decoded.
-                builder.WithPrompt(recognitionPrompt)
-                    .WithAudioContextSize(arabic ? 1024 : 512)
+                if (recognitionPrompt.Length > 0) builder.WithPrompt(recognitionPrompt);
+                builder.WithAudioContextSize(arabic ? 1024 : 512)
                     .WithSingleSegment()
                     .WithMaxTokensPerSegment(32);
             }

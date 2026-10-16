@@ -26,6 +26,7 @@ public class WidgetSettings
     public string City { get; set; } = "Cairo";
     public double Latitude { get; set; } = 30.0444;
     public double Longitude { get; set; } = 31.2357;
+    public string? LocationTimeZoneId { get; set; }
     public double? WindowLeft { get; set; }
     public double? WindowTop { get; set; }
     public bool AlwaysOnTop { get; set; } = true;
@@ -55,6 +56,12 @@ public class WidgetSettings
     // never. Picked from the right-click menu's "Workout reminder" submenu.
     public int WorkoutAfterMinutes { get; set; } = 15;
     public List<CustomReminderSettings> CustomReminders { get; set; } = new();
+    // Prayer calculations stay on this PC. Azan playback is an explicit opt-in
+    // and uses only a local audio file selected by the user.
+    public bool PrayerAzanEnabled { get; set; }
+    public string PrayerCalculationMethod { get; set; } = "isna";
+    public string PrayerAsrMethod { get; set; } = "standard";
+    public string? PrayerAzanAudioPath { get; set; }
     // Keeps the widget (and the clipboard/QR windows it opens) out of
     // screenshots, recordings and screen sharing — see ScreenCapture.cs.
     // On by default: it changes nothing on the local display.
@@ -68,6 +75,9 @@ public class WidgetSettings
     // Explicit opt-in. When enabled, local microphone transcription listens
     // for "CloClo" while the speech editor is closed. Audio is never saved.
     public bool VoiceActivationEnabled { get; set; } = false;
+    // Opt-in accessible alternative to the visual Yes/No app-launch dialog.
+    // Silence and unrecognized speech cancel; the approved app list is unchanged.
+    public bool SpokenVoiceConfirmationEnabled { get; set; } = false;
     // Steers voice-command recognition toward Arabic speech. English command
     // phrases are still accepted; the approved app list does not change.
     public bool VoiceCommandsInArabic { get; set; } = false;
@@ -135,6 +145,7 @@ public class WidgetSettings
         City = IsSafeText(City, 100) ? City.Trim() : "Cairo";
         Latitude = IsValidCoordinate(Latitude, -90, 90) ? RoundCoordinate(Latitude) : 30.04;
         Longitude = IsValidCoordinate(Longitude, -180, 180) ? RoundCoordinate(Longitude) : 31.24;
+        LocationTimeZoneId = PrayerTimeZone.IsValidId(LocationTimeZoneId) ? LocationTimeZoneId : null;
         WindowLeft = IsValidWindowCoordinate(WindowLeft) ? WindowLeft : null;
         WindowTop = IsValidWindowCoordinate(WindowTop) ? WindowTop : null;
         Sky = Sky is not null && AllowedSkies.Contains(Sky) ? Sky : "auto";
@@ -150,6 +161,12 @@ public class WidgetSettings
             .Where(reminder => reminder != null)
             .Cast<CustomReminderSettings>()
             .ToList();
+        PrayerCalculationMethod = PrayerCalculationMethod is "isna" or "mwl" or "egyptian"
+            ? PrayerCalculationMethod : "isna";
+        PrayerAsrMethod = PrayerAsrMethod is "standard" or "hanafi"
+            ? PrayerAsrMethod : "standard";
+        if (!LocalAudioPlayer.IsAllowedLocalAudioFile(PrayerAzanAudioPath))
+            PrayerAzanAudioPath = null;
         if (DictationFilePath is not null &&
             (DictationFilePath.Length > 2048 || !SpeechToText.IsInDictationFolder(DictationFilePath)))
             DictationFilePath = null;
@@ -215,6 +232,8 @@ public sealed class CustomReminderSettings
     public int StartHour { get; set; } = 9;
     public int EndHour { get; set; } = 17;
     public bool Speak { get; set; }
+    public bool PlayAudio { get; set; }
+    public string? AudioPath { get; set; }
     public bool Enabled { get; set; } = true;
 
     public CustomReminderSettings ValidateAndNormalize()
@@ -227,6 +246,11 @@ public sealed class CustomReminderSettings
         if (IntervalMinutes is not (15 or 30 or 45 or 60 or 90 or 120)) IntervalMinutes = 30;
         if (StartHour is < 0 or > 23) StartHour = 9;
         if (EndHour is < 0 or > 23 || EndHour == StartHour) EndHour = StartHour == 17 ? 9 : 17;
+        if (!LocalAudioPlayer.IsAllowedLocalAudioFile(AudioPath))
+        {
+            AudioPath = null;
+            PlayAudio = false;
+        }
         return this;
     }
 
@@ -237,9 +261,13 @@ public sealed class CustomReminderSettings
         StartHour = StartHour,
         EndHour = EndHour,
         Speak = Speak,
+        PlayAudio = PlayAudio,
+        AudioPath = AudioPath,
         Enabled = Enabled,
     };
 
     public string Describe() =>
-        $"Every {IntervalMinutes} minutes · {StartHour:00}:00–{EndHour:00}:00 · {(Speak ? "speaks and displays" : "visual only")} · {(Enabled ? "on" : "off")}";
+        $"Every {IntervalMinutes} minutes · {StartHour:00}:00–{EndHour:00}:00 · " +
+        (PlayAudio ? "plays sound, " : "") + (Speak ? "speaks and displays" : "displays text") +
+        $" · {(Enabled ? "on" : "off")}";
 }

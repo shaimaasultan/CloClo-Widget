@@ -11,6 +11,7 @@ public partial class LocationDialog : Window
     public string ResolvedCity { get; private set; } = "";
     public double ResolvedLat { get; private set; }
     public double ResolvedLon { get; private set; }
+    public string? ResolvedTimeZoneId { get; private set; }
 
     public LocationDialog(string currentCity)
     {
@@ -87,6 +88,8 @@ public partial class LocationDialog : Window
                 ResolvedLat = WidgetSettings.RoundCoordinate(first.GetProperty("latitude").GetDouble());
                 ResolvedLon = WidgetSettings.RoundCoordinate(first.GetProperty("longitude").GetDouble());
                 ResolvedCity = first.TryGetProperty("name", out var n) ? n.GetString() ?? name : name;
+                ResolvedTimeZoneId = first.TryGetProperty("timezone", out var zone)
+                    ? zone.GetString() : null;
                 DialogResult = true;
                 Close();
             }

@@ -17,17 +17,17 @@
                  SelectionChanged="ReminderList_SelectionChanged" />
         <TextBlock x:Name="ReminderDetails" Grid.Row="2" Margin="2,8,2,10"
                    TextWrapping="Wrap" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
-        <DockPanel Grid.Row="3">
-            <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+        <StackPanel Grid.Row="3">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
                 <Button x:Name="AddButton" Content="Add…" MinWidth="64" Margin="0,0,6,0" Click="AddButton_Click" />
                 <Button x:Name="EditButton" Content="Edit…" MinWidth="64" Margin="0,0,6,0" Click="EditButton_Click" IsEnabled="False" />
                 <Button x:Name="ToggleButton" Content="Enable/disable" MinWidth="100" Margin="0,0,6,0" Click="ToggleButton_Click" IsEnabled="False" />
                 <Button x:Name="RemoveButton" Content="Remove" MinWidth="64" Click="RemoveButton_Click" IsEnabled="False" />
             </StackPanel>
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="Cancel" MinWidth="64" Margin="8,0,6,0" IsCancel="True" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+                <Button Content="Cancel" MinWidth="64" Margin="0,0,6,0" IsCancel="True" />
                 <Button Content="Save reminders" MinWidth="104" IsDefault="True" Click="SaveButton_Click" />
             </StackPanel>
-        </DockPanel>
+        </StackPanel>
     </Grid>
 </Window>

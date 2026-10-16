@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace CloCloWidget;
 
-public readonly record struct WeatherReading(int Temperature, string Sky, bool IsDay);
+public readonly record struct WeatherReading(int Temperature, string Sky, bool IsDay, string? TimeZoneId);
 
 // The current conditions from Open-Meteo (no API key, no account). Fetched
 // here on the host rather than from the rendering layer, so nothing that
@@ -48,7 +48,9 @@ public static class WeatherService
 
             var sky = CodeToSky(code, cloudCover);
             if (sky is "clear" or "cloudy" or "mostlycloudy" or "overcast" && wind >= WindyThresholdKmh) sky = "windy";
-            return new WeatherReading(temp, sky, isDay);
+            var timeZoneId = doc.RootElement.TryGetProperty("timezone", out var zone)
+                ? zone.GetString() : null;
+            return new WeatherReading(temp, sky, isDay, timeZoneId);
         }
         catch
         {

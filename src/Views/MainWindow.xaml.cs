@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
@@ -28,6 +29,12 @@ public partial class MainWindow : Window
     private DispatcherTimer? _greetingTimer;
     private DispatcherTimer? _customReminderTimer;
     private DispatcherTimer? _customReminderDisplayTimer;
+    private DispatcherTimer? _prayerTimer;
+    private LocalAudioPlayer? _azanPlayer;
+    private LocalAudioPlayer? _reminderAudioPlayer;
+    private string? _reminderSpeechAfterAudio;
+    private DateTimeOffset _lastPrayerCheckUtc;
+    private readonly HashSet<long> _playedPrayerInstants = new();
     private bool _resumeWatchAfterCustomReminder;
     private readonly Dictionary<CustomReminderSettings, DateTime> _customReminderLastChecked = new();
     // "awake", "asleep", or "workout" — see UpdateActivityState.
@@ -162,6 +169,7 @@ public partial class MainWindow : Window
     private SudokuWindow? _sudoku;
     private DictationCaptureWindow? _dictationWindow;
     private LocalAudioTranscriber? _voiceActivation;
+    private CancellationTokenSource? _spokenConfirmationCancellation;
     private Task _voiceActivationStop = Task.CompletedTask;
     private bool _voiceActivationStarting;
     private bool _voiceActivationClosing;
@@ -170,7 +178,10 @@ public partial class MainWindow : Window
     private bool _voiceArmed;
     private DateTime _voiceArmedUntil;
     private string _voiceCommandText = "";
+    private int _voiceCommandSegments;
     private DispatcherTimer? _voiceArmTimer;
+    private const int VoiceCommandArmSeconds = 8;
+    private const int MaximumVoiceCommandSegments = 4;
     private DispatcherTimer? _voiceRetryTimer;
     private int _voiceRetryDelaySeconds = 2;
     private DateTime _voiceListeningSinceUtc;
@@ -219,6 +230,11 @@ public partial class MainWindow : Window
         Closing += (_, _) =>
         {
             _voiceActivationClosing = true;
+            if (_spokenConfirmationCancellation != null)
+            {
+                _spokenConfirmationCancellation.Cancel();
+                SpeechReader.Stop();
+            }
             StopVoiceRetryTimer();
             Keeper.SetVoiceStatus("off");
             _ = StopVoiceActivationAsync();
@@ -236,6 +252,21 @@ public partial class MainWindow : Window
             if (_customReminderTimer != null) _customReminderTimer.Tick -= CustomReminderTimer_Tick;
             _customReminderTimer = null;
             StopCustomReminderDisplayTimer();
+            if (_prayerTimer != null)
+            {
+                _prayerTimer.Stop();
+                _prayerTimer.Tick -= PrayerTimer_Tick;
+                _prayerTimer = null;
+            }
+            _azanPlayer?.Dispose();
+            _azanPlayer = null;
+            if (_reminderAudioPlayer != null)
+            {
+                _reminderAudioPlayer.Finished -= ReminderAudioFinished;
+                _reminderAudioPlayer.Dispose();
+                _reminderAudioPlayer = null;
+            }
+            _reminderSpeechAfterAudio = null;
             _commandSearchBar?.CloseSuggestions();
             _avatarWindow?.Close();
             _commandSearchBar = null;
@@ -274,6 +305,7 @@ public partial class MainWindow : Window
         SetupBatteryTimer();
         SetupIdleTimer();
         SetupCustomReminderTimer();
+        SetupPrayerTimer();
         QueueGreeting();
         if (_settings.VoiceActivationEnabled) _ = StartVoiceActivationAsync();
 
@@ -293,7 +325,19 @@ public partial class MainWindow : Window
 
     private async Task RefreshWeatherAsync()
     {
-        Keeper.SetWeather(await WeatherService.GetCurrentAsync(_settings.Latitude, _settings.Longitude));
+        var latitude = _settings.Latitude;
+        var longitude = _settings.Longitude;
+        var reading = await WeatherService.GetCurrentAsync(latitude, longitude);
+        // A location change can finish while the previous weather request is
+        // still in flight. Never apply its weather or time zone to the new city.
+        if (latitude != _settings.Latitude || longitude != _settings.Longitude) return;
+        Keeper.SetWeather(reading);
+        if (reading is { TimeZoneId: { } zone } && PrayerTimeZone.IsValidId(zone) &&
+            _settings.LocationTimeZoneId != zone)
+        {
+            _settings.LocationTimeZoneId = zone;
+            _settings.Save();
+        }
     }
 
     private void QueueGreeting()
@@ -670,6 +714,7 @@ public partial class MainWindow : Window
             new("Voice converter", "david convert my voice microphone record compare accessibility", WidgetSearchActionKind.OpenWindow, ShowVoiceConverter),
             new("Letter signals", "letters formant table build word david compare signal", WidgetSearchActionKind.OpenWindow, ShowLetterSignals),
             new("Custom reminders", "reminder remainder schedule message", WidgetSearchActionKind.OpenWindow, OpenCustomReminders),
+            new("Prayer times and azan", "salah fajr dhuhr asr maghrib isha adhan", WidgetSearchActionKind.OpenWindow, OpenPrayerTimes),
             new("Open dictation folder", "dictation files recordings", WidgetSearchActionKind.OpenFolder, OpenDictationFolder),
             new("Set location", "city place weather gps", WidgetSearchActionKind.OpenWindow, OpenLocationDialog),
             new("Refresh weather", "forecast update", WidgetSearchActionKind.Run, () => _ = RefreshWeatherAsync()),
@@ -681,6 +726,7 @@ public partial class MainWindow : Window
             new("Privacy: Show notification text", "notifications privacy toggle", WidgetSearchActionKind.Toggle, ToggleNotificationText, () => _settings.ShowNotificationText),
             new("Privacy: Speak greeting", "account name startup voice toggle", WidgetSearchActionKind.Toggle, ToggleSpeakGreeting, () => _settings.SpeakGreeting),
             new("Privacy: Voice activation", "cloclo wake word microphone voice command toggle", WidgetSearchActionKind.Toggle, ToggleVoiceActivation, () => _settings.VoiceActivationEnabled),
+            new("Privacy: Spoken voice confirmation", "accessibility hands free confirm app opening toggle", WidgetSearchActionKind.Toggle, ToggleSpokenVoiceConfirmation, () => _settings.SpokenVoiceConfirmationEnabled),
             new("Privacy: Voice commands in Arabic", "cloclo arabic عربي voice command language toggle", WidgetSearchActionKind.Toggle, ToggleVoiceCommandsInArabic, () => _settings.VoiceCommandsInArabic),
         };
 
@@ -1412,6 +1458,46 @@ public partial class MainWindow : Window
         _customReminderTimer.Start();
     }
 
+    private void SetupPrayerTimer()
+    {
+        _lastPrayerCheckUtc = DateTimeOffset.UtcNow;
+        _prayerTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
+        _prayerTimer.Tick += PrayerTimer_Tick;
+        _prayerTimer.Start();
+    }
+
+    private void PrayerTimer_Tick(object? sender, EventArgs e)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var previous = _lastPrayerCheckUtc;
+        _lastPrayerCheckUtc = now;
+        if (!_settings.PrayerAzanEnabled ||
+            now - previous > TimeSpan.FromMinutes(2) || previous > now ||
+            !LocalAudioPlayer.IsPlayable(_settings.PrayerAzanAudioPath)) return;
+
+        // Consider adjacent dates because a location can be in another time
+        // zone. UTC instants avoid duplicate playback during DST changes.
+        var locationDate = PrayerTimeZone.Today(_settings.LocationTimeZoneId);
+        for (var day = -2; day <= 2; day++)
+        {
+            foreach (var prayer in PrayerTimesCalculator.ForDate(locationDate.AddDays(day),
+                         _settings.Latitude, _settings.Longitude,
+                         _settings.PrayerCalculationMethod, _settings.PrayerAsrMethod))
+            {
+                if (prayer.StartsAtUtc <= previous || prayer.StartsAtUtc > now ||
+                    !_playedPrayerInstants.Add(prayer.StartsAtUtc.UtcTicks)) continue;
+                _reminderAudioPlayer?.Stop();
+                _reminderSpeechAfterAudio = null;
+                SpeechReader.Stop();
+                _azanPlayer ??= new LocalAudioPlayer();
+                if (_azanPlayer.TryPlay(_settings.PrayerAzanAudioPath))
+                    ShowOneShotLabel($"{prayer.Name} prayer time", _settings.City);
+                break;
+            }
+        }
+        _playedPrayerInstants.RemoveWhere(ticks => ticks < now.AddDays(-2).UtcTicks);
+    }
+
     private void CustomReminderTimer_Tick(object? sender, EventArgs e)
     {
         var now = DateTime.Now;
@@ -1437,9 +1523,37 @@ public partial class MainWindow : Window
             // spaced out rather than replacing one another's visible label.
             _customReminderLastChecked[reminder] = now;
             ShowCustomReminder(reminder.Message);
-            if (reminder.Speak) SpeechReader.Speak(reminder.Message);
+            PlayCustomReminderAudio(reminder);
             break;
         }
+    }
+
+    private void PlayCustomReminderAudio(CustomReminderSettings reminder)
+    {
+        _reminderAudioPlayer?.Stop();
+        _reminderSpeechAfterAudio = null;
+        // Prayer audio takes priority if the two schedules happen to coincide.
+        if (_azanPlayer?.IsPlaying == true) return;
+        if (reminder.PlayAudio)
+        {
+            if (_reminderAudioPlayer == null)
+            {
+                _reminderAudioPlayer = new LocalAudioPlayer();
+                _reminderAudioPlayer.Finished += ReminderAudioFinished;
+            }
+            _reminderSpeechAfterAudio = reminder.Speak ? reminder.Message : null;
+            if (_reminderAudioPlayer.TryPlay(reminder.AudioPath)) return;
+            _reminderSpeechAfterAudio = null;
+        }
+        if (reminder.Speak) SpeechReader.Speak(reminder.Message);
+    }
+
+    private void ReminderAudioFinished()
+    {
+        var message = _reminderSpeechAfterAudio;
+        _reminderSpeechAfterAudio = null;
+        if (message != null && !_voiceActivationClosing && _azanPlayer?.IsPlaying != true)
+            SpeechReader.Speak(message);
     }
 
     private void ShowCustomReminder(string message)
@@ -1720,6 +1834,7 @@ public partial class MainWindow : Window
         menu.Items.Add(BuildSleepMenu());
         menu.Items.Add(BuildWorkoutMenu());
         menu.Items.Add(Item("Custom reminders…", OpenCustomReminders));
+        menu.Items.Add(Item("Prayer times and azan…", OpenPrayerTimes));
         menu.Items.Add(Item("Windows status…", ShowWindowsStatus));
         menu.Items.Add(Item("Scientific calculator…", ShowScientificCalculator));
         menu.Items.Add(Item("Sound pattern test…", ShowSoundPatternTest));
@@ -1915,12 +2030,50 @@ public partial class MainWindow : Window
         }
 
         if (saved != true) return;
+        _reminderAudioPlayer?.Stop();
+        _reminderSpeechAfterAudio = null;
         _settings.CustomReminders = dialog.Reminders.ToList();
         _settings.Save();
         var now = DateTime.Now;
         _customReminderLastChecked.Clear();
         foreach (var reminder in _settings.CustomReminders)
             _customReminderLastChecked[reminder] = now;
+    }
+
+    private void OpenPrayerTimes()
+    {
+        var dialog = new PrayerTimesWindow(_settings)
+        {
+            Owner = this,
+            Topmost = _settings.AlwaysOnTop,
+        };
+        PositionBesideWidget(dialog);
+        var resumeTopmostTimer = _topmostTimer?.IsEnabled == true;
+        _topmostTimer?.Stop();
+        bool? saved;
+        try { saved = ShowToolDialog(dialog); }
+        finally
+        {
+            if (resumeTopmostTimer)
+            {
+                _topmostTimer?.Start();
+                ReassertTopmost();
+            }
+        }
+        if (saved != true) return;
+        _settings.PrayerCalculationMethod = dialog.CalculationMethod;
+        _settings.PrayerAsrMethod = dialog.AsrMethod;
+        _settings.PrayerAzanAudioPath = dialog.AudioPath;
+        _settings.PrayerAzanEnabled = dialog.AzanEnabled;
+        _settings.Save();
+        _lastPrayerCheckUtc = DateTimeOffset.UtcNow;
+        _playedPrayerInstants.Clear();
+        _azanPlayer?.Stop();
+        if (!_settings.PrayerAzanEnabled)
+        {
+            _azanPlayer?.Dispose();
+            _azanPlayer = null;
+        }
     }
 
     private void PositionBesideWidget(Window dialog)
@@ -2020,6 +2173,7 @@ public partial class MainWindow : Window
             Item("Show notification text", ToggleNotificationText, isChecked: _settings.ShowNotificationText),
             Item("Speak greeting and account name on startup", ToggleSpeakGreeting, isChecked: _settings.SpeakGreeting),
             Item("Allow local CloClo voice activation", ToggleVoiceActivation, isChecked: _settings.VoiceActivationEnabled),
+            Item("Confirm app opening by voice", ToggleSpokenVoiceConfirmation, isChecked: _settings.SpokenVoiceConfirmationEnabled),
             Item("Voice commands in Arabic", ToggleVoiceCommandsInArabic, isChecked: _settings.VoiceCommandsInArabic),
         });
 
@@ -2068,16 +2222,38 @@ public partial class MainWindow : Window
         }
         else
         {
+            if (_spokenConfirmationCancellation != null)
+            {
+                _spokenConfirmationCancellation.Cancel();
+                SpeechReader.Stop();
+            }
             _ = StopVoiceActivationAsync(abortPendingAudio: true);
             Keeper.SetVoiceStatus("off");
             ShowOneShotLabel("Voice activation off", "Microphone command capture stopped.");
         }
     }
 
+    private void ToggleSpokenVoiceConfirmation()
+    {
+        _settings.SpokenVoiceConfirmationEnabled = !_settings.SpokenVoiceConfirmationEnabled;
+        _settings.Save();
+        if (!_settings.SpokenVoiceConfirmationEnabled)
+        {
+            _spokenConfirmationCancellation?.Cancel();
+            if (_spokenConfirmationCancellation != null) SpeechReader.Stop();
+        }
+        ShowOneShotLabel(_settings.SpokenVoiceConfirmationEnabled
+            ? "Spoken app confirmation on" : "Spoken app confirmation off",
+            _settings.SpokenVoiceConfirmationEnabled
+                ? "Say confirm and the app name, or cancel. Silence cancels automatically."
+                : "App opening uses the Yes/No dialog.");
+    }
+
     private void ToggleVoiceCommandsInArabic()
     {
         _settings.VoiceCommandsInArabic = !_settings.VoiceCommandsInArabic;
         _settings.Save();
+        _spokenConfirmationCancellation?.Cancel();
         ShowOneShotLabel(_settings.VoiceCommandsInArabic ? "Voice commands: Arabic" : "Voice commands: English",
             VoiceCommandHint);
         // A running session keeps its recognition language; restart it so the
@@ -2174,11 +2350,13 @@ public partial class MainWindow : Window
             return;
         }
 
-        if ((!_voiceArmed || DateTime.UtcNow > _voiceArmedUntil) &&
-            ApprovedVoiceAppLauncher.StartsWithWakeWord(text) &&
+        if (ApprovedVoiceAppLauncher.StartsWithWakeWord(text) &&
             !ApprovedVoiceAppLauncher.HasFinishWord(text))
         {
-            ArmVoiceCommand(text);
+            if (ApprovedVoiceAppLauncher.IsPotentialCommand(text))
+                ArmVoiceCommand(text);
+            else
+                DisarmVoiceCommand();
             return;
         }
 
@@ -2189,12 +2367,24 @@ public partial class MainWindow : Window
             // A repeated wake word begins a new command instead of appending
             // to the previous wake phrase.
             if (!ApprovedVoiceAppLauncher.StartsWithWakeWord(text))
+            {
+                if (++_voiceCommandSegments > MaximumVoiceCommandSegments)
+                {
+                    DisarmVoiceCommand();
+                    Keeper.SetVoiceStatus("wake");
+                    return;
+                }
                 phrase = _voiceCommandText + " " + text;
+            }
             _voiceCommandText = phrase.Length <= 160 ? phrase : "";
         }
         else
         {
             DisarmVoiceCommand();
+            // Ordinary background speech is ignored, including sentences that
+            // happen to end in "now". A complete one-phrase command still
+            // starts with the explicit wake name and is handled below.
+            if (!ApprovedVoiceAppLauncher.StartsWithWakeWord(text)) return;
         }
 
         if (ApprovedVoiceAppLauncher.IsStopVoiceCommand(phrase))
@@ -2218,15 +2408,21 @@ public partial class MainWindow : Window
             Keeper.SetVoiceStatus("failed");
             ShowOneShotLabel("Voice command not recognized", VoiceCommandHint);
         }
+        else if (!ApprovedVoiceAppLauncher.IsPotentialCommand(phrase))
+        {
+            DisarmVoiceCommand();
+            Keeper.SetVoiceStatus("wake");
+        }
     }
 
     private void ArmVoiceCommand(string initialText)
     {
         DisarmVoiceCommand();
         _voiceArmed = true;
-        _voiceArmedUntil = DateTime.UtcNow.AddSeconds(30);
+        _voiceArmedUntil = DateTime.UtcNow.AddSeconds(VoiceCommandArmSeconds);
         _voiceCommandText = initialText;
-        _voiceArmTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        _voiceCommandSegments = 1;
+        _voiceArmTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(VoiceCommandArmSeconds) };
         _voiceArmTimer.Tick += VoiceArmTimer_Tick;
         _voiceArmTimer.Start();
         Keeper.SetVoiceStatus("armed");
@@ -2243,6 +2439,7 @@ public partial class MainWindow : Window
     {
         _voiceArmed = false;
         _voiceCommandText = "";
+        _voiceCommandSegments = 0;
         if (_voiceArmTimer == null) return;
         _voiceArmTimer.Stop();
         _voiceArmTimer.Tick -= VoiceArmTimer_Tick;
@@ -2281,29 +2478,47 @@ public partial class MainWindow : Window
         try
         {
             if (_voiceActivation != session) return;
-            // End this capture before displaying a modal question. No new
-            // microphone session starts until the question is dismissed.
+            // End command capture before either confirmation path. Spoken
+            // confirmation starts a separate microphone session only after
+            // its prompt has finished, so CloClo cannot hear its own voice.
             var captureStop = StopVoiceActivationAsync(abortPendingAudio: true);
             var name = ApprovedVoiceAppLauncher.DisplayName(app);
-            // Capture has been aborted synchronously. Start the fixed response
-            // while Whisper finishes cleanup, then wait for cleanup before the
-            // confirmation dialog. No app starts until Yes is chosen.
-            if (_settings.VoiceActivationEnabled && !_voiceActivationClosing)
+            var spokenMode = _settings.SpokenVoiceConfirmationEnabled;
+            bool confirmed;
+            if (spokenMode)
             {
-                try { await SpeakVoiceCommandAcknowledgementAsync(name); }
-                catch { /* Spoken feedback is optional; confirmation still follows. */ }
+                await captureStop;
+                if (!_settings.VoiceActivationEnabled || _voiceActivationClosing) return;
+                confirmed = await AskForSpokenAppConfirmationAsync(app) == true;
+                if (!confirmed && _settings.SpokenVoiceConfirmationEnabled &&
+                    _settings.VoiceActivationEnabled && !_voiceActivationClosing)
+                {
+                    try { await SpeakSpokenConfirmationFeedbackAsync(app, null); }
+                    catch { /* The action is already cancelled. */ }
+                }
             }
-            await captureStop;
+            else
+            {
+                // Keep the existing visual confirmation and its fixed spoken
+                // acknowledgement unchanged for users of the default mode.
+                if (_settings.VoiceActivationEnabled && !_voiceActivationClosing)
+                {
+                    try { await SpeakVoiceCommandAcknowledgementAsync(name); }
+                    catch { /* Spoken feedback is optional; confirmation still follows. */ }
+                }
+                await captureStop;
+                if (!_settings.VoiceActivationEnabled || _voiceActivationClosing) return;
+                if (Visibility != Visibility.Visible)
+                {
+                    Visibility = Visibility.Visible;
+                    if (_avatarWindow != null) _avatarWindow.Visibility = Visibility.Visible;
+                }
+                Activate();
+                confirmed = MessageBox.Show(this, $"Open {name}?", "Confirm voice command",
+                    MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
+            }
             if (!_settings.VoiceActivationEnabled || _voiceActivationClosing) return;
-            if (Visibility != Visibility.Visible)
-            {
-                Visibility = Visibility.Visible;
-                if (_avatarWindow != null) _avatarWindow.Visibility = Visibility.Visible;
-            }
-            Activate();
-            var answer = MessageBox.Show(this, $"Open {name}?", "Confirm voice command",
-                MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
-            if (answer != MessageBoxResult.Yes || !_settings.VoiceActivationEnabled)
+            if (!confirmed)
             {
                 Keeper.SetVoiceStatus("failed");
                 ShowOneShotLabel($"Did not open {name}", "");
@@ -2311,6 +2526,11 @@ public partial class MainWindow : Window
             }
             var error = ApprovedVoiceAppLauncher.Launch(app);
             ShowOneShotLabel(error ?? $"Opened {name}", "");
+            if (spokenMode && _settings.VoiceActivationEnabled && !_voiceActivationClosing)
+            {
+                try { await SpeakSpokenConfirmationFeedbackAsync(app, error == null); }
+                catch { /* The launch result is still shown visually. */ }
+            }
             if (error != null)
             {
                 Keeper.SetVoiceStatus("failed");
@@ -2319,6 +2539,11 @@ public partial class MainWindow : Window
             if (_settings.VoiceActivationEnabled && !_voiceActivationClosing)
                 Keeper.SetVoiceStatus("complete");
         }
+        catch (Exception ex)
+        {
+            Keeper.SetVoiceStatus("failed");
+            ShowOneShotLabel("App opening cancelled", $"Confirmation failed ({ex.GetType().Name}).");
+        }
         finally
         {
             _voiceActionPending = false;
@@ -2326,14 +2551,82 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task<bool?> AskForSpokenAppConfirmationAsync(ApprovedVoiceApp app)
+    {
+        var arabic = _settings.VoiceCommandsInArabic &&
+            SpeechReader.IsVoiceAvailable(ReadAloudVoice.ArabicHoda);
+        var voice = arabic ? ReadAloudVoice.ArabicHoda : ReadAloudVoice.EnglishDavid;
+        if (!SpeechReader.IsVoiceAvailable(voice)) return null;
+
+        using var cancellation = new CancellationTokenSource();
+        _spokenConfirmationCancellation = cancellation;
+        try
+        {
+            var prompt = arabic
+                ? $"سمعت طلب فتح {ApprovedVoiceAppLauncher.ArabicDisplayName(app)}. قل أكد فتح واسم التطبيق، أو قل إلغاء."
+                : $"I heard open {ApprovedVoiceAppLauncher.DisplayName(app)}. Say confirm and the app name, or say cancel.";
+            await SpeakFixedVoiceResponseAsync(prompt, voice);
+            if (cancellation.IsCancellationRequested || !_settings.SpokenVoiceConfirmationEnabled ||
+                !_settings.VoiceActivationEnabled || _voiceActivationClosing) return null;
+
+            // No recognition prompt: it could bias uncertain background audio
+            // toward a confirmation. Only a reply naming this app is accepted.
+            var answer = new TaskCompletionSource<bool?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var replySession = new LocalAudioTranscriber(AudioCaptureSource.Microphone,
+                recognitionPrompt: string.Empty);
+            try
+            {
+                replySession.TextRecognized += text =>
+                {
+                    var match = ApprovedVoiceAppLauncher.MatchSpokenConfirmation(text, app);
+                    if (match.HasValue) answer.TrySetResult(match);
+                };
+                replySession.Failed += _ => answer.TrySetResult(null);
+                await replySession.StartAsync(arabic ? "ar-EG" : "en-US");
+                if (cancellation.IsCancellationRequested || !_settings.VoiceActivationEnabled ||
+                    _voiceActivationClosing) return null;
+                Keeper.SetVoiceStatus("armed");
+                try { return await answer.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellation.Token); }
+                catch (TimeoutException) { return null; }
+                catch (OperationCanceledException) { return null; }
+            }
+            finally
+            {
+                await replySession.AbortAsync();
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_spokenConfirmationCancellation, cancellation))
+                _spokenConfirmationCancellation = null;
+        }
+    }
+
+    private Task SpeakSpokenConfirmationFeedbackAsync(ApprovedVoiceApp app, bool? opened)
+    {
+        var arabic = _settings.VoiceCommandsInArabic &&
+            SpeechReader.IsVoiceAvailable(ReadAloudVoice.ArabicHoda);
+        var name = arabic ? ApprovedVoiceAppLauncher.ArabicDisplayName(app)
+            : ApprovedVoiceAppLauncher.DisplayName(app);
+        var message = opened switch
+        {
+            true => arabic ? $"تم فتح {name}." : $"Opened {name}.",
+            false => arabic ? $"تعذر فتح {name}." : $"Could not open {name}.",
+            null => arabic ? "لم يتم التأكيد. تم الإلغاء." : "No confirmation. Cancelled.",
+        };
+        return SpeakFixedVoiceResponseAsync(message,
+            arabic ? ReadAloudVoice.ArabicHoda : ReadAloudVoice.EnglishDavid);
+    }
+
     private static Task SpeakVoiceCommandAcknowledgementAsync(string appName) =>
         SpeakFixedVoiceResponseAsync($"Okay, opening {appName} now.");
 
-    private static async Task SpeakFixedVoiceResponseAsync(string message)
+    private static async Task SpeakFixedVoiceResponseAsync(string message,
+        ReadAloudVoice voice = ReadAloudVoice.EnglishDavid)
     {
         // Callers provide only fixed application names or a fixed stop message,
         // never transcript text. Microphone capture is already stopped.
-        if (!SpeechReader.IsVoiceAvailable(ReadAloudVoice.EnglishDavid)) return;
+        if (!SpeechReader.IsVoiceAvailable(voice)) return;
         var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         void OnFinished() => finished.TrySetResult();
         SpeechReader.Stop();
@@ -2341,7 +2634,7 @@ public partial class MainWindow : Window
         try
         {
             SpeechReader.Speak(message,
-                onFailed: OnFinished, selectedVoice: ReadAloudVoice.EnglishDavid);
+                onFailed: OnFinished, selectedVoice: voice);
             try { await finished.Task.WaitAsync(TimeSpan.FromSeconds(12)); }
             catch (TimeoutException)
             {
@@ -2439,9 +2732,13 @@ public partial class MainWindow : Window
             _settings.City = dialog.ResolvedCity;
             _settings.Latitude = dialog.ResolvedLat;
             _settings.Longitude = dialog.ResolvedLon;
+            _settings.LocationTimeZoneId = PrayerTimeZone.IsValidId(dialog.ResolvedTimeZoneId)
+                ? dialog.ResolvedTimeZoneId : null;
             _settings.Save();
             ApplyDisplaySettings();
             _ = RefreshWeatherAsync();
+            _lastPrayerCheckUtc = DateTimeOffset.UtcNow;
+            _playedPrayerInstants.Clear();
         }
     }
 

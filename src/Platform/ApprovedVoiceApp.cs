@@ -13,14 +13,16 @@ internal enum ApprovedVoiceApp { Notepad, Paint, OneDrive, SnippingTool, Setting
 // user for confirmation before any activation.
 internal static class ApprovedVoiceAppLauncher
 {
-    internal const string RecognitionPrompt = "CloClo. CloClo open Notepad now. CloClo open Paint now. CloClo open OneDrive now. CloClo open Snipping Tool now. CloClo open Settings now. CloClo open YouTube now. CloClo open Spotify now. CloClo open Word now. CloClo stop voice now.";
-    // Used when Arabic voice commands are chosen. The English phrases above
-    // still match; Whisper is only steered toward Arabic script.
-    internal const string ArabicRecognitionPrompt = "كلوكلو. كلوكلو افتح المفكرة دلوقتي. كلوكلو افتح الرسام دلوقتي. كلوكلو افتح ون درايف دلوقتي. كلوكلو افتح أداة القص دلوقتي. كلوكلو افتح الإعدادات دلوقتي. كلوكلو افتح يوتيوب دلوقتي. كلوكلو افتح سبوتيفاي دلوقتي. كلوكلو افتح وورد دلوقتي. كلوكلو وقف الصوت دلوقتي.";
+    // Prompt only the wake name. Full example commands can bias uncertain
+    // background audio toward a command that was never spoken.
+    internal const string RecognitionPrompt = "CloClo.";
+    internal const string ArabicRecognitionPrompt = "كلوكلو.";
     // Phrases are compared after TranscriptCleanup.MatchingKey, so Arabic
     // entries here use its unified spelling (ا for أ/إ/آ, ه for ة, ي for ى).
     private static readonly string[] WakeNames =
-        ["cloclo", "clo clo", "clock low", "clock lo", "clo low", "كلوكلو", "كلو كلو", "كلوك لو"];
+        ["cloclo", "clo clo", "كلوكلو", "كلو كلو"];
+    private static readonly string[] CommandVerbs =
+        ["open ", "launch ", "start ", "افتح لي ", "افتحلي ", "افتح ", "شغل "];
     private static readonly string[] FinishWords = ["now", "دلوقتي", "دلوقت", "الان"];
     private static readonly string[] StopPhrases = ["stop voice", "وقف الصوت", "اوقف الصوت", "اقفل الصوت"];
 
@@ -34,6 +36,24 @@ internal static class ApprovedVoiceAppLauncher
 
     internal static bool HasFinishWord(string transcript) =>
         TryStripFinishWord(Normalize(transcript), out _);
+
+    // Only keep a wake session armed while the next words can still become a
+    // command. Ambient conversation must not be joined to later audio.
+    internal static bool IsPotentialCommand(string transcript)
+    {
+        if (!TryStripWakeName(Normalize(transcript), out var remainder)) return false;
+        if (remainder.Length == 0) return true;
+        foreach (var verb in CommandVerbs)
+        {
+            if (verb.TrimEnd().StartsWith(remainder, StringComparison.Ordinal) ||
+                remainder.StartsWith(verb, StringComparison.Ordinal)) return true;
+        }
+        foreach (var stopPhrase in StopPhrases)
+        {
+            if (stopPhrase.StartsWith(remainder, StringComparison.Ordinal)) return true;
+        }
+        return false;
+    }
 
     internal static bool IsStopVoiceCommand(string transcript) =>
         TryStripWakeName(Normalize(transcript), out var remainder) &&
@@ -94,17 +114,48 @@ internal static class ApprovedVoiceAppLauncher
         _ => throw new ArgumentOutOfRangeException(nameof(app))
     };
 
+    internal static string ArabicDisplayName(ApprovedVoiceApp app) => app switch
+    {
+        ApprovedVoiceApp.Notepad => "المفكرة",
+        ApprovedVoiceApp.Paint => "الرسام",
+        ApprovedVoiceApp.OneDrive => "ون درايف",
+        ApprovedVoiceApp.SnippingTool => "أداة القص",
+        ApprovedVoiceApp.Settings => "الإعدادات",
+        ApprovedVoiceApp.YouTube => "يوتيوب",
+        ApprovedVoiceApp.Spotify => "سبوتيفاي",
+        ApprovedVoiceApp.Word => "وورد",
+        _ => throw new ArgumentOutOfRangeException(nameof(app))
+    };
+
+    // A spoken Yes without the app name can be picked up from nearby speech.
+    // Confirmation must name the same fixed target as the original command.
+    internal static bool? MatchSpokenConfirmation(string transcript, ApprovedVoiceApp expected)
+    {
+        var phrase = Normalize(transcript);
+        if (phrase is "cancel" or "no" or "الغاء" or "لا") return false;
+        foreach (var prefix in new[] { "confirm ", "اكد فتح ", "تاكيد فتح " })
+        {
+            if (!phrase.StartsWith(prefix, StringComparison.Ordinal)) continue;
+            return TryMatch("open " + phrase[prefix.Length..], out var app) && app == expected
+                ? true : null;
+        }
+        return null;
+    }
+
     internal static bool TryMatch(string transcript, out ApprovedVoiceApp app)
     {
         app = default;
         if (transcript.Length > 160) return false;
         var phrase = Normalize(transcript);
-        foreach (var verb in new[] { "open ", "launch ", "start ", "افتح لي ", "افتحلي ", "افتح ", "شغل " })
+        var hasVerb = false;
+        foreach (var verb in CommandVerbs)
         {
             if (!phrase.StartsWith(verb, StringComparison.Ordinal)) continue;
             phrase = phrase[verb.Length..];
+            hasVerb = true;
             break;
         }
+        if (!hasVerb) return false;
         foreach (var suffix in new[] { " application", " app" })
         {
             if (!phrase.EndsWith(suffix, StringComparison.Ordinal)) continue;
