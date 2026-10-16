@@ -1,6 +1,8 @@
 using System;
 using System.IO;
-using System.Windows.Media;
+using System.Runtime.InteropServices;
+using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
 
 namespace CloCloWidget;
 
@@ -9,16 +11,19 @@ namespace CloCloWidget;
 public sealed class LocalAudioPlayer : IDisposable
 {
     private const long MaxAudioBytes = 30L * 1024 * 1024;
-    private readonly MediaPlayer _player = new();
+    // WPF's MediaPlayer, used before, played at half volume by default.
+    // Keep that loudness; the Windows mixer still controls CloClo's volume.
+    private const float PlaybackGain = 0.5f;
+    // WasapiPlayer joins CloClo's default audio session every time. WPF's
+    // MediaPlayer created a new session for each file it opened, so each
+    // azan or reminder added another "CloClo" row to the Windows mixer.
+    private WasapiPlayer? _player;
+    private MediaFoundationReader? _reader;
     private bool _disposed;
     public bool IsPlaying { get; private set; }
+    // Raised on the creating (UI) thread when a file ends or fails, not
+    // after Stop.
     public event Action? Finished;
-
-    public LocalAudioPlayer()
-    {
-        _player.MediaEnded += OnFinished;
-        _player.MediaFailed += OnFailed;
-    }
 
     public static bool IsAllowedLocalAudioFile(string? path)
     {
@@ -47,13 +52,17 @@ public sealed class LocalAudioPlayer : IDisposable
         {
             var file = new FileInfo(path!);
             Stop();
-            _player.Open(new Uri(file.FullName, UriKind.Absolute));
+            _reader = new MediaFoundationReader(file.FullName);
+            var gain = new VolumeSampleProvider(_reader.ToSampleProvider()) { Volume = PlaybackGain };
+            _player = new WasapiPlayerBuilder().Build();
+            _player.PlaybackStopped += OnPlaybackStopped;
+            _player.Init(gain.ToWaveProvider());
             IsPlaying = true;
             _player.Play();
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
-                                   ArgumentException or InvalidOperationException)
+                                   ArgumentException or InvalidOperationException or COMException)
         {
             Stop();
             return false;
@@ -79,18 +88,23 @@ public sealed class LocalAudioPlayer : IDisposable
     {
         if (_disposed) return;
         IsPlaying = false;
-        _player.Stop();
-        _player.Close();
+        var player = _player;
+        var reader = _reader;
+        _player = null;
+        _reader = null;
+        if (player != null)
+        {
+            // Detach first: a deliberate stop is not "finished".
+            player.PlaybackStopped -= OnPlaybackStopped;
+            try { player.Dispose(); } catch (COMException) { /* output device went away */ }
+        }
+        reader?.Dispose();
     }
 
-    private void OnFinished(object? sender, EventArgs e)
+    private void OnPlaybackStopped(object? sender, StoppedEventArgs e)
     {
-        Stop();
-        Finished?.Invoke();
-    }
-
-    private void OnFailed(object? sender, ExceptionEventArgs e)
-    {
+        // Posted to the UI thread; ignore a player that was replaced since.
+        if (!ReferenceEquals(sender, _player)) return;
         Stop();
         Finished?.Invoke();
     }
@@ -99,8 +113,6 @@ public sealed class LocalAudioPlayer : IDisposable
     {
         if (_disposed) return;
         Stop();
-        _player.MediaEnded -= OnFinished;
-        _player.MediaFailed -= OnFailed;
         Finished = null;
         _disposed = true;
     }

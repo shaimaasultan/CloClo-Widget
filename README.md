@@ -113,6 +113,10 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   recording at the five prayer times while it is running; it does not replay
   prayers missed while the PC is
   asleep or CloClo is closed. Compare calculated times with your local mosque.
+  While the azan plays, voice activation closes the microphone and reopens
+  it afterwards. The azan, reminder audio and previews play in CloClo's one
+  audio session, so they share a single CloClo entry and volume in the
+  Windows volume mixer instead of adding a new entry each time.
 - **Scientific calculator:** open it from the search box or right-click menu.
   It supports typed expressions, a keypad, degree/radian mode, trigonometry,
   logarithms, roots, powers, factorials and `Ans`. Calculations use a bounded
