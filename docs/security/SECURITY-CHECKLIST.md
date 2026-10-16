@@ -102,7 +102,12 @@ step is elevated.
 - [x] Building refuses an administrator window (`3f70ae5`)
 - [x] A running widget is closed before building (its exe would be locked) (`668795b`)
 - [x] Build warnings fixed rather than hidden; the two suppressed ones are by design and commented (`Assembly.Location` is the single-file test; WPF reads DPI from the manifest) (`47a11af`)
-- [x] **`CloClo-Setup.exe` (`scripts/Build-Setup.cmd`):** a Windows Installer package and setup program built with WiX Toolset 5.0.2 from nuget.org, under the same signature-required `nuget.config` (`477810a`)
+- [x] **`CloClo-<version>.msix` (`scripts/Build-Setup.cmd` -> `build-msix.ps1`):** per-user MSIX with its own microphone privacy switch
+  - Signed only by a publicly trusted signer: Microsoft Artifact Signing (`-SigningMetadata`/`-SigningDlib`, Microsoft-signed dlib checked before use) or a CA-issued certificate. Self-signed signers, and signers trusted only through a root in `CurrentUser\Root`, are refused
+  - No script imports a certificate into any store (`Root`, `TrustedPeople`, `TrustedPublisher`, current user or machine); installing needs no administrator rights and changes trust for nobody
+  - The exe inside and the package are verified `Valid` after signing (`sign.ps1 -RequireTrusted`), and the package signer must equal the manifest Publisher
+  - Only the exact published file list is packed; links in the stage are refused
+- [x] **Legacy `CloClo-Setup.exe` (`scripts/build-msi-legacy.ps1`):** a Windows Installer package and setup program built with WiX Toolset 5.0.2 from nuget.org, under the same signature-required `nuget.config` (`477810a`)
   - CloClo, the package (`CloClo.msi`), the setup's engine and the finished setup are all signed through `sign.ps1` - protected key only, timestamped, verified after signing
   - The package holds only the signed exe and the five native WPF DLLs (checked in the built `.msi`); the exe carries a rising file version so Windows Installer replaces an older one
   - Per-machine into Program Files; a running CloClo is closed first; a failed install rolls back; a newer setup replaces an older install in place
@@ -174,9 +179,10 @@ step is elevated.
   memory directly anyway.
 - Minor: the extension-point policy can stop very old, non-TSF input methods from working in CloClo's text
   boxes (modern Windows input methods are not affected).
-- **`CloClo-Setup.exe` on other PCs:** signed with your self-signed CN=CloClo certificate, which other PCs don't
-  trust - Windows shows the publisher as unknown and SmartScreen warns. Sign with a publicly trusted
-  code-signing certificate for others to install cleanly.
+- **MSIX signing needs a paid, publicly trusted signer** (Artifact Signing or a CA certificate). This is deliberate:
+  a self-signed MSIX would need its certificate trusted machine-wide, for every user, which CloClo never does.
+- **Legacy `CloClo-Setup.exe` on other PCs:** signed with your self-signed CN=CloClo certificate, which other PCs don't
+  trust - Windows shows the publisher as unknown and SmartScreen warns.
 - Setup disables Install while a script install is registered for the installing user or PC and tells them to uninstall
   it from Settings > Apps first. The MSI also rejects direct or silent installs while that script registration
   remains. The script installer also refuses to copy over a setup-managed installation until the user

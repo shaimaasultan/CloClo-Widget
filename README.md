@@ -394,52 +394,59 @@ Deleting the key is permanent, and already-signed copies keep their
 signature. Keep the private key to yourself — never export the certificate
 with its key.
 
-### An installer for other PCs (CloClo-Setup.exe)
+### An installer for other PCs (CloClo-<version>.msix)
 
-Double-click **`scripts/Build-Setup.cmd`**. It builds CloClo, wraps it in a Windows
-Installer package and a setup program, signs all three with your CN=CloClo
-certificate (Windows asks you to confirm each signing), and leaves
-`dist\CloClo-Setup-<version>.exe` (compressed; size varies by build) and a
-matching `CloClo-Setup-<version>.txt` build log containing that exact EXE's
-SHA-256. Signing approvals happen in Windows dialogs and are not logged.
+Double-click **`scripts/Build-Setup.cmd`**. It builds CloClo, packs it as an
+MSIX, signs the app and the package, and leaves `dist\CloClo-<version>.msix`
+and a matching `CloClo-<version>.txt` build log containing that exact
+package's SHA-256.
 
-That one file installs CloClo on any 64-bit Windows 10/11 PC — no .NET SDK
-or source folder needed there:
+The package is installed **for the current user only**: double-click it,
+App Installer opens, and no administrator prompt appears. CloClo gets its own
+switch under Settings > Privacy & security > Microphone, and its own entry in
+Settings > Apps (Uninstall removes it for that user). "Start with Windows" is
+a Startup app task the user can turn off in Settings > Apps > Startup.
 
-- Windows' own installer does the work: the administrator prompt names the
-  publisher, a failed install rolls back completely, and Settings > Apps gets
-  an entry with Uninstall.
-- It installs to Program Files\CloClo with Start Menu and public desktop
-  shortcuts, enables "Start with Windows" for the installing user, closes a
-  running CloClo first, and a newer setup replaces an older install in place.
-  The sign-in launch waits for the Windows security services as described
-  above. The widget's menu can turn startup off again.
-- The last page has a **Launch** button, which starts CloClo as you, not as
-  administrator.
-- To uninstall: Settings > Apps > CloClo > Uninstall, or run the setup again
-  on a PC that has it - it opens on an Uninstall page. Settings, Sudoku
-  progress and dictation files are kept. MSI removes the startup entry it
-  installed; Windows may retain its separate Startup apps approval record.
-- To install without any screens: `CloClo-Setup-<version>.exe /quiet`
-  (and `/uninstall /quiet` to remove it).
+**Signing never changes trust on any PC.** Windows only installs an MSIX whose
+signer it already trusts, and a self-signed certificate can only be trusted
+machine-wide (Local Computer > Trusted People), for every user on that PC. So
+the build refuses self-signed certificates. It also refuses certificates that
+are trusted only through a root one user added. No script imports a
+certificate into any store. Sign with a publicly trusted certificate instead:
+
+- **Microsoft Artifact Signing** (formerly Azure Trusted Signing),
+  recommended: create an Artifact Signing account, identity validation and
+  certificate profile. Then install the client tools:
+  `winget install -e --id Microsoft.Azure.ArtifactSigningClientTools`
+  Sign in with `az login`, and save
+  `%LOCALAPPDATA%\CloClo\signing\msix-signing.json`:
+
+  ```json
+  {
+    "Metadata": "C:\\Users\\you\\CloCloSigning\\metadata.json",
+    "Dlib": "C:\\path\\to\\x64\\Azure.CodeSigning.Dlib.dll",
+    "Publisher": "CN=Your Name, O=Your Name, L=City, S=State, C=CC"
+  }
+  ```
+
+  `metadata.json` holds `Endpoint` (your account's regional
+  `https://<region>.codesigning.azure.net`), `CodeSigningAccountName` and
+  `CertificateProfileName`. `Publisher` is the certificate subject exactly as
+  the certificate profile shows it. The MSIX identity must match it. The
+  values can also be passed as `-SigningMetadata`, `-SigningDlib` and
+  `-Publisher`.
+- **A CA-issued code-signing certificate** (for example on a hardware token):
+  `.\scripts\Build-Setup.cmd -CertThumbprint <thumbprint>`.
+
+`-Unsigned` builds a package for inspection only; Windows will not install it.
 
 Send the SHA-256 with the file, so the person installing it can check
 (`Get-FileHash`) that they got exactly what you built.
 
-On other PCs your self-signed certificate isn't trusted, so Windows shows the
-publisher as unknown and SmartScreen warns before it runs. For a clean
-install elsewhere, sign with a publicly trusted code-signing certificate
-and pass it:
-`.\scripts\Build-Setup.cmd -CertThumbprint <thumbprint>`.
-
-If a script-based CloClo installation is registered for your account or PC, uninstall
-it from Settings > Apps > Installed apps before running the setup. The setup
-shows this instruction and disables Install until you close and reopen it after
-removing the old installation. Direct MSI and silent installs also refuse to
-install while the script registration remains. A newer MSI setup replaces an
-older MSI setup through Windows Installer. The script installer also refuses
-to copy over an MSI-managed installation until it is uninstalled.
-Uninstalling leaves your settings (%AppData%\CloCloWidget) and dictation files.
+An MSI-installed CloClo can't be upgraded to the MSIX. Uninstall it from
+Settings > Apps first. Uninstalling leaves your settings
+(%AppData%\CloCloWidget) and dictation files. The previous MSI setup can still
+be built with `scripts\build-msi-legacy.ps1`.
 
 ## Checking the source
 

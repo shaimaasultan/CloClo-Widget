@@ -20,9 +20,19 @@
   -Path <file>
       Signs one file in place (the final published exe).
 
-  -Thumbprint selects a protected code-signing certificate in the
-  CurrentUser or LocalMachine "My" store (including hardware tokens and
-  cloud signing providers). File-based private keys are not accepted.
+  The signing key is one of:
+  -Thumbprint      a protected code-signing certificate in the CurrentUser
+                   or LocalMachine "My" store (including hardware tokens).
+                   File-based private keys are not accepted.
+  -SigningMetadata Microsoft Artifact Signing (formerly Azure Trusted
+  -SigningDlib     Signing): the metadata.json naming the account and
+                   certificate profile, and the Microsoft-signed
+                   Azure.CodeSigning.Dlib.dll that SignTool loads. Sign in
+                   first (az login); the key never leaves Azure.
+
+  -RequireTrusted fails on any signature that does not chain to a root this
+  PC already trusts. It is implied for Artifact Signing, whose certificates
+  are publicly trusted. This script never adds a certificate to any store.
 #>
 param(
     [string]$Thumbprint,
@@ -31,7 +41,10 @@ param(
     [string]$SignedList,
     [string]$Path,
     [string]$SignTool,
-    [string]$TimestampUrl = 'http://timestamp.digicert.com'
+    [string]$TimestampUrl = 'http://timestamp.digicert.com',
+    [string]$SigningMetadata,
+    [string]$SigningDlib,
+    [switch]$RequireTrusted
 )
 
 # Only Windows PowerShell's own modules, from its system folder - set before
@@ -44,7 +57,13 @@ param(
 $env:PSModulePath = $PSHOME + '\Modules'
 $ErrorActionPreference = 'Stop'
 
-if ($Thumbprint -notmatch '^[0-9A-Fa-f]{40}$') { throw 'Pass a 40-character certificate thumbprint.' }
+$cloudSigning = [bool]($SigningMetadata -or $SigningDlib)
+if ($cloudSigning) {
+    if ($Thumbprint) { throw 'Pass either -Thumbprint or -SigningMetadata/-SigningDlib, not both.' }
+    if (-not ($SigningMetadata -and $SigningDlib)) { throw 'Artifact Signing needs both -SigningMetadata and -SigningDlib.' }
+    $RequireTrusted = $true
+    if (-not $PSBoundParameters.ContainsKey('TimestampUrl')) { $TimestampUrl = 'http://timestamp.acs.microsoft.com' }
+} elseif ($Thumbprint -notmatch '^[0-9A-Fa-f]{40}$') { throw 'Pass a 40-character certificate thumbprint.' }
 
 if (-not $SignTool) {
     # Known folder, not ${env:ProgramFiles(x86)}, which this user's
@@ -90,11 +109,42 @@ function Assert-ProtectedKey([string]$thumbprint) {
     Write-Host "Signing key: $how [$($cert.Subject)]"
 }
 
+# SignTool loads the dlib into its own process with the signing request, so
+# only Microsoft's own, unmodified Artifact Signing client may be used, and
+# the metadata may only name an Artifact Signing endpoint.
+function Assert-CloudSigning {
+    $dlib = [IO.Path]::GetFullPath($SigningDlib)
+    if (-not (Test-Path -LiteralPath $dlib -PathType Leaf) -or
+        [IO.Path]::GetFileName($dlib) -ne 'Azure.CodeSigning.Dlib.dll') {
+        throw "-SigningDlib must be the path to Azure.CodeSigning.Dlib.dll (x64): $dlib"
+    }
+    $dlibSig = Get-AuthenticodeSignature -LiteralPath $dlib
+    if ($dlibSig.Status -ne 'Valid' -or $dlibSig.SignerCertificate.Subject -notmatch '(^|, )O=Microsoft Corporation(,|$)') {
+        throw "$dlib is not validly signed by Microsoft ($($dlibSig.Status)). Reinstall the Artifact Signing Client Tools."
+    }
+    $meta = [IO.Path]::GetFullPath($SigningMetadata)
+    if (-not (Test-Path -LiteralPath $meta -PathType Leaf)) { throw "Signing metadata not found: $meta" }
+    $json = Get-Content -LiteralPath $meta -Raw | ConvertFrom-Json
+    if ([string]$json.Endpoint -notmatch '^https://[a-z0-9]+\.codesigning\.azure\.net/?$') {
+        throw "metadata.json Endpoint must be a regional https://<region>.codesigning.azure.net address."
+    }
+    if (-not $json.CodeSigningAccountName -or -not $json.CertificateProfileName) {
+        throw 'metadata.json needs CodeSigningAccountName and CertificateProfileName.'
+    }
+    Write-Host "Signing key: Artifact Signing $($json.CodeSigningAccountName)/$($json.CertificateProfileName)"
+    return @($dlib, $meta)
+}
+
 function Invoke-SignTool([string[]]$files) {
-    Assert-ProtectedKey $Thumbprint
-    # SignTool accepts a batch, but Windows still authorizes every use of a
-    # High-protection key. Keep that protection for each file.
-    & $SignTool sign /sha1 $Thumbprint /fd SHA256 /tr $TimestampUrl /td SHA256 /q @files
+    if ($cloudSigning) {
+        $dlib, $meta = Assert-CloudSigning
+        & $SignTool sign /fd SHA256 /tr $TimestampUrl /td SHA256 /dlib $dlib /dmdf $meta /q @files
+    } else {
+        Assert-ProtectedKey $Thumbprint
+        # SignTool accepts a batch, but Windows still authorizes every use of a
+        # High-protection key. Keep that protection for each file.
+        & $SignTool sign /sha1 $Thumbprint /fd SHA256 /tr $TimestampUrl /td SHA256 /q @files
+    }
     if ($LASTEXITCODE -ne 0) { throw "signtool failed (exit $LASTEXITCODE)." }
 
     foreach ($f in $files) {
@@ -103,7 +153,9 @@ function Invoke-SignTool([string[]]$files) {
             'Valid' { }
             # Signed and intact, but the certificate doesn't chain to a root
             # this machine trusts - expected with a self-signed test cert.
-            { $_ -in 'UnknownError', 'NotTrusted' } {
+            # Never fixed by trusting the certificate here: it must already be
+            # publicly trusted when -RequireTrusted is set.
+            { ($_ -in 'UnknownError', 'NotTrusted') -and -not $RequireTrusted } {
                 Write-Warning "$([IO.Path]::GetFileName($f)): signed, but the certificate isn't trusted on this machine ($($sig.StatusMessage))."
             }
             default { throw "$f failed verification after signing: $($sig.Status) - $($sig.StatusMessage)" }
