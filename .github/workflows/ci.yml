@@ -57,6 +57,6 @@ jobs:
           }
           $appDir = Join-Path $env:RUNNER_TEMP 'cloclo-widget-publish'
           Invoke-Dotnet (@('publish', 'CloCloWidget.csproj', '--no-restore', '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=false', '-p:DebugType=none', '-p:Version=1.0.0.0', '-o', $appDir) + $audit)
-          Invoke-Dotnet (@('build', 'installer\CloClo.Package.wixproj', '--no-restore', '-c', 'Release', '-p:AppDir=' + $appDir, '-p:SetupVersion=1.0.0') + $audit)
+          Invoke-Dotnet (@('build', 'installer\CloClo.Package.wixproj', '--no-restore', '-c', 'Release', "-p:AppDir=$appDir", '-p:SetupVersion=1.0.0') + $audit)
           $msi = Join-Path (Get-Location).Path 'bin\installer\CloClo.Package\Release\CloClo.msi'
-          Invoke-Dotnet (@('build', 'installer\CloClo.Bundle.wixproj', '--no-restore', '-c', 'Release', '-p:MsiPath=' + $msi, '-p:SetupVersion=1.0.0') + $audit)
+          Invoke-Dotnet (@('build', 'installer\CloClo.Bundle.wixproj', '--no-restore', '-c', 'Release', "-p:MsiPath=$msi", '-p:SetupVersion=1.0.0') + $audit)
