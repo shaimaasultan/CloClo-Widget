@@ -204,7 +204,8 @@ internal static class ApprovedVoiceAppLauncher
     [
         (ApprovedVoiceApp.Notepad, "notepad"), (ApprovedVoiceApp.Notepad, "المفكره"),
         (ApprovedVoiceApp.Notepad, "نوت باد"),
-        (ApprovedVoiceApp.Paint, "paint"), (ApprovedVoiceApp.Paint, "الرسام"),
+        (ApprovedVoiceApp.Paint, "paint"), (ApprovedVoiceApp.Paint, "paintbrush"),
+        (ApprovedVoiceApp.Paint, "الرسام"),
         (ApprovedVoiceApp.Paint, "باينت"),
         (ApprovedVoiceApp.OneDrive, "onedrive"), (ApprovedVoiceApp.OneDrive, "ون درايف"),
         (ApprovedVoiceApp.SnippingTool, "snipping tool"), (ApprovedVoiceApp.SnippingTool, "اداه القص"),
