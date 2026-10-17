@@ -86,6 +86,15 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   day/month order), e.g. "9:41 PM · Tue, Oct 6". The sky in words sits with
   the temperature: "12° Clear". The battery shows its charge and, when Windows
   provides it, an estimate of time remaining.
+- **Power details:** hover the battery for a card with what Windows reports:
+  charge and whether it's charging, plugged in or on battery, time left (or
+  about how long to full while charging), the charge rate in watts, the
+  power mode (Best power efficiency, Balanced or Best performance), battery
+  saver, and battery health (full-charge against design capacity, e.g. "48%
+  (40.1 Wh of 84.3 Wh design)"). Lines Windows can't report are left out.
+  On a PC without a battery, a small plug sits in the battery's place and
+  hovering it shows "AC power" with the power mode. It's read when the card
+  opens, and screen readers hear the same details as the icon's help text.
 - **Internet connection:** a small icon in the top-left column shows how the PC is
   connected, with its own glyph for each: wired (an Ethernet port), Wi-Fi (a
   fan with up to four lit bars), cellular (rising signal bars with its

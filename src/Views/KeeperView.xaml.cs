@@ -283,6 +283,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         var top = !hasBattery ? 15
             : BatteryTime.Visibility == Visibility.Visible ? 41
             : 30;
+        AcPowerIcon.Visibility = Show(!hasBattery && _acPowerDetails != null);
         NetworkLine.Visibility = Show(_showNetwork && _network != null);
         BluetoothIcon.Visibility = Show(_showDevices && _bluetooth?.RadioOn == true);
         HeadphonesIcon.Visibility = Show(_showDevices && _headphones != null);
@@ -290,7 +291,8 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         BluetoothIcon.Margin = new Thickness(NetworkLine.Visibility == Visibility.Visible ? 4 : 0, 0, 0, 0);
         HeadphonesIcon.Margin = new Thickness(
             NetworkLine.Visibility == Visibility.Visible || BluetoothIcon.Visibility == Visibility.Visible ? 4 : 0, 0, 0, 0);
-        var anyConnection = NetworkLine.Visibility == Visibility.Visible || BluetoothIcon.Visibility == Visibility.Visible
+        var anyConnection = AcPowerIcon.Visibility == Visibility.Visible || NetworkLine.Visibility == Visibility.Visible
+            || BluetoothIcon.Visibility == Visibility.Visible
             || HeadphonesIcon.Visibility == Visibility.Visible;
         ConnectionsLine.Visibility = Show(anyConnection);
         ConnectionsLine.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
@@ -348,6 +350,34 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     public Rect? NetworkIconBounds(Visual relativeTo) => Bounds(NetworkLine, relativeTo);
     public Rect? BluetoothIconBounds(Visual relativeTo) => Bounds(BluetoothIcon, relativeTo);
     public Rect? HeadphonesIconBounds(Visual relativeTo) => Bounds(HeadphonesIcon, relativeTo);
+
+    // The battery glyph and its percentage (moved with the connection icons:
+    // SetBattery re-places the column); null without a battery.
+    public Rect? BatteryIconBounds(Visual relativeTo)
+    {
+        if (!Battery.IsVisible || BatteryLine.ActualWidth <= 0) return null;
+        var right = Canvas.GetLeft(BatteryLine) + BatteryLine.ActualWidth;
+        return Battery.TransformToVisual(relativeTo).TransformBounds(new Rect(8, 15.3, right - 8, 26 - 15.3));
+    }
+
+    public Rect? AcPowerIconBounds(Visual relativeTo) => Bounds(AcPowerIcon, relativeTo);
+
+    // The battery hover card's text, for screen readers that can't hover.
+    public void SetBatteryDetails(string spoken) =>
+        System.Windows.Automation.AutomationProperties.SetHelpText(BatteryPercent, spoken);
+
+    // Without a battery: the power card's text shows the plug icon (and is
+    // its screen-reader help); null hides it.
+    private string? _acPowerDetails;
+
+    public void SetAcPower(string? spoken)
+    {
+        if (spoken == _acPowerDetails) return;
+        _acPowerDetails = spoken;
+        System.Windows.Automation.AutomationProperties.SetName(AcPowerIcon, "AC power");
+        System.Windows.Automation.AutomationProperties.SetHelpText(AcPowerIcon, spoken ?? "");
+        PlaceStatusColumn();
+    }
 
     private static Rect? Bounds(FrameworkElement icon, Visual relativeTo)
     {

@@ -1256,8 +1256,8 @@ public partial class MainWindow : Window
         return brush;
     }
 
-    private Border? _networkHover, _bluetoothHover, _headphonesHover;
-    private Popup? _networkTip, _bluetoothTip, _headphonesTip;
+    private Border? _networkHover, _bluetoothHover, _headphonesHover, _batteryHover, _acPowerHover;
+    private Popup? _networkTip, _bluetoothTip, _headphonesTip, _batteryTip, _acPowerTip;
 
     private void CreateUptimeHover(Canvas hitSurface)
     {
@@ -1266,9 +1266,12 @@ public partial class MainWindow : Window
         PlaceUptimeHover();
     }
 
-    // The same kind of hover card for each connection icon beside the battery.
+    // The same kind of hover card for the battery and each connection icon
+    // beside it.
     private void CreateConnectionHovers(Canvas hitSurface)
     {
+        (_batteryHover, _batteryTip) = CreateStatusHover(hitSurface, FillBatteryTip);
+        (_acPowerHover, _acPowerTip) = CreateStatusHover(hitSurface, FillBatteryTip);
         (_networkHover, _networkTip) = CreateStatusHover(hitSurface, FillNetworkTip);
         (_bluetoothHover, _bluetoothTip) = CreateStatusHover(hitSurface, FillBluetoothTip);
         (_headphonesHover, _headphonesTip) = CreateStatusHover(hitSurface, FillHeadphonesTip);
@@ -1281,6 +1284,8 @@ public partial class MainWindow : Window
         PlaceStatusHover(_networkHover, Keeper.NetworkIconBounds(this));
         PlaceStatusHover(_bluetoothHover, Keeper.BluetoothIconBounds(this));
         PlaceStatusHover(_headphonesHover, Keeper.HeadphonesIconBounds(this));
+        PlaceStatusHover(_batteryHover, Keeper.BatteryIconBounds(this));
+        PlaceStatusHover(_acPowerHover, Keeper.AcPowerIconBounds(this));
     }
 
     private (Border Hover, Popup Tip) CreateStatusHover(Canvas hitSurface, Action<Popup> fill)
@@ -1667,7 +1672,24 @@ public partial class MainWindow : Window
 
     private void RefreshBattery()
     {
-        Keeper.SetBattery(BatteryInfo.Read());
+        var battery = BatteryInfo.Read();
+        Keeper.SetBattery(battery);
+        // The hover card's details stay readable to screen readers too.
+        var card = PowerDetails.Read();
+        if (battery != null) Keeper.SetBatteryDetails(PowerDetails.Spoken(card));
+        // A desktop gets a plug in the battery's place, with the same card.
+        Keeper.SetAcPower(battery == null && card.NoBattery ? PowerDetails.Spoken(card) : null);
+    }
+
+    // Read fresh each time the card opens: charge rate, time left, power
+    // mode and battery health (PowerDetails.cs).
+    private void FillBatteryTip(Popup tip)
+    {
+        var card = PowerDetails.Read();
+        if (card.NoBattery) Keeper.SetAcPower(PowerDetails.Spoken(card));
+        else Keeper.SetBatteryDetails(PowerDetails.Spoken(card));
+        tip.Child = UptimeCard(card.Heading, card.Lines, "Windows status shows the power plan.");
+        if (tip.IsOpen) RaiseAboveWidget(tip.Child);
     }
 
     // ---- Internet connection ----
