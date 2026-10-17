@@ -17,6 +17,7 @@ public partial class PrayerTimesWindow : Window
     private string? _audioPath;
 
     public bool AzanEnabled => EnableAzanBox.IsChecked == true;
+    public bool PrayerLookEnabled => EnableLookBox.IsChecked == true;
     public string CalculationMethod => SelectedTag(MethodBox);
     public string AsrMethod => SelectedTag(AsrBox);
     public string? AudioPath => _audioPath;
@@ -37,6 +38,7 @@ public partial class PrayerTimesWindow : Window
         SelectTag(AsrBox, settings.PrayerAsrMethod);
         _audioPath = settings.PrayerAzanAudioPath;
         EnableAzanBox.IsChecked = settings.PrayerAzanEnabled;
+        EnableLookBox.IsChecked = settings.PrayerLookEnabled;
         UpdateAudioLabel();
         UpdateTimes();
         Closed += (_, _) => _preview.Dispose();

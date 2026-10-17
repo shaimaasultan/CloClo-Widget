@@ -236,8 +236,8 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         HeadRotate.BeginAnimation(RotateTransform.AngleProperty, null);
         RightArmShift.BeginAnimation(TranslateTransform.XProperty, null);
         RightArmShift.BeginAnimation(TranslateTransform.YProperty, null);
-        EyesOpen.Visibility = Visibility.Visible;
-        EyesClosed.Visibility = Visibility.Collapsed;
+        EyesOpen.Visibility = Show(!EyesResting);
+        EyesClosed.Visibility = Show(EyesResting);
         _flashTimer.Stop();
         foreach (var group in _loops.Keys.ToArray()) SetLoops(group, false);
         ApplySky();
@@ -284,8 +284,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     {
         _avatar = avatar == "lady" ? "lady" : "keeper";
         var lady = _avatar == "lady";
-        HairDefault.Visibility = Show(!lady);
-        LadyHairBack.Visibility = LadyHairFront.Visibility = LadyLashes.Visibility = Show(lady);
+        LadyLashes.Visibility = Show(lady);
         var mouth = (Brush)FindResource(lady ? "Lips" : "Hair");
         MouthAwake.Stroke = MouthSleep.Stroke = MouthWorkout.Fill = mouth;
         ApplyOutfit();
@@ -445,7 +444,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         NotificationSystemPose.Visibility = Visibility.Collapsed;
         NotificationChatGptPose.Visibility = Visibility.Collapsed;
         NotificationClaudePose.Visibility = Visibility.Collapsed;
-        HangingArms.Visibility = Show(_activityState != "workout");
+        HangingArms.Visibility = Show(ArmsHang);
         if (hadCue) ApplyOutfit();
         UpdateTimeDetails(DateTime.Now);
     }
@@ -477,7 +476,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         }
     }
 
-    // "awake", "asleep" or "workout" — measured host-side (see
+    // "awake", "asleep", "workout" or "prayer" — measured host-side (see
     // UpdateActivityState in MainWindow.xaml.cs). Purely cosmetic.
     public void SetActivity(string state, int secondsLeft)
     {
@@ -488,15 +487,19 @@ public partial class KeeperView : System.Windows.Controls.UserControl
             ClearNotificationCue();
             var sleeping = state == "asleep";
             var working = state == "workout";
+            // Prayer: eyes softly closed and a calm smile, standing still on
+            // the mat with folded hands - no z's and no dimming, unlike sleep.
+            var praying = state == "prayer";
 
-            MouthAwake.Visibility = Show(!sleeping && !working);
-            MouthSleep.Visibility = Show(sleeping);
+            MouthAwake.Visibility = Show(!sleeping && !working && !praying);
+            MouthSleep.Visibility = Show(sleeping || praying);
             MouthWorkout.Visibility = Show(working);
             Zzz.Visibility = Show(sleeping);
-            EyesOpen.Visibility = Show(!sleeping);
-            EyesClosed.Visibility = Show(sleeping);
-            HangingArms.Visibility = Show(!working);
+            EyesOpen.Visibility = Show(!EyesResting);
+            EyesClosed.Visibility = Show(EyesResting);
+            HangingArms.Visibility = Show(ArmsHang);
             WorkoutArms.Visibility = Show(working);
+            PrayerArms.Visibility = PrayerMat.Visibility = Show(praying);
             WorkoutCountdown.Visibility = Show(working || (state == "awake" && !string.IsNullOrEmpty(_shirtName)));
             if (!working && state == "awake") WorkoutCountdown.Text = _shirtName ?? string.Empty;
             ApplyOutfit();
@@ -537,29 +540,42 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     // ---------------------------------------------------------------- outfit
 
     // What Keeper wears: the weather's outfit while awake, gym clothes during
-    // a workout break and night clothes while asleep - for either avatar.
-    // The sky itself keeps showing the weather either way.
+    // a workout break, night clothes while asleep and prayer clothes at
+    // prayer time - for either avatar. The sky keeps showing the weather.
     private void ApplyOutfit()
     {
         var lady = _avatar == "lady";
         var gym = _activityState == "workout";
         var sleep = _activityState == "asleep";
-        var reminder = _customReminderActive && !gym && !sleep;
-        var weather = !gym && !sleep && !reminder;
+        var prayer = _activityState == "prayer";
+        var reminder = _customReminderActive && !gym && !sleep && !prayer;
+        var weather = !gym && !sleep && !prayer && !reminder;
 
         foreach (var el in new UIElement[]
         {
             TorsoRain, TorsoSnowExtra, TorsoStorm, RaincoatHoodBack, RaincoatHood, SnowHat, Sunglasses, UmbrellaHeld, UmbrellaLeaning,
-            GymTop, ReminderTop, GymShorts, Headband, PajamaTop, Nightgown, Nightcap,
+            GymTop, ReminderTop, GymShorts, Headband, PajamaTop, Nightgown, Nightcap, PrayerRobe, PrayerDress, Kufi, Hijab,
         })
         {
             el.Visibility = Visibility.Collapsed;
         }
         TorsoDefault.Visibility = Show(weather);
         LadySkirt.Visibility = Show(lady && weather);
+        // The hijab covers Lady Keeper's hair at prayer time.
+        HairDefault.Visibility = Show(!lady);
+        LadyHairBack.Visibility = LadyHairFront.Visibility = Show(lady && !prayer);
 
         string arms, legs, shoes;
-        if (gym)
+        if (prayer)
+        {
+            // Bare feet on the mat; sleeves edged so folded arms read on the robe.
+            (lady ? PrayerDress : PrayerRobe).Visibility = Visibility.Visible;
+            (lady ? (UIElement)Hijab : Kufi).Visibility = Visibility.Visible;
+            var clothes = lady ? "PrayerDress" : "PrayerRobe";
+            (arms, legs, shoes) = (clothes, clothes, "Skin");
+            PrayerArmLEdge.Stroke = PrayerArmREdge.Stroke = (Brush)FindResource(clothes + "Edge");
+        }
+        else if (gym)
         {
             GymTop.Visibility = Headband.Visibility = Visibility.Visible;
             GymTopBody.Fill = (Brush)FindResource(lady ? "GymTopLady" : "GymTop");
@@ -621,7 +637,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         LadySkirt.Fill = new SolidColorBrush(set.Skirt);
 
         var armBrush = Paint(arms);
-        ArmL.Stroke = ArmR.Stroke = WorkoutArmL.Stroke = WorkoutArmR.Stroke = armBrush;
+        ArmL.Stroke = ArmR.Stroke = WorkoutArmL.Stroke = WorkoutArmR.Stroke = PrayerArmL.Stroke = PrayerArmR.Stroke = armBrush;
         LegL.Fill = LegR.Fill = Paint(legs);
         ShoeL.Fill = ShoeR.Fill = (Brush)FindResource(shoes);
     }
@@ -682,9 +698,15 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         SaluteArmShift.BeginAnimation(TranslateTransform.YProperty, null);
         SaluteArmWave.BeginAnimation(RotateTransform.AngleProperty, null);
         SalutePose.Visibility = Visibility.Collapsed;
-        if (_activityState != "workout" && _activeNotificationCue == null)
+        if (ArmsHang && _activeNotificationCue == null)
             HangingArms.Visibility = Visibility.Visible;
     }
+
+    // The stretch and the prayer pose each replace the hanging arms.
+    private bool ArmsHang => _activityState is not ("workout" or "prayer");
+
+    // Asleep and at prayer the eyes stay closed, so blinks leave them be.
+    private bool EyesResting => _activityState is "asleep" or "prayer";
 
     private void UpdateTimeDetails(DateTime now)
     {
@@ -945,14 +967,16 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     // ---------------------------------------------------------------- keeper motion
 
     // The always-on motion: a gentle breath (slower asleep, faster mid-
-    // workout), or a sway in the wind, which overrides everything else on
-    // the body — including perks and fidgets, same as the old CSS did.
+    // workout, slow and shallow at prayer), or a sway in the wind, which
+    // overrides everything else on the body — including perks and fidgets,
+    // same as the old CSS did — except prayer, which stays calm and upright.
     private void RestartAmbient()
     {
         if (_wrapBusy) return;
         ClearWrap();
         if (_motionMode == "still") return;
-        if (_sky == "windy")
+        var praying = _activityState == "prayer";
+        if (_sky == "windy" && !praying)
         {
             var scale = _motionMode == "gentle" ? 0.35 : 1;
             var windyPeriod = _motionMode == "gentle" ? 6.6 : 2.2;
@@ -960,9 +984,9 @@ public partial class KeeperView : System.Windows.Controls.UserControl
             WrapRotate.BeginAnimation(RotateTransform.AngleProperty, Loop(Keys(windyPeriod, EaseInOut, (0, 0), (0.3, -4 * scale), (0.65, 2.5 * scale), (1, 0)), 0));
             return;
         }
-        var period = _activityState switch { "asleep" => 5.5, "workout" => 1.6, _ => 3.2 };
+        var period = _activityState switch { "asleep" => 5.5, "workout" => 1.6, "prayer" => 6, _ => 3.2 };
         if (_motionMode == "gentle") period = Math.Max(period, 6.5);
-        var lift = _motionMode == "gentle" ? -0.8 : -3;
+        var lift = _motionMode == "gentle" ? -0.8 : praying ? -1.2 : -3;
         WrapTranslate.BeginAnimation(TranslateTransform.YProperty, Loop(Keys(period, EaseInOut, (0, 0), (0.5, lift), (1, 0)), 0));
     }
 
@@ -999,7 +1023,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         {
             timer.Stop();
             if (_motionMode == "still") return;
-            if (_activityState != "asleep")
+            if (!EyesResting)
             {
                 EyesOpen.Visibility = Visibility.Collapsed;
                 EyesClosed.Visibility = Visibility.Visible;
@@ -1009,7 +1033,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
             {
                 reopen.Stop();
                 if (_motionMode == "still") return;
-                if (_activityState != "asleep")
+                if (!EyesResting)
                 {
                     EyesOpen.Visibility = Visibility.Visible;
                     EyesClosed.Visibility = Visibility.Collapsed;

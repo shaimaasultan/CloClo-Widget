@@ -1,7 +1,7 @@
 <Window x:Class="CloCloWidget.PrayerTimesWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="CloClo — Prayer times" Width="450" Height="525"
+        Title="CloClo — Prayer times" Width="450" Height="555"
         WindowStartupLocation="Manual" ResizeMode="NoResize" ShowInTaskbar="False"
         Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}">
     <Grid Margin="18">
@@ -39,6 +39,8 @@
             </StackPanel>
         </Border>
         <StackPanel Grid.Row="5">
+            <CheckBox x:Name="EnableLookBox" Content="Show the avatar in prayer clothes at prayer times"
+                      Margin="0,0,0,8" />
             <CheckBox x:Name="EnableAzanBox" Content="Play azan automatically at prayer times"
                       Margin="0,0,0,8" />
             <DockPanel Margin="0,0,0,6">

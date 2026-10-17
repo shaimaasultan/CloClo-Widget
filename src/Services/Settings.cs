@@ -62,6 +62,9 @@ public class WidgetSettings
     public string PrayerCalculationMethod { get; set; } = "isna";
     public string PrayerAsrMethod { get; set; } = "standard";
     public string? PrayerAzanAudioPath { get; set; }
+    // Opt-in, independent of the azan sound: Keeper and Lady Keeper change
+    // into prayer clothes on a prayer mat for a while at each prayer time.
+    public bool PrayerLookEnabled { get; set; }
     // Keeps the widget (and the clipboard/QR windows it opens) out of
     // screenshots, recordings and screen sharing — see ScreenCapture.cs.
     // On by default: it changes nothing on the local display.

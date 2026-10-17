@@ -92,9 +92,10 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
 - **Avatar:** choose Keeper or Lady Keeper and a separate everyday outfit colour
   for each. Weather changes the sky and clothing; **Weather** can follow the
   live forecast or use a sky you pick. The avatar sleeps after your chosen idle
-  interval and wears workout clothes during a stretch-break reminder. The
-  **Motion** menu offers full, gentle and still modes. Time of day adds small
-  visual details; the clock and weather text adapt to the desktop background.
+  interval and wears workout clothes during a stretch-break reminder. With the
+  prayer look on (see **Prayer times and azan**), it wears prayer clothes at
+  prayer time. The **Motion** menu offers full, gentle and still modes. Time
+  of day adds small visual details; the clock and weather text adapt to the desktop background.
 - **Reminders:** **Workout reminder** offers a fixed activity interval;
   when the stretch-break pose starts, CloClo says "Time for a short stretch
   break" (in Arabic with Hoda when Arabic voice commands are on).
@@ -117,6 +118,18 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   recording at the five prayer times while it is running; it does not replay
   prayers missed while the PC is
   asleep or CloClo is closed. Compare calculated times with your local mosque.
+  **Show the avatar in prayer clothes at prayer times** is a separate opt-in
+  that works with or without the azan. At each prayer time Keeper changes
+  into a white thobe and kufi, and Lady Keeper into a long prayer dress and a
+  hijab that covers her hair. Both stand barefoot on a prayer mat with eyes
+  closed and hands folded on the chest. The look lasts 10 minutes and shows
+  the "Fajr prayer time"-style label. It comes before sleep, the stretch
+  break and custom reminders. A stretch break in progress ends and counts as
+  done, and custom reminders wait until the look ends. It keeps the calm
+  breathing in full and gentle motion, stays completely still in still mode,
+  and doesn't sway in the wind. Turning the option off ends a look in
+  progress. It uses the same local calculation, location and method as the
+  azan.
   While the azan plays, voice activation closes the microphone and reopens
   it afterwards. Everything CloClo plays (the azan, reminder sounds, spoken
   reminders and replies, read-aloud text and previews) uses one audio
@@ -597,7 +610,7 @@ To sign it the same way `install.ps1` does, add
 
 A WPF host window (transparent, borderless, topmost by default, no taskbar
 entry, click-through) hosts `KeeperView` — a native WPF drawing of the app's
-Keeper or Lady Keeper avatar with weather, sleep, workout and custom-reminder
+Keeper or Lady Keeper avatar with weather, sleep, workout, prayer and custom-reminder
 outfits, time-of-day details, notification poses and adjustable motion. There
 is no embedded browser. `WeatherService` fetches the current temperature and
 WMO weather code from Open-Meteo on the host and maps it to a sky

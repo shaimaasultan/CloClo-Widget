@@ -37,7 +37,7 @@ public partial class MainWindow : Window
     private readonly HashSet<long> _playedPrayerInstants = new();
     private bool _resumeWatchAfterCustomReminder;
     private readonly Dictionary<CustomReminderSettings, DateTime> _customReminderLastChecked = new();
-    // "awake", "asleep", or "workout" — see UpdateActivityState.
+    // "awake", "asleep", "workout" or "prayer" — see UpdateActivityState.
     private string _activityState = "awake";
     // When the current unbroken stretch of activity began — reset every
     // time a real break (BreakThreshold) is seen before the workout pose
@@ -50,6 +50,10 @@ public partial class MainWindow : Window
     // stopped, rather than waiting to detect a real pause.
     private DateTime? _workoutCountdownEnd;
     private static readonly TimeSpan BreakThreshold = TimeSpan.FromMinutes(2);
+    // Set when a prayer time arrives with the prayer look on: Keeper wears
+    // prayer clothes on a prayer mat until then, ahead of every other state.
+    private DateTime? _prayerLookEnd;
+    private static readonly TimeSpan PrayerLookDuration = TimeSpan.FromMinutes(10);
     private Window? _avatarWindow;
     private CommandSearchBar? _commandSearchBar;
     private ScientificCalculatorWindow? _calculatorWindow;
@@ -1499,9 +1503,11 @@ public partial class MainWindow : Window
         var now = DateTimeOffset.UtcNow;
         var previous = _lastPrayerCheckUtc;
         _lastPrayerCheckUtc = now;
-        if (!_settings.PrayerAzanEnabled ||
-            now - previous > TimeSpan.FromMinutes(2) || previous > now ||
-            !LocalAudioPlayer.IsPlayable(_settings.PrayerAzanAudioPath)) return;
+        // The azan and the prayer look are separate opt-ins at the same moment.
+        var azan = _settings.PrayerAzanEnabled && LocalAudioPlayer.IsPlayable(_settings.PrayerAzanAudioPath);
+        var look = _settings.PrayerLookEnabled;
+        if ((!azan && !look) ||
+            now - previous > TimeSpan.FromMinutes(2) || previous > now) return;
 
         // Consider adjacent dates because a location can be in another time
         // zone. UTC instants avoid duplicate playback during DST changes.
@@ -1514,23 +1520,36 @@ public partial class MainWindow : Window
             {
                 if (prayer.StartsAtUtc <= previous || prayer.StartsAtUtc > now ||
                     !_playedPrayerInstants.Add(prayer.StartsAtUtc.UtcTicks)) continue;
-                _reminderAudioPlayer?.Stop();
-                _reminderSpeechAfterAudio = null;
-                SpeechReader.Stop();
-                if (_azanPlayer == null)
+                if (look) StartPrayerLook();
+                var playing = false;
+                if (azan)
                 {
-                    _azanPlayer = new LocalAudioPlayer();
-                    _azanPlayer.Finished += ResumeVoiceAfterAudio;
+                    _reminderAudioPlayer?.Stop();
+                    _reminderSpeechAfterAudio = null;
+                    SpeechReader.Stop();
+                    if (_azanPlayer == null)
+                    {
+                        _azanPlayer = new LocalAudioPlayer();
+                        _azanPlayer.Finished += ResumeVoiceAfterAudio;
+                    }
+                    playing = _azanPlayer.TryPlay(_settings.PrayerAzanAudioPath);
+                    if (playing) PauseVoiceForAudio();
                 }
-                if (_azanPlayer.TryPlay(_settings.PrayerAzanAudioPath))
-                {
-                    ShowOneShotLabel($"{prayer.Name} prayer time", _settings.City);
-                    PauseVoiceForAudio();
-                }
+                if (playing || look) ShowOneShotLabel($"{prayer.Name} prayer time", _settings.City);
                 break;
             }
         }
         _playedPrayerInstants.RemoveWhere(ticks => ticks < now.AddDays(-2).UtcTicks);
+    }
+
+    // A custom reminder's cardigan and label give way to the prayer look,
+    // and a stretch break in progress ends: the prayer counts as the break.
+    private void StartPrayerLook()
+    {
+        StopCustomReminderDisplayTimer();
+        _workoutCountdownEnd = null;
+        _prayerLookEnd = DateTime.Now + PrayerLookDuration;
+        UpdateActivityState();
     }
 
     // Voice activation keeps the microphone open. Close it while the azan
@@ -1652,8 +1671,12 @@ public partial class MainWindow : Window
             ? now.Hour >= reminder.StartHour && now.Hour < reminder.EndHour
             : now.Hour >= reminder.StartHour || now.Hour < reminder.EndHour;
 
-    // Three states, sleep takes priority over the workout nudge (if you've
-    // actually stepped away, you don't also need a "take a break" pose):
+    // Four states. Prayer comes first, then sleep takes priority over the
+    // workout nudge (if you've actually stepped away, you don't also need a
+    // "take a break" pose):
+    // - prayer: for PrayerLookDuration from a prayer time, with the prayer
+    //   look on, whether or not you're at the PC — like the azan itself.
+    //   Custom reminders wait meanwhile (they only fire while awake).
     // - asleep: idle for at least SleepAfterMinutes.
     // - workout: it's been at least WorkoutAfterMinutes since the last real
     //   break (an idle stretch of BreakThreshold+, before the pose ever
@@ -1663,6 +1686,17 @@ public partial class MainWindow : Window
     // - awake: neither.
     private void UpdateActivityState()
     {
+        if (_prayerLookEnd is { } prayerEnd)
+        {
+            if (_settings.PrayerLookEnabled && DateTime.Now < prayerEnd)
+            {
+                SetActivityState("prayer");
+                return;
+            }
+            _prayerLookEnd = null;
+            _activeStreakStart = DateTime.Now; // the next work stretch starts fresh
+        }
+
         var idle = IdleDetection.TimeSinceLastInput();
         var sleepThreshold = _settings.SleepAfterMinutes;
         var isAsleep = sleepThreshold > 0 && idle >= TimeSpan.FromMinutes(sleepThreshold);
@@ -2136,7 +2170,9 @@ public partial class MainWindow : Window
         _settings.PrayerAsrMethod = dialog.AsrMethod;
         _settings.PrayerAzanAudioPath = dialog.AudioPath;
         _settings.PrayerAzanEnabled = dialog.AzanEnabled;
+        _settings.PrayerLookEnabled = dialog.PrayerLookEnabled;
         _settings.Save();
+        UpdateActivityState(); // turning the prayer look off ends one in progress
         _lastPrayerCheckUtc = DateTimeOffset.UtcNow;
         _playedPrayerInstants.Clear();
         _azanPlayer?.Stop();

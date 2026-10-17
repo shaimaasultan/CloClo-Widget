@@ -51,6 +51,18 @@
         <SolidColorBrush x:Key="ReminderTop" Color="#397f76" />
         <SolidColorBrush x:Key="ReminderAccent" Color="#f0cf78" />
         <SolidColorBrush x:Key="Slippers" Color="#c9b8a6" />
+        <!-- Prayer time: a white thobe and kufi (Keeper), a soft lilac
+             prayer dress and hijab (Lady Keeper), and a prayer mat. -->
+        <SolidColorBrush x:Key="PrayerRobe" Color="#f4f1ea" />
+        <SolidColorBrush x:Key="PrayerRobeEdge" Color="#cfc6b3" />
+        <SolidColorBrush x:Key="PrayerDress" Color="#e9e3f0" />
+        <SolidColorBrush x:Key="PrayerDressEdge" Color="#b9add0" />
+        <SolidColorBrush x:Key="Hijab" Color="#c9bedb" />
+        <SolidColorBrush x:Key="HijabEdge" Color="#9f90b8" />
+        <SolidColorBrush x:Key="Kufi" Color="#fbfaf6" />
+        <SolidColorBrush x:Key="PrayerMat" Color="#2e6a52" />
+        <SolidColorBrush x:Key="PrayerMatDark" Color="#24543f" />
+        <SolidColorBrush x:Key="PrayerMatGold" Color="#d8b25a" />
 
         <!-- Dark lettering stays legible on light wallpaper; a soft light
              halo preserves its edge over darker wallpaper. -->
@@ -176,6 +188,14 @@
             </Canvas.RenderTransform>
             <Viewbox Width="108" Height="145" Stretch="Uniform">
                 <Canvas Width="100" Height="140">
+                    <!-- Prayer time: a prayer mat on the floor, under the feet. -->
+                    <Canvas x:Name="PrayerMat" Visibility="Collapsed">
+                        <Path Data="M22 121 L78 121 L86 137 L14 137 Z" Fill="{StaticResource PrayerMat}" Stroke="{StaticResource PrayerMatGold}" StrokeThickness="1" StrokeLineJoin="Round" />
+                        <Path Data="M25 123 L75 123 L81 135 L19 135 Z" Fill="{StaticResource PrayerMatDark}" Stroke="{StaticResource PrayerMatGold}" StrokeThickness="0.5" Opacity="0.9" />
+                        <Path Data="M26 126 L29 129 L26 132 L23 129 Z M74 126 L77 129 L74 132 L71 129 Z" Fill="{StaticResource PrayerMatGold}" Opacity="0.85" />
+                        <Path Data="M18 137 L17.5 139.5 M24 137 L23.8 139.5 M30 137 L30 139.5 M36 137 L36 139.5 M64 137 L64 139.5 M70 137 L70 139.5 M76 137 L76.2 139.5 M82 137 L82.5 139.5"
+                              Stroke="{StaticResource PrayerMatGold}" StrokeThickness="0.7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                    </Canvas>
                     <Ellipse Canvas.Left="28" Canvas.Top="130" Width="44" Height="8" Fill="Black" Opacity="0.22" />
 
                     <Canvas x:Name="UmbrellaLeaning" Visibility="Collapsed">
@@ -249,6 +269,17 @@
                         <Path Data="M31 106 Q29 78 50 73 Q71 78 69 106 L73 124 Q50 128 27 124 Z" Fill="{StaticResource Nightgown}" />
                         <Path Data="M43 74 Q50 81 57 74" Stroke="{StaticResource Paper}" StrokeThickness="1.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
                         <Path Data="M28 122 Q31 125 34 123 Q37 126 40 124 Q43 127 46 124.5 Q50 127.5 54 124.5 Q57 127 60 124 Q63 126 66 123 Q69 125 72 122" Stroke="{StaticResource Paper}" StrokeThickness="1.2" Opacity="0.85" />
+                    </Canvas>
+                    <!-- Prayer time (Keeper): a long white thobe to the ankles. -->
+                    <Canvas x:Name="PrayerRobe" Visibility="Collapsed">
+                        <Path Data="M31 106 Q29 78 50 73 Q71 78 69 106 L71 128 Q50 131 29 128 Z" Fill="{StaticResource PrayerRobe}" Stroke="{StaticResource PrayerRobeEdge}" StrokeThickness="0.6" />
+                        <Path Data="M45 74 Q50 78.5 55 74 M50 77.5 L50 97" Stroke="{StaticResource PrayerRobeEdge}" StrokeThickness="0.9" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Ellipse Canvas.Left="49.1" Canvas.Top="80.5" Width="1.8" Height="1.8" Fill="{StaticResource PrayerRobeEdge}" />
+                    </Canvas>
+                    <!-- Prayer time (Lady Keeper): a loose prayer dress to the ankles. -->
+                    <Canvas x:Name="PrayerDress" Visibility="Collapsed">
+                        <Path Data="M30 106 Q28 78 50 73 Q72 78 70 106 L74 128 Q50 132 26 128 Z" Fill="{StaticResource PrayerDress}" Stroke="{StaticResource PrayerDressEdge}" StrokeThickness="0.6" />
+                        <Path Data="M28 124.5 Q50 128.5 72 124.5" Stroke="{StaticResource PrayerDressEdge}" StrokeThickness="0.8" Opacity="0.8" />
                     </Canvas>
                     <!-- Shows the account name on the everyday shirt and the
                          remaining break time on the gym shirt. -->
@@ -357,6 +388,15 @@
                                 <Line.Stroke><SolidColorBrush Color="White" Opacity="0.5" /></Line.Stroke>
                             </Line>
                         </Canvas>
+                        <!-- Prayer time (Keeper): a white kufi cap. -->
+                        <Canvas x:Name="Kufi" Visibility="Collapsed">
+                            <Path Data="M31 41 Q31 25 50 25 Q69 25 69 41 Q50 37 31 41 Z" Fill="{StaticResource Kufi}" Stroke="{StaticResource PrayerRobeEdge}" StrokeThickness="0.6" />
+                            <Path Data="M32.5 38 Q50 34 67.5 38" Stroke="{StaticResource PrayerRobeEdge}" StrokeThickness="0.6" StrokeDashArray="1.5 1.2" />
+                        </Canvas>
+                        <!-- Prayer time (Lady Keeper): a hijab framing the face,
+                             covering the hair and ears and draping over the shoulders. -->
+                        <Path x:Name="Hijab" Data="M21 54 Q19 17 50 17 Q81 17 79 54 Q81 74 76 88 Q50 95 24 88 Q19 74 21 54 Z M32.5 51 A17.5 20.5 0 1 1 67.5 51 A17.5 20.5 0 1 1 32.5 51 Z"
+                              Fill="{StaticResource Hijab}" Stroke="{StaticResource HijabEdge}" StrokeThickness="0.7" Visibility="Collapsed" />
                     </Canvas>
 
                     <Canvas x:Name="HangingArms">
@@ -401,6 +441,18 @@
                         <Rectangle Canvas.Left="27" Canvas.Top="29" Width="46" Height="16" RadiusX="3" RadiusY="3" Fill="{StaticResource Paper}" Stroke="{StaticResource Metal3}" StrokeThickness="1.2" />
                         <TextBlock Canvas.Left="27" Canvas.Top="30.8" Width="46" TextAlignment="Center" Text="BREAK"
                                    FontFamily="IBM Plex Mono, Segoe UI" FontWeight="Bold" FontSize="9" Foreground="{StaticResource Hair}" />
+                    </Canvas>
+
+                    <!-- Prayer time: standing calmly with the hands folded on the
+                         chest, right over left. Each sleeve has a soft edge so it
+                         reads against the robe of the same colour. -->
+                    <Canvas x:Name="PrayerArms" Visibility="Collapsed">
+                        <Path x:Name="PrayerArmLEdge" Data="M35 80 Q29 93 47 95" Stroke="{StaticResource PrayerRobeEdge}" StrokeThickness="8.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Path x:Name="PrayerArmL" Data="M35 80 Q29 93 47 95" Stroke="{StaticResource PrayerRobe}" StrokeThickness="7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Ellipse Canvas.Left="44" Canvas.Top="91" Width="8" Height="8" Fill="{StaticResource Skin}" />
+                        <Path x:Name="PrayerArmREdge" Data="M65 80 Q71 91 53 92" Stroke="{StaticResource PrayerRobeEdge}" StrokeThickness="8.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Path x:Name="PrayerArmR" Data="M65 80 Q71 91 53 92" Stroke="{StaticResource PrayerRobe}" StrokeThickness="7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        <Ellipse Canvas.Left="48" Canvas.Top="87.5" Width="8" Height="8" Fill="{StaticResource Skin}" />
                     </Canvas>
 
                     <Canvas x:Name="UmbrellaHeld" Visibility="Collapsed">
