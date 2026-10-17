@@ -86,8 +86,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   day/month order), e.g. "9:41 PM · Tue, Oct 6". The sky in words sits with
   the temperature: "12° Clear". The battery shows its charge and, when Windows
   provides it, an estimate of time remaining.
-- **Internet connection:** a small icon beside the battery percentage (first
-  in the top-left column on a PC without a battery) shows how the PC is
+- **Internet connection:** a small icon in the top-left column shows how the PC is
   connected, with its own glyph for each: wired (an Ethernet port), Wi-Fi (a
   fan with up to four lit bars), cellular (rising signal bars with its
   generation: 5G, 4G, 3G or 2G), offline (a cloud struck through in red) and
@@ -99,6 +98,20 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   Windows' own record of the connection, updates when Windows reports a
   change, and sends nothing; network names are never shown. Turn it off with
   **Show internet connection** in the right-click menu or search.
+- **Bluetooth and headphones:** next to the internet icon, the Bluetooth rune
+  shows while Bluetooth is on (bright with a device connected, faint with
+  none; hidden while it's off), and a headphones glyph shows while sound
+  plays through headphones or a headset (a headset adds a microphone boom).
+  Hover either one for the details, e.g. how many devices are connected or
+  whether the headphones are on Bluetooth. Screen readers hear "Bluetooth on,
+  1 device connected" or "Headset connected over Bluetooth". They follow
+  Windows' own radio, Bluetooth and sound-device events, and device names are
+  never shown. Headphones plugged into a jack that Windows still calls
+  "Speakers" can't be told apart. Turn them off with **Show Bluetooth and
+  headphones**.
+- **Where they sit:** these icons go beside the battery percentage when they
+  fit before the sun or moon, or on a row of their own in the top-left
+  column otherwise. On a PC without a battery they come first in the column.
 - **Location:** type a city under **Set location…**, or choose **Use my
   location** and grant Windows' location permission. The stored and requested
   coordinates are rounded to two decimal places.

@@ -251,6 +251,12 @@ public partial class MainWindow : Window
             Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
             // A static WinRT event, the same as SystemEvents above.
             Windows.Networking.Connectivity.NetworkInformation.NetworkStatusChanged -= OnNetworkStatusChanged;
+            if (_devices != null)
+            {
+                _devices.Changed -= OnDevicesChanged;
+                _devices.Dispose();
+                _devices = null;
+            }
             if (_greetingTimer != null)
             {
                 _greetingTimer.Stop();
@@ -314,6 +320,7 @@ public partial class MainWindow : Window
         SetupForegroundTracking();
         SetupBatteryTimer();
         SetupNetworkWatch();
+        SetupDeviceWatch();
         SetupIdleTimer();
         SetupCustomReminderTimer();
         SetupPrayerTimer();
@@ -743,6 +750,7 @@ public partial class MainWindow : Window
             new("Windows status", "storage connection drive disk network wifi cpu processor memory ram process battery power display monitor gpu graphics uptime security antivirus firewall update dashboard", WidgetSearchActionKind.OpenWindow, ShowWindowsStatus),
             new("Show PC uptime", "uptime boot started restart running time since", WidgetSearchActionKind.Toggle, ToggleShowUptime, () => _settings.ShowUptime),
             new("Show internet connection", "network wifi wi-fi ethernet wired cellular mobile 5g 4g lte offline metered public private signal bars", WidgetSearchActionKind.Toggle, ToggleShowNetwork, () => _settings.ShowNetwork),
+            new("Show Bluetooth and headphones", "bluetooth headphones headset earbuds earphones audio devices connected", WidgetSearchActionKind.Toggle, ToggleShowDevices, () => _settings.ShowDevices),
             new("File summary and search", "files folder documents dashboard find text word phrase grep size count docx", WidgetSearchActionKind.OpenWindow, ShowFileInsights),
             new("Scientific calculator", "math arithmetic trig sin cos log square root", WidgetSearchActionKind.OpenWindow, ShowScientificCalculator),
             new("Sound pattern test", "voice signal microphone wake word cloclo accessibility", WidgetSearchActionKind.OpenWindow, ShowSoundPatternTest),
@@ -1209,7 +1217,7 @@ public partial class MainWindow : Window
         hitSurface.Children.Add(_commandSearchBar);
         _avatarWindow.Content = hitSurface;
         CreateUptimeHover(hitSurface);
-        CreateNetworkHover(hitSurface);
+        CreateConnectionHovers(hitSurface);
         _avatarWindow.PreviewMouseLeftButtonDown += AvatarWindow_MouseLeftButtonDown;
         _avatarWindow.MouseRightButtonUp += (_, e) =>
         {
@@ -1248,8 +1256,8 @@ public partial class MainWindow : Window
         return brush;
     }
 
-    private Border? _networkHover;
-    private Popup? _networkTip;
+    private Border? _networkHover, _bluetoothHover, _headphonesHover;
+    private Popup? _networkTip, _bluetoothTip, _headphonesTip;
 
     private void CreateUptimeHover(Canvas hitSurface)
     {
@@ -1258,12 +1266,21 @@ public partial class MainWindow : Window
         PlaceUptimeHover();
     }
 
-    // The same kind of hover card for the internet icon beside the battery.
-    private void CreateNetworkHover(Canvas hitSurface)
+    // The same kind of hover card for each connection icon beside the battery.
+    private void CreateConnectionHovers(Canvas hitSurface)
     {
         (_networkHover, _networkTip) = CreateStatusHover(hitSurface, FillNetworkTip);
-        Keeper.NetworkIconMoved += PlaceNetworkHover;
-        PlaceNetworkHover();
+        (_bluetoothHover, _bluetoothTip) = CreateStatusHover(hitSurface, FillBluetoothTip);
+        (_headphonesHover, _headphonesTip) = CreateStatusHover(hitSurface, FillHeadphonesTip);
+        Keeper.ConnectionIconsMoved += PlaceConnectionHovers;
+        PlaceConnectionHovers();
+    }
+
+    private void PlaceConnectionHovers()
+    {
+        PlaceStatusHover(_networkHover, Keeper.NetworkIconBounds(this));
+        PlaceStatusHover(_bluetoothHover, Keeper.BluetoothIconBounds(this));
+        PlaceStatusHover(_headphonesHover, Keeper.HeadphonesIconBounds(this));
     }
 
     private (Border Hover, Popup Tip) CreateStatusHover(Canvas hitSurface, Action<Popup> fill)
@@ -1304,8 +1321,6 @@ public partial class MainWindow : Window
     }
 
     private void PlaceUptimeHover() => PlaceStatusHover(_uptimeHover, Keeper.UptimeSleepIconBounds(this));
-
-    private void PlaceNetworkHover() => PlaceStatusHover(_networkHover, Keeper.NetworkIconBounds(this));
 
     private static void PlaceStatusHover(Border? hover, Rect? bounds)
     {
@@ -1713,6 +1728,87 @@ public partial class MainWindow : Window
         if (tip.IsOpen) RaiseAboveWidget(tip.Child);
     }
 
+    // ---- Bluetooth and headphones ----
+
+    // Windows' own radio, Bluetooth device and audio endpoint events drive
+    // these (see DeviceStatus.cs); nothing is polled.
+    private DeviceStatus? _devices;
+    private DeviceStatus.BluetoothState? _bluetooth;
+    private DeviceStatus.HeadphonesState? _headphones;
+    private int _devicesReadVersion;
+    private bool _devicesRefreshQueued;
+
+    private void SetupDeviceWatch()
+    {
+        _devices = new DeviceStatus();
+        _devices.Changed += OnDevicesChanged;
+        _ = _devices.StartAsync();
+    }
+
+    // Raised on background threads, often several at once while Windows
+    // lists the connected devices; one refresh covers a burst.
+    private void OnDevicesChanged()
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (_devicesRefreshQueued) return;
+            _devicesRefreshQueued = true;
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            {
+                _devicesRefreshQueued = false;
+                RefreshDevices();
+            }));
+        }));
+    }
+
+    private void RefreshDevices()
+    {
+        if (_devices is not { } devices) return;
+        var version = ++_devicesReadVersion;
+        _ = Task.Run(() => (devices.ReadBluetooth(), devices.ReadHeadphones())).ContinueWith(read =>
+        {
+            if (version != _devicesReadVersion || read.IsFaulted || _devices == null) return;
+            var (bluetooth, headphones) = read.Result;
+            if (bluetooth != _bluetooth)
+            {
+                _bluetooth = bluetooth;
+                Keeper.SetBluetooth(bluetooth);
+                if (_bluetoothTip is { IsOpen: true } tip) FillBluetoothTip(tip);
+            }
+            if (headphones != _headphones)
+            {
+                _headphones = headphones;
+                Keeper.SetHeadphones(headphones);
+                if (_headphonesTip is { IsOpen: true } tip) FillHeadphonesTip(tip);
+            }
+        }, TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
+    private void FillBluetoothTip(Popup tip)
+    {
+        if (_bluetooth is not { } s) return;
+        var lines = new List<string>
+        {
+            s.Connected switch { 0 => "No devices connected", 1 => "1 device connected", var n => $"{n} devices connected" },
+        };
+        tip.Child = UptimeCard("Bluetooth on", lines, "Windows' Bluetooth settings show the device names.");
+        if (tip.IsOpen) RaiseAboveWidget(tip.Child);
+    }
+
+    private void FillHeadphonesTip(Popup tip)
+    {
+        if (_headphones is not { } s) return;
+        var lines = new List<string>
+        {
+            s.Bluetooth ? "Connected over Bluetooth" : "Wired or USB",
+            "Sound plays through them (the default playback device)",
+        };
+        if (s.Kind == DeviceStatus.AudioKind.Headset) lines.Insert(1, "With a microphone");
+        tip.Child = UptimeCard(s.Kind == DeviceStatus.AudioKind.Headset ? "Headset connected" : "Headphones connected",
+            lines, "Windows' sound settings show the device name.");
+        if (tip.IsOpen) RaiseAboveWidget(tip.Child);
+    }
+
     // Purely cosmetic and purely local — checks Windows' own system-wide
     // idle counter (see IdleDetection.cs) on a fast-ish timer, same shape
     // as the battery timer above just quicker (matches the existing
@@ -2052,7 +2148,8 @@ public partial class MainWindow : Window
         if (suggestionsHwnd != IntPtr.Zero)
             SetWindowPos(suggestionsHwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
         if (_uptimeTip is { IsOpen: true, Child: { } tipCard }) RaiseAboveWidget(tipCard);
-        if (_networkTip is { IsOpen: true, Child: { } networkCard }) RaiseAboveWidget(networkCard);
+        foreach (var connectionTip in new[] { _networkTip, _bluetoothTip, _headphonesTip })
+            if (connectionTip is { IsOpen: true, Child: { } connectionCard }) RaiseAboveWidget(connectionCard);
     }
 
     // A popup has its own HWND; put it in front of the widget's windows.
@@ -2072,6 +2169,7 @@ public partial class MainWindow : Window
         Keeper.SetEnabledIcons(IconOrder.Where(k => _settings.EnabledIcons.Contains(k)));
         Keeper.SetShowUptime(_settings.ShowUptime);
         Keeper.SetShowNetwork(_settings.ShowNetwork);
+        Keeper.SetShowDevices(_settings.ShowDevices);
     }
 
     private void PlaceWindow()
@@ -2202,6 +2300,7 @@ public partial class MainWindow : Window
         menu.Items.Add(Item("Windows status…", ShowWindowsStatus));
         menu.Items.Add(Item("Show PC uptime", ToggleShowUptime, isChecked: _settings.ShowUptime));
         menu.Items.Add(Item("Show internet connection", ToggleShowNetwork, isChecked: _settings.ShowNetwork));
+        menu.Items.Add(Item("Show Bluetooth and headphones", ToggleShowDevices, isChecked: _settings.ShowDevices));
         menu.Items.Add(Item("File summary and search…", ShowFileInsights));
         menu.Items.Add(Item("Scientific calculator…", ShowScientificCalculator));
         menu.Items.Add(Item("Sound pattern test…", ShowSoundPatternTest));
@@ -2572,6 +2671,13 @@ public partial class MainWindow : Window
         _settings.ShowNetwork = !_settings.ShowNetwork;
         _settings.Save();
         Keeper.SetShowNetwork(_settings.ShowNetwork);
+    }
+
+    private void ToggleShowDevices()
+    {
+        _settings.ShowDevices = !_settings.ShowDevices;
+        _settings.Save();
+        Keeper.SetShowDevices(_settings.ShowDevices);
     }
 
     private void ToggleNotificationText()

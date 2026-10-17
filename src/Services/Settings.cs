@@ -77,6 +77,8 @@ public class WidgetSettings
     // The small internet-connection icon beside the battery (wired, Wi-Fi,
     // cellular or offline, with private/public and metered badges).
     public bool ShowNetwork { get; set; } = true;
+    // The Bluetooth and headphones icons beside it.
+    public bool ShowDevices { get; set; } = true;
     // Speaks a short welcome using the local account name when it is a
     // simple, safe-to-say name. The user can disable it in Privacy.
     public bool SpeakGreeting { get; set; } = true;

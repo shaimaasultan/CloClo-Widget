@@ -61,6 +61,9 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     private string _motionMode = "full";
     private bool _showUptime = true;
     private bool _showNetwork = true;
+    private bool _showDevices = true;
+    private DeviceStatus.BluetoothState? _bluetooth;
+    private DeviceStatus.HeadphonesState? _headphones;
     private NetworkStatus.State? _network;
     private readonly string? _shirtName;
 
@@ -269,31 +272,42 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     // Top-left, in the battery's column: under its time-left line, under the
     // percentage when there's no time left to show, or in its place when
     // there's no battery - clear of the sky decorations on the right. The
-    // internet icon sits beside the battery percentage, or first in the
-    // column without a battery. The uptime comes last, and stays hidden
-    // when that would put it beside the head (battery, time left and
-    // stopwatch all showing).
+    // connection icons (internet, Bluetooth, headphones) sit beside the
+    // battery percentage when they fit before the sky decorations, or on a
+    // row of their own - first in the column without a battery. The uptime
+    // comes last, and stays hidden when that would put it beside the head
+    // (battery, time left and stopwatch all showing).
     private void PlaceStatusColumn()
     {
         var hasBattery = Battery.Visibility == Visibility.Visible;
         var top = !hasBattery ? 15
             : BatteryTime.Visibility == Visibility.Visible ? 41
             : 30;
-        var showNetwork = _showNetwork && _network != null;
-        NetworkLine.Visibility = Show(showNetwork);
-        if (hasBattery)
+        NetworkLine.Visibility = Show(_showNetwork && _network != null);
+        BluetoothIcon.Visibility = Show(_showDevices && _bluetooth?.RadioOn == true);
+        HeadphonesIcon.Visibility = Show(_showDevices && _headphones != null);
+        // Without the internet icon, the first device icon needs no gap.
+        BluetoothIcon.Margin = new Thickness(NetworkLine.Visibility == Visibility.Visible ? 4 : 0, 0, 0, 0);
+        HeadphonesIcon.Margin = new Thickness(
+            NetworkLine.Visibility == Visibility.Visible || BluetoothIcon.Visibility == Visibility.Visible ? 4 : 0, 0, 0, 0);
+        var anyConnection = NetworkLine.Visibility == Visibility.Visible || BluetoothIcon.Visibility == Visibility.Visible
+            || HeadphonesIcon.Visibility == Visibility.Visible;
+        ConnectionsLine.Visibility = Show(anyConnection);
+        ConnectionsLine.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        BatteryLine.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var besideBattery = Canvas.GetLeft(BatteryLine) + BatteryLine.DesiredSize.Width + 4;
+        if (hasBattery && besideBattery + ConnectionsLine.DesiredSize.Width <= MaxConnectionsRight)
         {
-            BatteryLine.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            Canvas.SetLeft(NetworkLine, Canvas.GetLeft(BatteryLine) + BatteryLine.DesiredSize.Width + 4);
-            Canvas.SetTop(NetworkLine, 16.6);
+            Canvas.SetLeft(ConnectionsLine, besideBattery);
+            Canvas.SetTop(ConnectionsLine, 16.6);
         }
         else
         {
-            Canvas.SetLeft(NetworkLine, 9);
-            Canvas.SetTop(NetworkLine, 16);
-            if (showNetwork) top += 13;
+            Canvas.SetLeft(ConnectionsLine, 9);
+            Canvas.SetTop(ConnectionsLine, top + 1);
+            if (anyConnection) top += 13;
         }
-        RaiseNetworkIconMoved();
+        RaiseConnectionIconsMoved();
         Canvas.SetTop(StopwatchLabel, top);
         if (StopwatchLabel.Visibility == Visibility.Visible) top += 13;
         Canvas.SetTop(UptimeLine, top);
@@ -318,26 +332,55 @@ public partial class KeeperView : System.Windows.Controls.UserControl
 
     private const double MaxUptimeTop = 43;
 
-    // ---- Internet connection ----
+    // The sun and moon start a little right of this.
+    private const double MaxConnectionsRight = 100;
 
-    // Raised after the internet icon moves, shows, hides or changes width,
-    // so the avatar window can keep its hover target over it.
-    public event Action? NetworkIconMoved;
+    // ---- Connections: internet, Bluetooth, headphones ----
 
-    private void RaiseNetworkIconMoved() =>
-        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => NetworkIconMoved?.Invoke()));
+    // Raised after the connection icons move, show, hide or change width,
+    // so the avatar window can keep its hover targets over them.
+    public event Action? ConnectionIconsMoved;
 
-    // Where the internet icon is, in relativeTo's coordinates; null while hidden.
-    public Rect? NetworkIconBounds(Visual relativeTo)
+    private void RaiseConnectionIconsMoved() =>
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => ConnectionIconsMoved?.Invoke()));
+
+    // Where each icon is, in relativeTo's coordinates; null while hidden.
+    public Rect? NetworkIconBounds(Visual relativeTo) => Bounds(NetworkLine, relativeTo);
+    public Rect? BluetoothIconBounds(Visual relativeTo) => Bounds(BluetoothIcon, relativeTo);
+    public Rect? HeadphonesIconBounds(Visual relativeTo) => Bounds(HeadphonesIcon, relativeTo);
+
+    private static Rect? Bounds(FrameworkElement icon, Visual relativeTo)
     {
-        if (!NetworkLine.IsVisible || NetworkLine.ActualWidth <= 0) return null;
-        return NetworkLine.TransformToVisual(relativeTo)
-            .TransformBounds(new Rect(0, 0, NetworkLine.ActualWidth, NetworkLine.ActualHeight));
+        if (!icon.IsVisible || icon.ActualWidth <= 0) return null;
+        return icon.TransformToVisual(relativeTo).TransformBounds(new Rect(0, 0, icon.ActualWidth, icon.ActualHeight));
     }
 
     public void SetShowNetwork(bool show)
     {
         _showNetwork = show;
+        PlaceStatusColumn();
+    }
+
+    public void SetShowDevices(bool show)
+    {
+        _showDevices = show;
+        PlaceStatusColumn();
+    }
+
+    internal void SetBluetooth(DeviceStatus.BluetoothState state)
+    {
+        _bluetooth = state;
+        BluetoothRune.Opacity = state.Connected > 0 ? 1 : 0.45;
+        System.Windows.Automation.AutomationProperties.SetName(BluetoothIcon, DeviceStatus.BluetoothSpoken(state));
+        PlaceStatusColumn();
+    }
+
+    internal void SetHeadphones(DeviceStatus.HeadphonesState? state)
+    {
+        _headphones = state;
+        HeadsetBoom.Visibility = Show(state?.Kind == DeviceStatus.AudioKind.Headset);
+        if (state != null)
+            System.Windows.Automation.AutomationProperties.SetName(HeadphonesIcon, DeviceStatus.HeadphonesSpoken(state));
         PlaceStatusColumn();
     }
 

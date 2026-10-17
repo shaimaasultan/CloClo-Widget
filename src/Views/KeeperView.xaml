@@ -623,17 +623,21 @@
                        FontWeight="SemiBold" Opacity="0.85" Visibility="Collapsed" />
         </Canvas>
 
-        <!-- ===== internet connection, in the top-left column ===== -->
+        <!-- ===== connections, in the top-left column ===== -->
+        <!-- The internet connection, then Bluetooth and headphones. Beside
+             the battery percentage when they fit, otherwise on a row of
+             their own; first in the column without a battery (see
+             PlaceStatusColumn). Hovering an icon (through the avatar window,
+             see ConnectionIconBounds) shows its details. Drawn, not text,
+             so they never mirror. Each is a Label so screen readers find it
+             (as text) with its full name. -->
+        <StackPanel x:Name="ConnectionsLine" Canvas.Left="9" Canvas.Top="15" Orientation="Horizontal"
+                    FlowDirection="LeftToRight">
         <!-- One glyph for how the PC is connected (wired, Wi-Fi with its
-             bars, cellular with its generation, offline), then small gold
-             badges: "!" without full internet, a globe on a public network,
-             a gauge when metered. Beside the battery percentage, or first
-             in the column without a battery (see PlaceStatusColumn).
-             Hovering it (through the avatar window, see NetworkIconBounds)
-             shows the details. Drawn, not text, so it never mirrors. A Label
-             so screen readers find it (as text) with its full name. -->
-        <Label x:Name="NetworkLine" Canvas.Left="9" Canvas.Top="15" Padding="0"
-               FlowDirection="LeftToRight" Visibility="Collapsed">
+             bars, cellular with its generation, offline, other), then small
+             gold badges: "!" without full internet, a globe on a public
+             network, a gauge when metered. -->
+        <Label x:Name="NetworkLine" Padding="0" Visibility="Collapsed">
         <StackPanel Orientation="Horizontal">
             <Canvas x:Name="NetworkGlyph" Width="12" Height="10.5" VerticalAlignment="Center" Effect="{StaticResource BatteryShadow}">
                 <Canvas x:Name="NetWifi">
@@ -680,6 +684,26 @@
             </Canvas>
         </StackPanel>
         </Label>
+        <!-- The Bluetooth rune while the radio is on: bright with a device
+             connected, faint with none. Hidden while it's off. -->
+        <Label x:Name="BluetoothIcon" Padding="0" Margin="4,0,0,0" VerticalAlignment="Center" Visibility="Collapsed">
+            <Canvas Width="7" Height="10.5" Effect="{StaticResource BatteryShadow}">
+                <Path x:Name="BluetoothRune" Data="M0.9,3 L5.8,7.4 L3.4,9.7 V0.8 L5.8,3.1 L0.9,7.5" Stroke="{StaticResource Face}"
+                      StrokeThickness="1.15" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+            </Canvas>
+        </Label>
+        <!-- Headphones while the default playback device is headphones or a
+             headset (with a microphone boom). -->
+        <Label x:Name="HeadphonesIcon" Padding="0" Margin="4,0,0,0" VerticalAlignment="Center" Visibility="Collapsed">
+            <Canvas Width="11" Height="10.5" Effect="{StaticResource BatteryShadow}">
+                <Path Data="M1.6,7 V5.6 A3.9,3.9 0 0 1 9.4,5.6 V7" Stroke="{StaticResource Face}" StrokeThickness="1.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                <Rectangle Canvas.Left="0.6" Canvas.Top="5.9" Width="2.6" Height="3.9" RadiusX="1" RadiusY="1" Fill="{StaticResource Face}" />
+                <Rectangle Canvas.Left="7.8" Canvas.Top="5.9" Width="2.6" Height="3.9" RadiusX="1" RadiusY="1" Fill="{StaticResource Face}" />
+                <Path x:Name="HeadsetBoom" Data="M1.9,9.6 Q2.6,10.6 5,10.3" Stroke="{StaticResource Face}" StrokeThickness="0.9"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" Visibility="Collapsed" />
+            </Canvas>
+        </Label>
+        </StackPanel>
 
         <!-- ===== icon bar — must stay in sync with ComputeIconRects ===== -->
         <Grid Canvas.Left="10" Canvas.Top="208" Width="140" Height="20">
