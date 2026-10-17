@@ -529,7 +529,7 @@ public partial class WindowsStatusWindow : Window
         $"{from:t} → {(to == now ? $"{to:t} (now)" : $"{to:t}")}";
 
     // "1:45 PM · Sat, Oct 17": the time with its date always shown.
-    private static string WithDate(DateTime time) => $"{time:t} · {time.ToString("ddd, " + MonthDay)}";
+    internal static string WithDate(DateTime time) => $"{time:t} · {time.ToString("ddd, " + MonthDay)}";
 
     // Windows' month/day order with a short month name: "Oct 17" or "17 Oct".
     private static string MonthDay =>
@@ -537,7 +537,7 @@ public partial class WindowsStatusWindow : Window
 
     // "1:45 PM" today, "10:41 PM yesterday", "Tue 9:12 AM" this week, or
     // the short date and time before that. Uses Windows' own time format.
-    private static string When(DateTime time)
+    internal static string When(DateTime time)
     {
         var days = (DateTime.Today - time.Date).Days;
         return days switch
@@ -552,7 +552,7 @@ public partial class WindowsStatusWindow : Window
     // "1:03 AM → 1:44 PM", with the day on either end when it isn't today.
     private static string Period(WindowsStatus.SleepPeriod p) => $"{When(p.Start)} → {When(p.End)}";
 
-    private static string Duration(TimeSpan span) =>
+    internal static string Duration(TimeSpan span) =>
         span.TotalDays >= 1 ? $"{(int)span.TotalDays} d {span.Hours} h {span.Minutes} min"
         : span.TotalHours >= 1 ? $"{span.Hours} h {span.Minutes} min"
         : $"{span.Minutes} min";

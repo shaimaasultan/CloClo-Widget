@@ -1204,6 +1204,7 @@ public partial class MainWindow : Window
         Canvas.SetTop(_commandSearchBar, CommandSearchTop);
         hitSurface.Children.Add(_commandSearchBar);
         _avatarWindow.Content = hitSurface;
+        CreateUptimeHover(hitSurface);
         _avatarWindow.PreviewMouseLeftButtonDown += AvatarWindow_MouseLeftButtonDown;
         _avatarWindow.MouseRightButtonUp += (_, e) =>
         {
@@ -1217,6 +1218,105 @@ public partial class MainWindow : Window
         };
         ScreenCapture.SetExcluded(_avatarWindow, _settings.HideFromScreenCapture);
         _avatarWindow.Show();
+    }
+
+    // ---- Uptime sleep details ----
+
+    // A transparent hover target in the avatar window, kept over the moon
+    // Keeper draws beside the uptime (the render window takes no mouse
+    // input). Hovering it shows how much of the uptime was sleep.
+    private Border? _uptimeHover;
+    private int _uptimeTipVersion;
+
+    private void CreateUptimeHover(Canvas hitSurface)
+    {
+        _uptimeHover = new Border
+        {
+            Background = System.Windows.Media.Brushes.Transparent,
+            Visibility = Visibility.Collapsed,
+        };
+        // Opened by hand: the avatar window is never activated, and WPF's
+        // own tooltip timing doesn't open tooltips for it.
+        var tip = new ToolTip { MaxWidth = 340, PlacementTarget = _uptimeHover, Placement = PlacementMode.Bottom };
+        var delay = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        delay.Tick += (_, _) =>
+        {
+            delay.Stop();
+            FillUptimeTip(tip);
+            tip.IsOpen = true;
+        };
+        _uptimeHover.MouseEnter += (_, _) => delay.Start();
+        _uptimeHover.MouseLeave += (_, _) =>
+        {
+            delay.Stop();
+            tip.IsOpen = false;
+        };
+        hitSurface.Children.Add(_uptimeHover);
+        Keeper.UptimeIconMoved += PlaceUptimeHover;
+        PlaceUptimeHover();
+    }
+
+    private void PlaceUptimeHover()
+    {
+        if (_uptimeHover == null) return;
+        if (Keeper.UptimeSleepIconBounds(this) is not { } icon)
+        {
+            _uptimeHover.Visibility = Visibility.Collapsed;
+            return;
+        }
+        // A few pixels of slack around the small glyph; clipped to the top
+        // of the avatar window, which starts a little below the widget's.
+        const double pad = 3;
+        var left = icon.Left - AvatarOffsetX - pad;
+        var top = Math.Max(0, icon.Top - AvatarOffsetY - pad);
+        var bottom = icon.Bottom - AvatarOffsetY + pad;
+        if (bottom <= top)
+        {
+            _uptimeHover.Visibility = Visibility.Collapsed;
+            return;
+        }
+        Canvas.SetLeft(_uptimeHover, left);
+        Canvas.SetTop(_uptimeHover, top);
+        _uptimeHover.Width = icon.Width + 2 * pad;
+        _uptimeHover.Height = bottom - top;
+        _uptimeHover.Visibility = Visibility.Visible;
+    }
+
+    // The totals at once, then the sleep periods and sign-in from Windows'
+    // event log, read off the UI thread.
+    private void FillUptimeTip(ToolTip tip)
+    {
+        var version = ++_uptimeTipVersion;
+        var now = DateTime.Now;
+        var up = WindowsStatus.Uptime();
+        var asleep = WindowsStatus.Asleep(up) ?? TimeSpan.Zero;
+        var lines = new List<string>
+        {
+            $"Uptime includes {WindowsStatusWindow.Duration(asleep)} of sleep or hibernation",
+            $"Awake {WindowsStatusWindow.Duration(up - asleep)} of {WindowsStatusWindow.Duration(up)}",
+            $"Windows started {WindowsStatusWindow.When(now - up)}",
+        };
+        tip.Content = string.Join("\n", lines);
+
+        _ = Task.Run(() => (WindowsStatus.ReadSleepPeriods(), WindowsStatus.ReadSignIns())).ContinueWith(read =>
+        {
+            if (version != _uptimeTipVersion || read.IsFaulted) return;
+            var (sleeps, signIns) = read.Result;
+            var details = new List<string>(lines);
+            if (sleeps is { Count: > 0 })
+            {
+                var last = sleeps[^1];
+                var what = last.Hibernated ? "hibernated" : "asleep";
+                details.Insert(1, $"{(sleeps.Count > 1 ? "Last: " + what : char.ToUpper(what[0]) + what[1..])} " +
+                    $"{WindowsStatusWindow.When(last.Start)} → {WindowsStatusWindow.When(last.End)} " +
+                    $"({WindowsStatusWindow.Duration(last.End - last.Start)})");
+                if (sleeps.Count > 1) details.Insert(2, $"{sleeps.Count} sleeps since Windows started");
+            }
+            if (signIns?.LastOrDefault(s => s.SignedOut == null) is { } session)
+                details.Add($"Signed in {WindowsStatusWindow.WithDate(session.SignedIn)}");
+            details.Add("Only a restart resets uptime; see Windows status for each day.");
+            tip.Content = string.Join("\n", details);
+        }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
     // Mirrors #mediaBar's own flexbox layout in widget.html for whichever

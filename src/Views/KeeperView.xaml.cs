@@ -276,8 +276,24 @@ public partial class KeeperView : System.Windows.Controls.UserControl
             : 30;
         Canvas.SetTop(StopwatchLabel, top);
         if (StopwatchLabel.Visibility == Visibility.Visible) top += 13;
-        Canvas.SetTop(UptimeLabel, top);
-        UptimeLabel.Visibility = Show(_showUptime && top <= MaxUptimeTop);
+        Canvas.SetTop(UptimeLine, top);
+        UptimeLine.Visibility = Show(_showUptime && top <= MaxUptimeTop);
+        RaiseUptimeIconMoved();
+    }
+
+    // Raised after the uptime line moves, shows, hides or changes width, so
+    // the avatar window can keep its hover target over the moon.
+    public event Action? UptimeIconMoved;
+
+    private void RaiseUptimeIconMoved() =>
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => UptimeIconMoved?.Invoke()));
+
+    // Where the moon is, in relativeTo's coordinates; null while hidden.
+    public Rect? UptimeSleepIconBounds(Visual relativeTo)
+    {
+        if (!UptimeSleepIcon.IsVisible || UptimeSleepIcon.ActualWidth <= 0) return null;
+        return UptimeSleepIcon.TransformToVisual(relativeTo)
+            .TransformBounds(new Rect(0, 0, UptimeSleepIcon.ActualWidth, UptimeSleepIcon.ActualHeight));
     }
 
     private const double MaxUptimeTop = 43;
@@ -294,11 +310,16 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     // text only changes once a minute.
     private void UpdateUptime()
     {
-        var up = TimeSpan.FromMilliseconds(Environment.TickCount64);
+        var up = WindowsStatus.Uptime();
+        var asleep = WindowsStatus.Asleep(up) ?? TimeSpan.Zero;
+        var slept = asleep >= TimeSpan.FromMinutes(1);
         var text = FormatUptime(up);
-        if (UptimeLabel.Text == text) return;
+        if (UptimeLabel.Text == text && (UptimeSleepIcon.Visibility == Visibility.Visible) == slept) return;
         UptimeLabel.Text = text;
-        System.Windows.Automation.AutomationProperties.SetName(UptimeLabel, "PC uptime: " + SpokenUptime(up));
+        UptimeSleepIcon.Visibility = Show(slept);
+        System.Windows.Automation.AutomationProperties.SetName(UptimeLabel, "PC uptime: " + SpokenUptime(up)
+            + (slept ? ", including " + SpokenUptime(asleep) + " asleep" : ""));
+        RaiseUptimeIconMoved();
     }
 
     // "Up 3d 4h 12m", "Up 4h 12m" or "Up 12m".
@@ -771,6 +792,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         ApplyTextContrast(DateTimeLine, DateTimeLine, new Point(2, DateTimeLine.ActualHeight / 2));
         ApplyTextContrast(StopwatchLabel, StopwatchLabel, new Point(StopwatchLabel.ActualWidth + 3, StopwatchLabel.ActualHeight / 2));
         ApplyTextContrast(UptimeLabel, UptimeLabel, new Point(UptimeLabel.ActualWidth + 3, UptimeLabel.ActualHeight / 2));
+        ApplyTextContrast(UptimeSleepIcon, UptimeLabel, new Point(UptimeLabel.ActualWidth + 3, UptimeLabel.ActualHeight / 2));
         ApplyTextContrast(Temp, Temp, new Point(2, Temp.ActualHeight / 2));
         ApplyTextContrast(Place, Place, new Point(2, Place.ActualHeight / 2));
         ApplyTextContrast(BatteryPercent, BatteryPercent, new Point(BatteryPercent.ActualWidth + 3, BatteryPercent.ActualHeight / 2));
