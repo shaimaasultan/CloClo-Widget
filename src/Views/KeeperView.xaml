@@ -63,6 +63,10 @@
         <SolidColorBrush x:Key="PrayerMat" Color="#2e6a52" />
         <SolidColorBrush x:Key="PrayerMatDark" Color="#24543f" />
         <SolidColorBrush x:Key="PrayerMatGold" Color="#d8b25a" />
+        <!-- The weather moon: a cream disc in warm moonlight. -->
+        <SolidColorBrush x:Key="MoonDisc" Color="#f8f2dc" />
+        <SolidColorBrush x:Key="MoonGlow" Color="#ffe7a0" />
+        <DropShadowEffect x:Key="MoonShine" Color="#fff0c0" ShadowDepth="0" BlurRadius="10" Opacity="1" />
 
         <!-- Dark lettering stays legible on light wallpaper; a soft light
              halo preserves its edge over darker wallpaper. -->
@@ -111,10 +115,15 @@
 
             <Canvas x:Name="Moon" Canvas.Left="114" Canvas.Top="14" Width="26" Height="26" Visibility="Collapsed">
                 <Ellipse x:Name="Star1" Canvas.Left="-6" Canvas.Top="2" Width="2" Height="2" Fill="White" Opacity="0.85" />
-                <Ellipse Canvas.Left="1" Canvas.Top="1" Width="24" Height="24" Fill="#eef1f8" Opacity="0.55">
+                <!-- Warm moonlight around a cream disc, so it glows on light
+                     wallpaper too, not only on dark. -->
+                <Ellipse Canvas.Left="-5" Canvas.Top="-5" Width="36" Height="36" Fill="{StaticResource MoonGlow}" Opacity="0.6">
+                    <Ellipse.Effect><BlurEffect Radius="12" /></Ellipse.Effect>
+                </Ellipse>
+                <Ellipse Canvas.Left="1" Canvas.Top="1" Width="24" Height="24" Fill="#fff6dc" Opacity="0.75">
                     <Ellipse.Effect><BlurEffect Radius="8" /></Ellipse.Effect>
                 </Ellipse>
-                <Ellipse Canvas.Left="3" Canvas.Top="3" Width="20" Height="20" Fill="#eef1f8" />
+                <Ellipse Canvas.Left="3" Canvas.Top="3" Width="20" Height="20" Fill="{StaticResource MoonDisc}" Effect="{StaticResource MoonShine}" />
                 <Ellipse Canvas.Left="6" Canvas.Top="8" Width="4" Height="4" Fill="#cfd6e4" Opacity="0.7" />
                 <Ellipse Canvas.Left="12" Canvas.Top="14" Width="3" Height="3" Fill="#cfd6e4" Opacity="0.7" />
                 <Ellipse Canvas.Left="14" Canvas.Top="6" Width="2" Height="2" Fill="#cfd6e4" Opacity="0.7" />
@@ -123,6 +132,13 @@
 
             <Canvas x:Name="Cloud" Canvas.Left="98" Canvas.Top="16" Width="46" Height="22" Visibility="Collapsed">
                 <Canvas.RenderTransform><TranslateTransform /></Canvas.RenderTransform>
+                <!-- At night, a glowing moon peeks out from behind the cloud. -->
+                <Canvas x:Name="CloudMoon" Visibility="Collapsed">
+                    <Ellipse Canvas.Left="-12" Canvas.Top="-10" Width="28" Height="28" Fill="{StaticResource MoonGlow}" Opacity="0.85">
+                        <Ellipse.Effect><BlurEffect Radius="10" /></Ellipse.Effect>
+                    </Ellipse>
+                    <Ellipse Canvas.Left="-8" Canvas.Top="-6" Width="20" Height="20" Fill="{StaticResource MoonDisc}" Effect="{StaticResource MoonShine}" />
+                </Canvas>
                 <Ellipse Canvas.Left="0" Canvas.Top="1" Width="16" Height="16" Fill="#dfe6ee" Opacity="0.92" />
                 <Ellipse Canvas.Left="12" Canvas.Top="-6" Width="20" Height="20" Fill="#dfe6ee" Opacity="0.92" />
                 <Ellipse Canvas.Left="28" Canvas.Top="3" Width="14" Height="14" Fill="#dfe6ee" Opacity="0.92" />
@@ -143,6 +159,12 @@
 
             <Canvas x:Name="CloudOvercast" Canvas.Left="90" Canvas.Top="12" Width="58" Height="30" Visibility="Collapsed">
                 <Canvas.RenderTransform><TranslateTransform /></Canvas.RenderTransform>
+                <Canvas x:Name="OvercastMoon" Visibility="Collapsed">
+                    <Ellipse Canvas.Left="-4" Canvas.Top="-6" Width="28" Height="28" Fill="{StaticResource MoonGlow}" Opacity="0.85">
+                        <Ellipse.Effect><BlurEffect Radius="10" /></Ellipse.Effect>
+                    </Ellipse>
+                    <Ellipse Canvas.Left="0" Canvas.Top="-2" Width="20" Height="20" Fill="{StaticResource MoonDisc}" Effect="{StaticResource MoonShine}" />
+                </Canvas>
                 <Ellipse Canvas.Left="6" Canvas.Top="6" Width="20" Height="20" Fill="#b9c2cc" Opacity="0.96" />
                 <Ellipse Canvas.Left="20" Canvas.Top="-1" Width="24" Height="24" Fill="#b9c2cc" Opacity="0.96" />
                 <Ellipse Canvas.Left="38" Canvas.Top="10" Width="16" Height="16" Fill="#b9c2cc" Opacity="0.96" />
@@ -556,9 +578,22 @@
         <StackPanel x:Name="UptimeLine" Canvas.Left="9" Canvas.Top="15" Orientation="Horizontal"
                     FlowDirection="LeftToRight" Visibility="Collapsed">
             <TextBlock x:Name="UptimeLabel" Style="{StaticResource Label}" FontSize="8.5" FontWeight="SemiBold" Opacity="0.85" />
-            <TextBlock x:Name="UptimeSleepIcon" Style="{StaticResource Label}" FontFamily="Segoe UI Symbol" FontSize="8.5"
-                       FontWeight="Bold" Opacity="0.85" Margin="2.5,0,0,0" Text="☾" Visibility="Collapsed"
-                       AutomationProperties.Name="Includes sleep time" />
+            <!-- A glowing gold moon on a small night-sky disc, so it reads on
+                 light and dark wallpaper alike (no contrast switching). -->
+            <Grid x:Name="UptimeSleepIcon" Width="11" Height="11" Margin="3,0,0,0" VerticalAlignment="Center" Visibility="Collapsed">
+                <Ellipse Fill="#2a2019" Stroke="#8a6a2f" StrokeThickness="0.6">
+                    <Ellipse.Effect>
+                        <DropShadowEffect Color="#ffd36a" ShadowDepth="0" BlurRadius="6" Opacity="0.9" />
+                    </Ellipse.Effect>
+                </Ellipse>
+                <TextBlock Text="☾" FontFamily="Segoe UI Symbol" FontSize="8.5" FontWeight="Bold" Foreground="#ffd76e"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-1,0,0"
+                           AutomationProperties.Name="Includes sleep time">
+                    <TextBlock.Effect>
+                        <DropShadowEffect Color="#ffe08a" ShadowDepth="0" BlurRadius="4" Opacity="1" />
+                    </TextBlock.Effect>
+                </TextBlock>
+            </Grid>
         </StackPanel>
         <!-- "12° Clear": the sky in words sits with the temperature, like a weather app. -->
         <TextBlock x:Name="Temp" Style="{StaticResource Label}" Canvas.Left="0" Canvas.Top="171.9" Width="150"
@@ -574,6 +609,10 @@
                 <Border Canvas.Left="8" Canvas.Top="18" Width="15" Height="8" BorderBrush="{StaticResource Face}" BorderThickness="1.2" CornerRadius="2" />
                 <Rectangle Canvas.Left="23.3" Canvas.Top="21.2" Width="1.5" Height="3" RadiusX="0.7" RadiusY="0.7" Fill="{StaticResource Face}" />
                 <Rectangle x:Name="BatteryFill" Canvas.Left="10.2" Canvas.Top="20.2" Width="2" Height="3.6" RadiusX="1" RadiusY="1" Fill="{StaticResource Face}" />
+                <!-- A bolt across the battery while the charger is connected. -->
+                <Path x:Name="BatteryPlug" Data="M16.9 18.6 L13.4 22.5 L15.5 22.5 L14.6 25.4 L18.1 21.5 L16 21.5 Z"
+                      Fill="{StaticResource Ink}" Stroke="{StaticResource Highlight}" StrokeThickness="0.5" StrokeLineJoin="Round"
+                      Visibility="Collapsed" />
             </Canvas>
             <StackPanel Canvas.Left="26" Canvas.Top="15.3" Orientation="Horizontal">
                 <TextBlock x:Name="BatteryPercent" Style="{StaticResource Label}" FontSize="10" FontWeight="Bold" Text="--%" />

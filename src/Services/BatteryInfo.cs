@@ -9,7 +9,10 @@ namespace CloCloWidget;
 // externally.
 public static class BatteryInfo
 {
-    public record Status(double Percent, bool Charging, string? TimeRemaining);
+    // PluggedIn is the charger itself: Windows stops reporting Charging once
+    // the battery is full (or held below full to protect it), so a laptop
+    // on its charger at 100% is plugged in but not charging.
+    public record Status(double Percent, bool Charging, string? TimeRemaining, bool PluggedIn);
 
     public static Status? Read()
     {
@@ -18,12 +21,13 @@ public static class BatteryInfo
         if ((power.BatteryFlag & 128) != 0 || power.BatteryFlag == 255 || power.BatteryLifePercent > 100) return null;
 
         var charging = (power.BatteryFlag & 8) != 0;
+        var pluggedIn = charging || power.ACLineStatus == 1;
         // Windows only exposes an estimate for time-until-empty, not
         // time-until-full, so charging simply shows no time at all rather
         // than a made-up number.
-        var timeRemaining = !charging ? FormatTimeRemaining(power.BatteryLifeTime) : null;
+        var timeRemaining = !pluggedIn ? FormatTimeRemaining(power.BatteryLifeTime) : null;
 
-        return new Status(power.BatteryLifePercent, charging, timeRemaining);
+        return new Status(power.BatteryLifePercent, charging, timeRemaining, pluggedIn);
     }
 
     [StructLayout(LayoutKind.Sequential)]

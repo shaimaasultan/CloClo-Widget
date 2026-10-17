@@ -1224,10 +1224,24 @@ public partial class MainWindow : Window
 
     // A transparent hover target in the avatar window, kept over the moon
     // Keeper draws beside the uptime (the render window takes no mouse
-    // input). Hovering it shows how much of the uptime was sleep.
+    // input). Hovering it shows how much of the uptime was sleep, on a
+    // card in the daily bubble's colours (DailyBubbleWindow.xaml).
     private Border? _uptimeHover;
-    private ToolTip? _uptimeTip;
+    private Popup? _uptimeTip;
     private int _uptimeTipVersion;
+
+    private static readonly System.Windows.Media.Brush TipCard = Frozen(0x2a, 0x20, 0x19);
+    private static readonly System.Windows.Media.Brush TipEdge = Frozen(0x8a, 0x6a, 0x2f);
+    private static readonly System.Windows.Media.Brush TipText = Frozen(0xf3, 0xec, 0xdd);
+    private static readonly System.Windows.Media.Brush TipMuted = Frozen(0xcb, 0xbf, 0xa8);
+    private static readonly System.Windows.Media.Brush TipAccent = Frozen(0xe6, 0xc4, 0x76);
+
+    private static System.Windows.Media.Brush Frozen(byte r, byte g, byte b)
+    {
+        var brush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(r, g, b));
+        brush.Freeze();
+        return brush;
+    }
 
     private void CreateUptimeHover(Canvas hitSurface)
     {
@@ -1240,14 +1254,20 @@ public partial class MainWindow : Window
         // own tooltip timing doesn't open tooltips for it. It opens beside
         // the widget, level with the moon, so Keeper's motion never sits
         // on top of it (WPF flips it right if there's no room on the left).
-        var tip = _uptimeTip = new ToolTip { MaxWidth = 340, PlacementTarget = hitSurface, Placement = PlacementMode.Left };
-        tip.Opened += (_, _) => RaiseAboveWidget(tip);
+        var tip = _uptimeTip = new Popup
+        {
+            AllowsTransparency = true,
+            PlacementTarget = hitSurface,
+            Placement = PlacementMode.Left,
+            PopupAnimation = PopupAnimation.Fade,
+        };
+        tip.Opened += (_, _) => RaiseAboveWidget(tip.Child);
         var delay = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         delay.Tick += (_, _) =>
         {
             delay.Stop();
             FillUptimeTip(tip);
-            tip.VerticalOffset = Canvas.GetTop(_uptimeHover);
+            tip.VerticalOffset = Canvas.GetTop(_uptimeHover) - 10;
             tip.IsOpen = true;
         };
         _uptimeHover.MouseEnter += (_, _) => delay.Start();
@@ -1289,19 +1309,20 @@ public partial class MainWindow : Window
 
     // The totals at once, then the sleep periods and sign-in from Windows'
     // event log, read off the UI thread.
-    private void FillUptimeTip(ToolTip tip)
+    private void FillUptimeTip(Popup tip)
     {
         var version = ++_uptimeTipVersion;
         var now = DateTime.Now;
         var up = WindowsStatus.Uptime();
         var asleep = WindowsStatus.Asleep(up) ?? TimeSpan.Zero;
+        var heading = $"Includes {WindowsStatusWindow.Duration(asleep)} of sleep";
         var lines = new List<string>
         {
-            $"Uptime includes {WindowsStatusWindow.Duration(asleep)} of sleep or hibernation",
             $"Awake {WindowsStatusWindow.Duration(up - asleep)} of {WindowsStatusWindow.Duration(up)}",
             $"Windows started {WindowsStatusWindow.When(now - up)}",
         };
-        tip.Content = string.Join("\n", lines);
+        const string hint = "Only a restart resets uptime. Windows status shows each day.";
+        tip.Child = UptimeCard(heading, lines, hint);
 
         _ = Task.Run(() => (WindowsStatus.ReadSleepPeriods(), WindowsStatus.ReadSignIns())).ContinueWith(read =>
         {
@@ -1312,16 +1333,46 @@ public partial class MainWindow : Window
             {
                 var last = sleeps[^1];
                 var what = last.Hibernated ? "hibernated" : "asleep";
-                details.Insert(1, $"{(sleeps.Count > 1 ? "Last: " + what : char.ToUpper(what[0]) + what[1..])} " +
+                details.Insert(0, $"{(sleeps.Count > 1 ? "Last " + what : char.ToUpper(what[0]) + what[1..])} " +
                     $"{WindowsStatusWindow.When(last.Start)} → {WindowsStatusWindow.When(last.End)} " +
                     $"({WindowsStatusWindow.Duration(last.End - last.Start)})");
-                if (sleeps.Count > 1) details.Insert(2, $"{sleeps.Count} sleeps since Windows started");
+                if (sleeps.Count > 1) details.Insert(1, $"{sleeps.Count} sleeps since Windows started");
             }
             if (signIns?.LastOrDefault(s => s.SignedOut == null) is { } session)
                 details.Add($"Signed in {WindowsStatusWindow.WithDate(session.SignedIn)}");
-            details.Add("Only a restart resets uptime; see Windows status for each day.");
-            tip.Content = string.Join("\n", details);
+            tip.Child = UptimeCard(heading, details, hint);
+            if (tip.IsOpen) RaiseAboveWidget(tip.Child);
         }, TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
+    // The daily bubble's card: dark, gold-edged and rounded, a gold heading,
+    // cream lines and a muted note. The margin leaves room for the shadow.
+    private static Border UptimeCard(string heading, IEnumerable<string> lines, string hint)
+    {
+        var body = new StackPanel();
+        body.Children.Add(new TextBlock
+        {
+            Text = heading, Foreground = TipAccent, FontSize = 12, FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 6),
+        });
+        foreach (var line in lines)
+            body.Children.Add(new TextBlock { Text = line, Foreground = TipText, FontSize = 13, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 1, 0, 1) });
+        body.Children.Add(new TextBlock
+        {
+            Text = hint, Foreground = TipMuted, FontSize = 11.5, TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 8, 0, 0),
+        });
+        return new Border
+        {
+            Background = TipCard, BorderBrush = TipEdge, BorderThickness = new Thickness(1.2),
+            CornerRadius = new CornerRadius(12), Padding = new Thickness(14, 10, 14, 10),
+            Margin = new Thickness(10, 6, 12, 14), MaxWidth = 320,
+            Child = body,
+            Effect = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                Color = System.Windows.Media.Colors.Black, Direction = 270, ShadowDepth = 2, BlurRadius = 10, Opacity = 0.45,
+            },
+        };
     }
 
     // Mirrors #mediaBar's own flexbox layout in widget.html for whichever
@@ -1910,7 +1961,7 @@ public partial class MainWindow : Window
         var suggestionsHwnd = _commandSearchBar?.SuggestionsWindowHandle ?? IntPtr.Zero;
         if (suggestionsHwnd != IntPtr.Zero)
             SetWindowPos(suggestionsHwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
-        if (_uptimeTip?.IsOpen == true) RaiseAboveWidget(_uptimeTip);
+        if (_uptimeTip is { IsOpen: true, Child: { } tipCard }) RaiseAboveWidget(tipCard);
     }
 
     // A popup has its own HWND; put it in front of the widget's windows.

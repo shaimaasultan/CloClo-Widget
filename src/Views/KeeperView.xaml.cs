@@ -405,10 +405,13 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         }
         BatteryPercent.Text = $"{Math.Round(s.Percent)}%";
         BatteryFill.Width = Math.Max(1, Math.Round(s.Percent / 100 * 11));
-        BatteryFill.Fill = s.Charging ? (Brush)FindResource("Highlight")
+        BatteryFill.Fill = s.PluggedIn ? (Brush)FindResource("Highlight")
             : s.Percent <= 15 ? new SolidColorBrush(Color.FromRgb(0xe2, 0x66, 0x5c))
             : (Brush)FindResource("Face");
-        BatteryBolt.Visibility = s.Charging ? Visibility.Visible : Visibility.Collapsed;
+        BatteryBolt.Visibility = Show(s.PluggedIn);
+        BatteryPlug.Visibility = Show(s.PluggedIn);
+        System.Windows.Automation.AutomationProperties.SetName(BatteryPercent, $"Battery {Math.Round(s.Percent)}%"
+            + (s.Charging ? ", charging" : s.PluggedIn ? ", plugged in" : ""));
         BatteryTime.Text = s.TimeRemaining is { Length: > 0 } t ? $"{t} left" : "";
         BatteryTime.Visibility = BatteryTime.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         Battery.Visibility = Visibility.Visible;
@@ -792,7 +795,6 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         ApplyTextContrast(DateTimeLine, DateTimeLine, new Point(2, DateTimeLine.ActualHeight / 2));
         ApplyTextContrast(StopwatchLabel, StopwatchLabel, new Point(StopwatchLabel.ActualWidth + 3, StopwatchLabel.ActualHeight / 2));
         ApplyTextContrast(UptimeLabel, UptimeLabel, new Point(UptimeLabel.ActualWidth + 3, UptimeLabel.ActualHeight / 2));
-        ApplyTextContrast(UptimeSleepIcon, UptimeLabel, new Point(UptimeLabel.ActualWidth + 3, UptimeLabel.ActualHeight / 2));
         ApplyTextContrast(Temp, Temp, new Point(2, Temp.ActualHeight / 2));
         ApplyTextContrast(Place, Place, new Point(2, Place.ActualHeight / 2));
         ApplyTextContrast(BatteryPercent, BatteryPercent, new Point(BatteryPercent.ActualWidth + 3, BatteryPercent.ActualHeight / 2));
@@ -882,22 +884,57 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         color.R >= 228 && color.G >= 228 && color.B >= 228 &&
         Math.Max(color.R, Math.Max(color.G, color.B)) - Math.Min(color.R, Math.Min(color.G, color.B)) <= 18;
 
+    private static readonly Brush DayCloud = FrozenBrush(0xdf, 0xe6, 0xee);
+    private static readonly Brush NightCloud = FrozenBrush(0xbd, 0xc6, 0xd3);
+    private static readonly Brush DayCloudMostly = FrozenBrush(0xe9, 0xed, 0xf1);
+    private static readonly Brush NightCloudMostly = FrozenBrush(0xc6, 0xce, 0xda);
+    private static readonly Brush DayCloudOvercast = FrozenBrush(0xb9, 0xc2, 0xcc);
+    private static readonly Brush NightCloudOvercast = FrozenBrush(0x9a, 0xa4, 0xb2);
+
+    private static Brush FrozenBrush(byte r, byte g, byte b)
+    {
+        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
+        brush.Freeze();
+        return brush;
+    }
+
+    // The cloud puffs only, not the moon or sun peeking from behind them.
+    private void TintClouds(Canvas cloud, Brush fill)
+    {
+        foreach (var puff in cloud.Children.OfType<Shape>())
+        {
+            if (puff != PeekSun && puff != PeekSunGlow) puff.Fill = fill;
+        }
+    }
+
     private void ApplySky()
     {
         var kind = _sky;
         ApplyOutfit();
 
+        // At night there's always a moon, as the sign that it's night where
+        // the weather is: peeking from behind the clouds when there are
+        // clouds, otherwise the whole moon, behind any rain, snow or fog.
+        var cloudKind = kind is "cloudy" or "mostlycloudy" or "overcast";
+        var fullMoon = _isNight && !cloudKind;
         Sun.Visibility = Show(kind == "clear" && !_isNight);
-        Moon.Visibility = Show(kind == "clear" && _isNight);
+        Moon.Visibility = Show(fullMoon);
         Cloud.Visibility = Show(kind == "cloudy");
         CloudMostly.Visibility = Show(kind == "mostlycloudy");
         CloudOvercast.Visibility = Show(kind == "overcast");
-        // The peeking sun turns a pale moon-white at night.
-        var peek = _isNight ? new SolidColorBrush(Color.FromRgb(0xee, 0xf1, 0xf8)) : (Brush)FindResource("Highlight");
-        PeekSun.Fill = peek;
-        PeekSunGlow.Fill = peek;
+        // At night the peeking sun becomes a glowing moon, the partly cloudy
+        // sky gets one too, and the clouds go a little greyer so the
+        // moonlight stands out against them.
+        PeekSun.Fill = (Brush)FindResource(_isNight ? "MoonDisc" : "Highlight");
+        PeekSunGlow.Fill = (Brush)FindResource(_isNight ? "MoonGlow" : "Highlight");
+        PeekSun.Effect = _isNight ? (Effect)FindResource("MoonShine") : null;
+        CloudMoon.Visibility = Show(kind == "cloudy" && _isNight);
+        OvercastMoon.Visibility = Show(kind == "overcast" && _isNight);
+        TintClouds(Cloud, _isNight ? NightCloud : DayCloud);
+        TintClouds(CloudMostly, _isNight ? NightCloudMostly : DayCloudMostly);
+        TintClouds(CloudOvercast, _isNight ? NightCloudOvercast : DayCloudOvercast);
 
-        SetLoops("moon", kind == "clear" && _isNight);
+        SetLoops("moon", fullMoon);
         SetLoops("cloud", kind == "cloudy");
         SetLoops("cloudMostly", kind == "mostlycloudy");
         SetLoops("cloudOvercast", kind == "overcast");
