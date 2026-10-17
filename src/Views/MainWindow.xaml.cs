@@ -249,6 +249,8 @@ public partial class MainWindow : Window
             // SystemEvents holds its handlers in a static list, so leaving this
             // one attached would keep the whole window alive past close.
             Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+            // A static WinRT event, the same as SystemEvents above.
+            Windows.Networking.Connectivity.NetworkInformation.NetworkStatusChanged -= OnNetworkStatusChanged;
             if (_greetingTimer != null)
             {
                 _greetingTimer.Stop();
@@ -311,6 +313,7 @@ public partial class MainWindow : Window
         SetupTopmostTimer();
         SetupForegroundTracking();
         SetupBatteryTimer();
+        SetupNetworkWatch();
         SetupIdleTimer();
         SetupCustomReminderTimer();
         SetupPrayerTimer();
@@ -739,6 +742,7 @@ public partial class MainWindow : Window
         {
             new("Windows status", "storage connection drive disk network wifi cpu processor memory ram process battery power display monitor gpu graphics uptime security antivirus firewall update dashboard", WidgetSearchActionKind.OpenWindow, ShowWindowsStatus),
             new("Show PC uptime", "uptime boot started restart running time since", WidgetSearchActionKind.Toggle, ToggleShowUptime, () => _settings.ShowUptime),
+            new("Show internet connection", "network wifi wi-fi ethernet wired cellular mobile 5g 4g lte offline metered public private signal bars", WidgetSearchActionKind.Toggle, ToggleShowNetwork, () => _settings.ShowNetwork),
             new("File summary and search", "files folder documents dashboard find text word phrase grep size count docx", WidgetSearchActionKind.OpenWindow, ShowFileInsights),
             new("Scientific calculator", "math arithmetic trig sin cos log square root", WidgetSearchActionKind.OpenWindow, ShowScientificCalculator),
             new("Sound pattern test", "voice signal microphone wake word cloclo accessibility", WidgetSearchActionKind.OpenWindow, ShowSoundPatternTest),
@@ -1205,6 +1209,7 @@ public partial class MainWindow : Window
         hitSurface.Children.Add(_commandSearchBar);
         _avatarWindow.Content = hitSurface;
         CreateUptimeHover(hitSurface);
+        CreateNetworkHover(hitSurface);
         _avatarWindow.PreviewMouseLeftButtonDown += AvatarWindow_MouseLeftButtonDown;
         _avatarWindow.MouseRightButtonUp += (_, e) =>
         {
@@ -1243,18 +1248,36 @@ public partial class MainWindow : Window
         return brush;
     }
 
+    private Border? _networkHover;
+    private Popup? _networkTip;
+
     private void CreateUptimeHover(Canvas hitSurface)
     {
-        _uptimeHover = new Border
+        (_uptimeHover, _uptimeTip) = CreateStatusHover(hitSurface, FillUptimeTip);
+        Keeper.UptimeIconMoved += PlaceUptimeHover;
+        PlaceUptimeHover();
+    }
+
+    // The same kind of hover card for the internet icon beside the battery.
+    private void CreateNetworkHover(Canvas hitSurface)
+    {
+        (_networkHover, _networkTip) = CreateStatusHover(hitSurface, FillNetworkTip);
+        Keeper.NetworkIconMoved += PlaceNetworkHover;
+        PlaceNetworkHover();
+    }
+
+    private (Border Hover, Popup Tip) CreateStatusHover(Canvas hitSurface, Action<Popup> fill)
+    {
+        var hover = new Border
         {
             Background = System.Windows.Media.Brushes.Transparent,
             Visibility = Visibility.Collapsed,
         };
         // Opened by hand: the avatar window is never activated, and WPF's
         // own tooltip timing doesn't open tooltips for it. It opens beside
-        // the widget, level with the moon, so Keeper's motion never sits
+        // the widget, level with the icon, so Keeper's motion never sits
         // on top of it (WPF flips it right if there's no room on the left).
-        var tip = _uptimeTip = new Popup
+        var tip = new Popup
         {
             AllowsTransparency = true,
             PlacementTarget = hitSurface,
@@ -1266,27 +1289,30 @@ public partial class MainWindow : Window
         delay.Tick += (_, _) =>
         {
             delay.Stop();
-            FillUptimeTip(tip);
-            tip.VerticalOffset = Canvas.GetTop(_uptimeHover) - 10;
+            fill(tip);
+            tip.VerticalOffset = Canvas.GetTop(hover) - 10;
             tip.IsOpen = true;
         };
-        _uptimeHover.MouseEnter += (_, _) => delay.Start();
-        _uptimeHover.MouseLeave += (_, _) =>
+        hover.MouseEnter += (_, _) => delay.Start();
+        hover.MouseLeave += (_, _) =>
         {
             delay.Stop();
             tip.IsOpen = false;
         };
-        hitSurface.Children.Add(_uptimeHover);
-        Keeper.UptimeIconMoved += PlaceUptimeHover;
-        PlaceUptimeHover();
+        hitSurface.Children.Add(hover);
+        return (hover, tip);
     }
 
-    private void PlaceUptimeHover()
+    private void PlaceUptimeHover() => PlaceStatusHover(_uptimeHover, Keeper.UptimeSleepIconBounds(this));
+
+    private void PlaceNetworkHover() => PlaceStatusHover(_networkHover, Keeper.NetworkIconBounds(this));
+
+    private static void PlaceStatusHover(Border? hover, Rect? bounds)
     {
-        if (_uptimeHover == null) return;
-        if (Keeper.UptimeSleepIconBounds(this) is not { } icon)
+        if (hover == null) return;
+        if (bounds is not { } icon)
         {
-            _uptimeHover.Visibility = Visibility.Collapsed;
+            hover.Visibility = Visibility.Collapsed;
             return;
         }
         // A few pixels of slack around the small glyph; clipped to the top
@@ -1297,14 +1323,14 @@ public partial class MainWindow : Window
         var bottom = icon.Bottom - AvatarOffsetY + pad;
         if (bottom <= top)
         {
-            _uptimeHover.Visibility = Visibility.Collapsed;
+            hover.Visibility = Visibility.Collapsed;
             return;
         }
-        Canvas.SetLeft(_uptimeHover, left);
-        Canvas.SetTop(_uptimeHover, top);
-        _uptimeHover.Width = icon.Width + 2 * pad;
-        _uptimeHover.Height = bottom - top;
-        _uptimeHover.Visibility = Visibility.Visible;
+        Canvas.SetLeft(hover, left);
+        Canvas.SetTop(hover, top);
+        hover.Width = icon.Width + 2 * pad;
+        hover.Height = bottom - top;
+        hover.Visibility = Visibility.Visible;
     }
 
     // The totals at once, then the sleep periods and sign-in from Windows'
@@ -1614,13 +1640,77 @@ public partial class MainWindow : Window
     private void SetupBatteryTimer()
     {
         _batteryTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
-        _batteryTimer.Tick += (_, _) => RefreshBattery();
+        _batteryTimer.Tick += (_, _) =>
+        {
+            RefreshBattery();
+            // Windows raises no event when only the signal strength changes,
+            // so Wi-Fi and cellular bars are re-read with the battery.
+            if (_network?.Bars != null) RefreshNetwork();
+        };
         _batteryTimer.Start();
     }
 
     private void RefreshBattery()
     {
         Keeper.SetBattery(BatteryInfo.Read());
+    }
+
+    // ---- Internet connection ----
+
+    // Read at startup and again whenever Windows reports a change of
+    // connection, cost or connectivity (NetworkStatusChanged).
+    private NetworkStatus.State? _network;
+    private int _networkReadVersion;
+
+    private void SetupNetworkWatch()
+    {
+        try { Windows.Networking.Connectivity.NetworkInformation.NetworkStatusChanged += OnNetworkStatusChanged; }
+        catch { /* Without the event the icon still shows the state at startup. */ }
+        RefreshNetwork();
+    }
+
+    // Raised on a background thread.
+    private void OnNetworkStatusChanged(object sender) =>
+        Dispatcher.BeginInvoke(new Action(RefreshNetwork));
+
+    private void RefreshNetwork()
+    {
+        var version = ++_networkReadVersion;
+        _ = Task.Run(NetworkStatus.Read).ContinueWith(read =>
+        {
+            if (version != _networkReadVersion || read.IsFaulted || read.Result == _network) return;
+            _network = read.Result;
+            Keeper.SetNetwork(read.Result);
+            if (_networkTip is { IsOpen: true } tip) FillNetworkTip(tip);
+        }, TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
+    private void FillNetworkTip(Popup tip)
+    {
+        if (_network is not { } s) return;
+        var heading = NetworkStatus.Title(s) + (s.Bars is int bars ? $" · {bars} of 4 bars" : "");
+        var lines = new List<string>();
+        if (s.Kind == NetworkStatus.Kind.Offline) lines.Add("No internet connection");
+        else
+        {
+            lines.Add(s.LimitedReason switch
+            {
+                "limited internet" => "Limited internet (a sign-in page or restricted)",
+                "no internet" => "Local network only, no internet",
+                _ => "Internet access",
+            });
+            lines.Add(s.Category switch
+            {
+                NetworkStatus.Category.Public => "Public network: this PC is hidden from other devices",
+                NetworkStatus.Category.Private => "Private network: other devices can find this PC",
+                NetworkStatus.Category.Domain => "Work domain network",
+                _ => "Network type unknown",
+            });
+            var metered = NetworkStatus.MeteredWords(s);
+            lines.Add(char.ToUpper(metered[0]) + metered[1..] + (s.Metered ? " (Windows limits background data)" : ""));
+        }
+        tip.Child = UptimeCard(heading, lines, "Windows status shows each network adapter.");
+        if (tip.IsOpen) RaiseAboveWidget(tip.Child);
     }
 
     // Purely cosmetic and purely local — checks Windows' own system-wide
@@ -1962,6 +2052,7 @@ public partial class MainWindow : Window
         if (suggestionsHwnd != IntPtr.Zero)
             SetWindowPos(suggestionsHwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
         if (_uptimeTip is { IsOpen: true, Child: { } tipCard }) RaiseAboveWidget(tipCard);
+        if (_networkTip is { IsOpen: true, Child: { } networkCard }) RaiseAboveWidget(networkCard);
     }
 
     // A popup has its own HWND; put it in front of the widget's windows.
@@ -1980,6 +2071,7 @@ public partial class MainWindow : Window
         Keeper.SetSkyOverride(_settings.Sky);
         Keeper.SetEnabledIcons(IconOrder.Where(k => _settings.EnabledIcons.Contains(k)));
         Keeper.SetShowUptime(_settings.ShowUptime);
+        Keeper.SetShowNetwork(_settings.ShowNetwork);
     }
 
     private void PlaceWindow()
@@ -2109,6 +2201,7 @@ public partial class MainWindow : Window
         menu.Items.Add(Item("Prayer times and azan…", OpenPrayerTimes));
         menu.Items.Add(Item("Windows status…", ShowWindowsStatus));
         menu.Items.Add(Item("Show PC uptime", ToggleShowUptime, isChecked: _settings.ShowUptime));
+        menu.Items.Add(Item("Show internet connection", ToggleShowNetwork, isChecked: _settings.ShowNetwork));
         menu.Items.Add(Item("File summary and search…", ShowFileInsights));
         menu.Items.Add(Item("Scientific calculator…", ShowScientificCalculator));
         menu.Items.Add(Item("Sound pattern test…", ShowSoundPatternTest));
@@ -2472,6 +2565,13 @@ public partial class MainWindow : Window
         _settings.ShowUptime = !_settings.ShowUptime;
         _settings.Save();
         Keeper.SetShowUptime(_settings.ShowUptime);
+    }
+
+    private void ToggleShowNetwork()
+    {
+        _settings.ShowNetwork = !_settings.ShowNetwork;
+        _settings.Save();
+        Keeper.SetShowNetwork(_settings.ShowNetwork);
     }
 
     private void ToggleNotificationText()

@@ -86,6 +86,19 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   day/month order), e.g. "9:41 PM · Tue, Oct 6". The sky in words sits with
   the temperature: "12° Clear". The battery shows its charge and, when Windows
   provides it, an estimate of time remaining.
+- **Internet connection:** a small icon beside the battery percentage (first
+  in the top-left column on a PC without a battery) shows how the PC is
+  connected, with its own glyph for each: wired (an Ethernet port), Wi-Fi (a
+  fan with up to four lit bars), cellular (rising signal bars with its
+  generation: 5G, 4G, 3G or 2G), offline (a cloud struck through in red) and
+  any other connection, such as a VPN (a globe). Small gold
+  badges add "!" when there's limited or no internet, a globe on a public
+  network and a gauge when the connection is metered (roaming counts as
+  metered). Hover it for the details. Screen readers hear the whole state,
+  e.g. "Wi-Fi, 3 of 4 bars, private network, not metered". It comes from
+  Windows' own record of the connection, updates when Windows reports a
+  change, and sends nothing; network names are never shown. Turn it off with
+  **Show internet connection** in the right-click menu or search.
 - **Location:** type a city under **Set location…**, or choose **Use my
   location** and grant Windows' location permission. The stored and requested
   coordinates are rounded to two decimal places.

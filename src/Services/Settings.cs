@@ -74,6 +74,9 @@ public class WidgetSettings
     public bool ShowNotificationText { get; set; } = true;
     // The small "Up 3d 4h 12m" line in the widget's top-left column.
     public bool ShowUptime { get; set; } = true;
+    // The small internet-connection icon beside the battery (wired, Wi-Fi,
+    // cellular or offline, with private/public and metered badges).
+    public bool ShowNetwork { get; set; } = true;
     // Speaks a short welcome using the local account name when it is a
     // simple, safe-to-say name. The user can disable it in Privacy.
     public bool SpeakGreeting { get; set; } = true;

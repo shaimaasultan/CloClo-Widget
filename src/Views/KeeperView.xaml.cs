@@ -60,6 +60,8 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     private string _outfit = "classic";
     private string _motionMode = "full";
     private bool _showUptime = true;
+    private bool _showNetwork = true;
+    private NetworkStatus.State? _network;
     private readonly string? _shirtName;
 
     // Colour sets for the everyday outfit: the sweater, Keeper's trousers and
@@ -267,13 +269,31 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     // Top-left, in the battery's column: under its time-left line, under the
     // percentage when there's no time left to show, or in its place when
     // there's no battery - clear of the sky decorations on the right. The
-    // uptime comes last, and stays hidden when that would put it beside
-    // the head (battery, time left and stopwatch all showing).
+    // internet icon sits beside the battery percentage, or first in the
+    // column without a battery. The uptime comes last, and stays hidden
+    // when that would put it beside the head (battery, time left and
+    // stopwatch all showing).
     private void PlaceStatusColumn()
     {
-        var top = Battery.Visibility != Visibility.Visible ? 15
+        var hasBattery = Battery.Visibility == Visibility.Visible;
+        var top = !hasBattery ? 15
             : BatteryTime.Visibility == Visibility.Visible ? 41
             : 30;
+        var showNetwork = _showNetwork && _network != null;
+        NetworkLine.Visibility = Show(showNetwork);
+        if (hasBattery)
+        {
+            BatteryLine.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            Canvas.SetLeft(NetworkLine, Canvas.GetLeft(BatteryLine) + BatteryLine.DesiredSize.Width + 4);
+            Canvas.SetTop(NetworkLine, 16.6);
+        }
+        else
+        {
+            Canvas.SetLeft(NetworkLine, 9);
+            Canvas.SetTop(NetworkLine, 16);
+            if (showNetwork) top += 13;
+        }
+        RaiseNetworkIconMoved();
         Canvas.SetTop(StopwatchLabel, top);
         if (StopwatchLabel.Visibility == Visibility.Visible) top += 13;
         Canvas.SetTop(UptimeLine, top);
@@ -297,6 +317,59 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     }
 
     private const double MaxUptimeTop = 43;
+
+    // ---- Internet connection ----
+
+    // Raised after the internet icon moves, shows, hides or changes width,
+    // so the avatar window can keep its hover target over it.
+    public event Action? NetworkIconMoved;
+
+    private void RaiseNetworkIconMoved() =>
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => NetworkIconMoved?.Invoke()));
+
+    // Where the internet icon is, in relativeTo's coordinates; null while hidden.
+    public Rect? NetworkIconBounds(Visual relativeTo)
+    {
+        if (!NetworkLine.IsVisible || NetworkLine.ActualWidth <= 0) return null;
+        return NetworkLine.TransformToVisual(relativeTo)
+            .TransformBounds(new Rect(0, 0, NetworkLine.ActualWidth, NetworkLine.ActualHeight));
+    }
+
+    public void SetShowNetwork(bool show)
+    {
+        _showNetwork = show;
+        PlaceStatusColumn();
+    }
+
+    internal void SetNetwork(NetworkStatus.State state)
+    {
+        _network = state;
+        var kind = state.Kind;
+        NetWifi.Visibility = Show(kind == NetworkStatus.Kind.WiFi);
+        NetEthernet.Visibility = Show(kind == NetworkStatus.Kind.Ethernet);
+        NetCellular.Visibility = Show(kind == NetworkStatus.Kind.Cellular);
+        NetOther.Visibility = Show(kind == NetworkStatus.Kind.Other);
+        NetOffline.Visibility = Show(kind == NetworkStatus.Kind.Offline);
+
+        // Lit bars at full strength, the rest faint. Unknown strength shows full.
+        var bars = state.Bars ?? 4;
+        FrameworkElement[] wifi = { NetWifi1, NetWifi2, NetWifi3, NetWifi4 };
+        FrameworkElement[] cell = { NetCell1, NetCell2, NetCell3, NetCell4 };
+        for (var i = 0; i < 4; i++)
+        {
+            var lit = i < bars || (kind == NetworkStatus.Kind.WiFi && i == 0);
+            wifi[i].Opacity = lit ? 1 : 0.3;
+            cell[i].Opacity = i < bars ? 1 : 0.3;
+        }
+
+        NetworkGeneration.Text = kind == NetworkStatus.Kind.Cellular ? state.Generation ?? "" : "";
+        NetworkGeneration.Visibility = Show(NetworkGeneration.Text.Length > 0);
+        NetLimitedBadge.Visibility = Show(state.Limited);
+        NetPublicBadge.Visibility = Show(kind != NetworkStatus.Kind.Offline && state.Category == NetworkStatus.Category.Public);
+        NetMeteredBadge.Visibility = Show(kind != NetworkStatus.Kind.Offline && state.Metered);
+        System.Windows.Automation.AutomationProperties.SetName(NetworkLine, NetworkStatus.SpokenName(state));
+        PlaceStatusColumn();
+    }
 
     public void SetShowUptime(bool show)
     {
@@ -795,6 +868,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         ApplyTextContrast(DateTimeLine, DateTimeLine, new Point(2, DateTimeLine.ActualHeight / 2));
         ApplyTextContrast(StopwatchLabel, StopwatchLabel, new Point(StopwatchLabel.ActualWidth + 3, StopwatchLabel.ActualHeight / 2));
         ApplyTextContrast(UptimeLabel, UptimeLabel, new Point(UptimeLabel.ActualWidth + 3, UptimeLabel.ActualHeight / 2));
+        ApplyTextContrast(NetworkGeneration, NetworkGeneration, new Point(NetworkGeneration.ActualWidth + 3, NetworkGeneration.ActualHeight / 2));
         ApplyTextContrast(Temp, Temp, new Point(2, Temp.ActualHeight / 2));
         ApplyTextContrast(Place, Place, new Point(2, Place.ActualHeight / 2));
         ApplyTextContrast(BatteryPercent, BatteryPercent, new Point(BatteryPercent.ActualWidth + 3, BatteryPercent.ActualHeight / 2));
