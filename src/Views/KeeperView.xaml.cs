@@ -59,6 +59,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     private string _avatar = "keeper";
     private string _outfit = "classic";
     private string _motionMode = "full";
+    private bool _showUptime = true;
     private readonly string? _shirtName;
 
     // Colour sets for the everyday outfit: the sweater, Keeper's trousers and
@@ -260,18 +261,62 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     {
         StopwatchLabel.Visibility = Show(elapsed != null);
         if (elapsed is TimeSpan t) StopwatchTime.Text = " " + FormatElapsed(t);
-        PlaceStopwatch();
+        PlaceStatusColumn();
     }
 
     // Top-left, in the battery's column: under its time-left line, under the
     // percentage when there's no time left to show, or in its place when
-    // there's no battery - clear of the sky decorations on the right.
-    private void PlaceStopwatch()
+    // there's no battery - clear of the sky decorations on the right. The
+    // uptime comes last, and stays hidden when that would put it beside
+    // the head (battery, time left and stopwatch all showing).
+    private void PlaceStatusColumn()
     {
         var top = Battery.Visibility != Visibility.Visible ? 15
             : BatteryTime.Visibility == Visibility.Visible ? 41
             : 30;
         Canvas.SetTop(StopwatchLabel, top);
+        if (StopwatchLabel.Visibility == Visibility.Visible) top += 13;
+        Canvas.SetTop(UptimeLabel, top);
+        UptimeLabel.Visibility = Show(_showUptime && top <= MaxUptimeTop);
+    }
+
+    private const double MaxUptimeTop = 43;
+
+    public void SetShowUptime(bool show)
+    {
+        _showUptime = show;
+        UpdateUptime();
+        PlaceStatusColumn();
+    }
+
+    // Time since Windows last started (Environment.TickCount64 counts from
+    // boot, and includes time asleep). Called on the clock tick, but the
+    // text only changes once a minute.
+    private void UpdateUptime()
+    {
+        var up = TimeSpan.FromMilliseconds(Environment.TickCount64);
+        var text = FormatUptime(up);
+        if (UptimeLabel.Text == text) return;
+        UptimeLabel.Text = text;
+        System.Windows.Automation.AutomationProperties.SetName(UptimeLabel, "PC uptime: " + SpokenUptime(up));
+    }
+
+    // "Up 3d 4h 12m", "Up 4h 12m" or "Up 12m".
+    public static string FormatUptime(TimeSpan t) =>
+        t.TotalDays >= 1 ? $"Up {(int)t.TotalDays}d {t.Hours}h {t.Minutes}m"
+        : t.TotalHours >= 1 ? $"Up {t.Hours}h {t.Minutes}m"
+        : $"Up {t.Minutes}m";
+
+    // "3 days, 4 hours, 12 minutes" for screen readers, which would read
+    // the compact form as letters.
+    private static string SpokenUptime(TimeSpan t)
+    {
+        static string Unit(int n, string unit) => $"{n} {unit}{(n == 1 ? "" : "s")}";
+        var parts = new List<string>();
+        if (t.TotalDays >= 1) parts.Add(Unit((int)t.TotalDays, "day"));
+        if (t.TotalHours >= 1) parts.Add(Unit(t.Hours, "hour"));
+        parts.Add(Unit(t.Minutes, "minute"));
+        return string.Join(", ", parts);
     }
 
     // m:ss, or h:mm:ss from an hour on.
@@ -334,7 +379,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         if (status is not { } s)
         {
             Battery.Visibility = Visibility.Collapsed;
-            PlaceStopwatch();
+            PlaceStatusColumn();
             return;
         }
         BatteryPercent.Text = $"{Math.Round(s.Percent)}%";
@@ -346,7 +391,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         BatteryTime.Text = s.TimeRemaining is { Length: > 0 } t ? $"{t} left" : "";
         BatteryTime.Visibility = BatteryTime.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         Battery.Visibility = Visibility.Visible;
-        PlaceStopwatch();
+        PlaceStatusColumn();
     }
 
     // Null title hides the label. The icon is a notification's own app
@@ -662,6 +707,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         if (ClockTime.Text != time) ClockTime.Text = time;
         if (ClockDate.Text != date) ClockDate.Text = date;
         UpdateTimeDetails(now);
+        UpdateUptime();
     }
 
     // Briefly raise a hand when startup greeting speech actually begins.
@@ -724,6 +770,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
 
         ApplyTextContrast(DateTimeLine, DateTimeLine, new Point(2, DateTimeLine.ActualHeight / 2));
         ApplyTextContrast(StopwatchLabel, StopwatchLabel, new Point(StopwatchLabel.ActualWidth + 3, StopwatchLabel.ActualHeight / 2));
+        ApplyTextContrast(UptimeLabel, UptimeLabel, new Point(UptimeLabel.ActualWidth + 3, UptimeLabel.ActualHeight / 2));
         ApplyTextContrast(Temp, Temp, new Point(2, Temp.ActualHeight / 2));
         ApplyTextContrast(Place, Place, new Point(2, Place.ActualHeight / 2));
         ApplyTextContrast(BatteryPercent, BatteryPercent, new Point(BatteryPercent.ActualWidth + 3, BatteryPercent.ActualHeight / 2));

@@ -72,6 +72,8 @@ public class WidgetSettings
     // Off = the notification label shows only which app sent it, never the
     // message text itself (2FA codes, message previews…).
     public bool ShowNotificationText { get; set; } = true;
+    // The small "Up 3d 4h 12m" line in the widget's top-left column.
+    public bool ShowUptime { get; set; } = true;
     // Speaks a short welcome using the local account name when it is a
     // simple, safe-to-say name. The user can disable it in Privacy.
     public bool SpeakGreeting { get; set; } = true;

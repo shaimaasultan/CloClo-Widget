@@ -738,6 +738,7 @@ public partial class MainWindow : Window
         var actions = new List<WidgetSearchAction>
         {
             new("Windows status", "storage connection drive disk network wifi cpu processor memory ram process battery power display monitor gpu graphics uptime security antivirus firewall update dashboard", WidgetSearchActionKind.OpenWindow, ShowWindowsStatus),
+            new("Show PC uptime", "uptime boot started restart running time since", WidgetSearchActionKind.Toggle, ToggleShowUptime, () => _settings.ShowUptime),
             new("File summary and search", "files folder documents dashboard find text word phrase grep size count docx", WidgetSearchActionKind.OpenWindow, ShowFileInsights),
             new("Scientific calculator", "math arithmetic trig sin cos log square root", WidgetSearchActionKind.OpenWindow, ShowScientificCalculator),
             new("Sound pattern test", "voice signal microphone wake word cloclo accessibility", WidgetSearchActionKind.OpenWindow, ShowSoundPatternTest),
@@ -1812,6 +1813,7 @@ public partial class MainWindow : Window
         Keeper.SetMotionMode(_settings.MotionMode);
         Keeper.SetSkyOverride(_settings.Sky);
         Keeper.SetEnabledIcons(IconOrder.Where(k => _settings.EnabledIcons.Contains(k)));
+        Keeper.SetShowUptime(_settings.ShowUptime);
     }
 
     private void PlaceWindow()
@@ -1940,6 +1942,7 @@ public partial class MainWindow : Window
         menu.Items.Add(Item("Custom reminders…", OpenCustomReminders));
         menu.Items.Add(Item("Prayer times and azan…", OpenPrayerTimes));
         menu.Items.Add(Item("Windows status…", ShowWindowsStatus));
+        menu.Items.Add(Item("Show PC uptime", ToggleShowUptime, isChecked: _settings.ShowUptime));
         menu.Items.Add(Item("File summary and search…", ShowFileInsights));
         menu.Items.Add(Item("Scientific calculator…", ShowScientificCalculator));
         menu.Items.Add(Item("Sound pattern test…", ShowSoundPatternTest));
@@ -2296,6 +2299,13 @@ public partial class MainWindow : Window
             if (owned is QrCodeWindow or ClipboardHistoryWindow or DailyBubbleWindow or SelectionDetailsWindow or WindowsStatusWindow)
                 ScreenCapture.SetExcluded(owned, _settings.HideFromScreenCapture);
         }
+    }
+
+    private void ToggleShowUptime()
+    {
+        _settings.ShowUptime = !_settings.ShowUptime;
+        _settings.Save();
+        Keeper.SetShowUptime(_settings.ShowUptime);
     }
 
     private void ToggleNotificationText()

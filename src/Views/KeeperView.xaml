@@ -542,11 +542,16 @@
             <Run x:Name="ClockTime" FontWeight="Bold" /><Run Text="  ·  " /><Run x:Name="ClockDate" FontWeight="SemiBold" />
         </TextBlock>
         <!-- The stopwatch, top-left under the battery (its Canvas.Top follows
-             what the battery shows - see PlaceStopwatch), while it has a time. -->
+             what the battery shows - see PlaceStatusColumn), while it has a time. -->
         <TextBlock x:Name="StopwatchLabel" Style="{StaticResource Label}" Canvas.Left="9" Canvas.Top="15"
                    FontSize="9.5" FontWeight="SemiBold" Visibility="Collapsed">
             <Run FontFamily="Segoe UI Emoji" Text="⏱" /><Run x:Name="StopwatchTime" Text=" 0:00" />
         </TextBlock>
+        <!-- "Up 3d 4h 12m" since Windows last started, last in the same
+             top-left column (see PlaceStatusColumn). Always left-to-right
+             with Latin digits, like the battery line beside it. -->
+        <TextBlock x:Name="UptimeLabel" Style="{StaticResource Label}" Canvas.Left="9" Canvas.Top="15"
+                   FontSize="8.5" FontWeight="SemiBold" Opacity="0.85" FlowDirection="LeftToRight" Visibility="Collapsed" />
         <!-- "12° Clear": the sky in words sits with the temperature, like a weather app. -->
         <TextBlock x:Name="Temp" Style="{StaticResource Label}" Canvas.Left="0" Canvas.Top="171.9" Width="150"
                    TextAlignment="Center" FontSize="19" FontWeight="ExtraBold">
