@@ -164,7 +164,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         }
         else
         {
-            _voiceCaptureState = state is "wake" or "armed" or "processing" ? state : "off";
+            _voiceCaptureState = state is "armed" or "processing" ? state : "off";
             if (_voiceCaptureState == "off")
             {
                 StopVoiceResultTimer();
@@ -193,7 +193,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     {
         var state = _voiceResultState ?? _voiceCaptureState;
         VoiceStatusPin.Visibility = Show(state != "off");
-        VoiceMicGlyph.Visibility = Show(state is "wake" or "armed");
+        VoiceMicGlyph.Visibility = Show(state == "armed");
         VoiceWorkingGlyph.Visibility = Show(state == "processing");
         VoiceDoneGlyph.Visibility = Show(state == "complete");
         VoiceFailedGlyph.Visibility = Show(state == "failed");

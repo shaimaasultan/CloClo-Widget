@@ -138,11 +138,9 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   choice of 15, 30, 45, 60, 90 or 120 minutes, active hours, an on/off switch
   and optional speech or a chosen local MP3/WAV sound. Audio plays before
   speech when both are enabled. They use your PC's local time and show while the avatar
-  is awake; the reminder outfit returns to normal after the message.
-  Reminders play and speak while voice activation is listening and leave the
-  microphone open; it closes only when you turn voice activation off. The optional startup
-  greeting speaks the local account name and briefly salutes; turn it off
-  under **Privacy**.
+  is awake; the reminder outfit returns to normal after the message. The
+  optional startup greeting speaks the local account name and briefly
+  salutes; turn it off under **Privacy**.
 - **Prayer times and azan:** open **Prayer times and azan…** from the menu or
   search. CloClo calculates Fajr, Dhuhr, Asr, Maghrib and Isha locally from
   your saved location. ISNA is the default; Muslim World League and Egyptian
@@ -170,8 +168,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   and doesn't sway in the wind. Turning the option off ends a look in
   progress. It uses the same local calculation, location and method as the
   azan.
-  While the azan plays, voice activation closes the microphone and reopens
-  it afterwards. Everything CloClo plays (the azan, reminder sounds, spoken
+  Hold to talk doesn't listen while the azan plays. Everything CloClo plays (the azan, reminder sounds, spoken
   reminders and replies, read-aloud text and previews) uses one audio
   session, so Windows shows a single CloClo entry and volume in the volume
   mixer instead of adding a new entry each time.
@@ -228,6 +225,29 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   `%AppData%\CloCloWidget\sound-pieces.json` only when you choose to teach or
   save them; the file contains measurements and your letter, word, and speaker
   labels, but no recorded audio.
+- **Hold right-click to talk (open an app by voice):** turn it on under
+  right-click → **Privacy** → **Hold right-click to talk**. Then, anywhere
+  on the screen (you don't need to find CloClo), hold the right mouse button
+  for about a second until CloClo says "Listening.", say an app name and let
+  go. CloClo says "Opening Word now." and opens it, with no confirmation:
+
+  | Say | Opens |
+  |---|---|
+  | Notepad | Notepad |
+  | Paint, Paintbrush | Paint |
+  | OneDrive | OneDrive |
+  | Snipping Tool | Snipping Tool |
+  | Settings | Windows Settings |
+  | YouTube | YouTube in Microsoft Edge |
+  | Spotify | Spotify (Microsoft Store version) |
+  | Word | Microsoft Word |
+
+  Close pronunciations work too ("ward" opens Word, "not bad" Notepad). Every
+  step is spoken, including "I didn't hear a command." and "That is not an
+  approved command.", so it can be used without seeing the screen. With
+  **Voice commands in Arabic** on, say the Arabic names (المفكرة، الرسام،
+  وورد…) and CloClo answers in Arabic. A normal short right-click still opens
+  the menu of whatever is under the cursor. Details are under **Security**.
 - **Icon bar** under the temperature — up to 7 of these at a time, picked in
   right-click → **Icons**:
 
@@ -280,6 +300,8 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   PC's current state, below), **File summary and search…**, **Scientific calculator…**, **Refresh weather**, **Start new
   dictation file**, **Open dictation folder**, **Privacy**, **Always on top**,
   **Start with Windows** and **Exit**.
+  With **Hold right-click to talk** on, holding the button for a second
+  talks to CloClo instead of opening the menu.
 - **Windows status** (menu, search or its icon) is a dashboard of the PC's
   current state in tabs. Everything is read locally without administrator
   rights; nothing is sent, tested online or changed.
@@ -766,70 +788,51 @@ records the SHA-256 of every native runtime DLL it ships
   Vulkan layers (overlays and similar tools) disabled. Building downloads the
   model once from a fixed Hugging Face revision into `obj\whisper-models\`
   and accepts only its pinned SHA-256.
-  **Voice activation** is off by default. Enable it from Privacy in the right-
-  click menu or the search action. While enabled, CloClo keeps the microphone
-  and its bundled local Whisper model active to listen for "CloClo". Say
-  "CloClo", then "CloClo open Notepad now", "CloClo open Paint now",
-  "CloClo open OneDrive now", "CloClo open Snipping Tool now",
-  "CloClo open Settings now", "CloClo open YouTube now",
-  "CloClo open Spotify now", or "CloClo open Word now".
-  App names are also matched by sound, so a transcript such as "nodepad",
-  "notepadd", "won drive" or "sniping tool" still selects that fixed app;
-  similar-sounding words for different apps, or for no app, match nothing.
-  The wake name, the verb, the finish word and "stop voice" are matched as
-  before, and every app still needs confirmation. Recognition is steered with
-  the command words themselves (wake name, "open", the app names, "stop
-  voice", "now", or their Arabic forms); with only the wake name, the base
-  model wrote real commands as "Open the node bed nail". The base model
-  stays in use: large-v3-turbo on the CPU took 7–18 seconds per phrase and
-  was no more accurate.
+  **Hold right-click to talk** is off by default. Turn it on from Privacy in
+  the right-click menu or the search action. Then, anywhere on the screen,
+  hold the right mouse button for one second: CloClo says "Listening." and
+  opens the microphone. Say just the app name (Notepad, Paint or Paintbrush,
+  OneDrive, Snipping Tool, Settings, YouTube, Spotify or Word) and release
+  the button. CloClo says "Opening [app] now." and opens it, with no
+  confirmation. It also says when it heard nothing, heard something that
+  isn't an approved app, couldn't open the app, or the microphone is busy, so
+  every step can be followed without seeing the screen. The microphone is
+  open only while the button is held, and capture is silenced while CloClo
+  says "Listening." so its own voice can't become part of the command.
+  App names are matched by sound as well as spelling, so "ward" still opens
+  Word, "pain" or "bent" Paint, "nodepad" or "not bad" Notepad, "won drive"
+  OneDrive and "sniping tool" Snipping Tool. When two apps sound equally
+  close, or none is close, nothing opens, and what Whisper writes for silence
+  ("Thank you.") is ignored. Saying "open", "CloClo" or "now" around the name
+  is tolerated but not needed. Recognition is steered with the app names
+  themselves. The base model stays in use: large-v3-turbo on the CPU took
+  7–18 seconds per phrase and was no more accurate.
   With **Voice commands in Arabic** turned on in Privacy, recognition is
-  steered toward Arabic and the same fixed commands can be said in Arabic,
-  for example "كلوكلو افتح المفكرة دلوقتي" or "كلوكلو وقف الصوت دلوقتي"
-  ("دلوقتي" or "الآن" ends a command). English phrases still match.
-  Say "CloClo stop voice now" to turn voice
-  activation off and release the microphone; CloClo then says "Okay, stopping
-  voice now" with its local Windows voice. A complete phrase also works
-  without a separate wake phrase. For app commands, "now" ends the command
-  and returns CloClo to wake listening after confirmation. The speech editor
-  pauses this listening while open and
-  it resumes when closed. Turning the Privacy switch off stops microphone
-  capture. If capture stops unexpectedly, CloClo keeps the Privacy choice on
-  and retries locally with a delay of 2 to 60 seconds. Voice commands are
-  recognized after a short pause following speech;
-  continuous sound is bounded by an eight-second audio chunk. Sound that runs
-  into that limit (TV, music) and phrases left behind while an earlier one was
-  still being recognized are skipped rather than decoded, and if recognition
-  falls behind, the oldest unprocessed audio (beyond 20 seconds) is dropped
-  instead of stopping voice activation. Commands are decoded with a shorter
-  Whisper audio window, about three times faster than a full one. Audio and
-  recognized words stay in memory and are not added to the dictation editor.
-  Keeper's collar pin is blue while wake listening, pulses after the wake
-  phrase, shows amber dots while handling a command, and briefly shows a green
-  check or amber exclamation after the result. It disappears when voice
-  activation is off; reduced-motion mode keeps these cues static.
-  Only fixed app-name phrases are accepted. CloClo says "Okay, opening [app]
-  now" with the local English Windows voice after recognizing the phrase,
-  then asks for confirmation before opening the matched app. Notepad, Paint,
-  Snipping Tool and Settings use fixed Microsoft package identities; Spotify
-  uses its fixed Store package identity. OneDrive and Word must be Microsoft-
-  signed executables at fixed Program Files paths. YouTube opens a fixed HTTPS
-  address in a Microsoft-signed Edge executable from Program Files. The raw transcript is never a path,
-  argument, URI, or shell command. Declining the confirmation opens nothing.
-  **Confirm app opening by voice** in Privacy is a separate opt-in mode for
-  hands-free use. CloClo speaks the app it heard, then listens for "confirm"
-  followed by that app's name, or "cancel"; silence or an unclear answer
-  cancels after 15 seconds. In Arabic command mode it uses Hoda when available.
-  The original Yes/No dialog remains the default.
-  App confirmation reuses the wake-listening microphone session. CloClo
-  discards microphone audio while it speaks or shows the Yes/No dialog, then
-  resumes wake listening; the spoken-confirmation reply uses that same capture
-  with a separate local decoder. Windows can still record microphone access
-  when voice activation starts or stops, but ordinary app confirmations do
-  not restart capture. Wake listening keeps the Windows communications
-  capture mode, whose echo cancellation removes CloClo's own voice and other
-  speaker audio; if the default microphone goes away, the existing retry path
-  reopens the current default device.
+  steered toward Arabic and the same apps can be named in Arabic, for example
+  "المفكرة", "الرسام" or "وورد"; CloClo answers with Hoda when that voice is
+  installed. English names still match.
+  A shorter right-click still reaches the app under the cursor, which shows
+  its own menu as usual (on release rather than on press), and moving the
+  mouse before the second is up passes the press on as a right-drag. Windows
+  doesn't let CloClo pass clicks to apps running as administrator, so
+  right-clicks over those are left alone and hold to talk doesn't start
+  there. Hold to talk waits while the speech editor or a voice test uses the
+  microphone, and while the azan plays. Commands are decoded with a shorter
+  Whisper audio window, about three times faster than a full one, and
+  continuous sound is bounded by an eight-second chunk. Audio and recognized
+  words stay in memory and are not added to the dictation editor.
+  Keeper's collar pin shows amber dots while the microphone opens or a name
+  is handled, a pulsing blue microphone while listening, and briefly a green
+  check or amber exclamation after the result; reduced-motion mode keeps these
+  cues static.
+  Only the eight fixed apps can open. Notepad, Paint, Snipping Tool and
+  Settings use fixed Microsoft package identities; Spotify uses its fixed
+  Store package identity. OneDrive and Word must be Microsoft-signed
+  executables at fixed Program Files paths. YouTube opens a fixed HTTPS
+  address in a Microsoft-signed Edge executable from Program Files. The raw
+  transcript is never a path, argument, URI, or shell command, and is never
+  spoken back. Capture uses the Windows communications mode, whose echo
+  cancellation removes CloClo's own voice and other speaker audio.
   The model is tracked with Git LFS; clone the project with Git LFS enabled
   before building an installer. The installed package is about 142 MiB larger.
   Text that cannot be selected and copied is unavailable to the selection reader.
@@ -856,13 +859,17 @@ records the SHA-256 of every native runtime DLL it ships
   accounts use the short logon name without contacting a domain controller. Names are filtered and
   never stored. Turn it off under right-click → Privacy if speaking names
   aloud isn't appropriate.
-- **No global input hooks.** The tray icon uses a WPF message callback on its
-  own hidden window for tray clicks and Explorer restarts. It is not a global
-  keyboard or mouse hook, and it accepts callbacks only for CloClo's tray ID.
-  “Open dictation folder” opens Explorer after an explicit click. The media
-  picker and its label do not activate other apps; saved dictation and Sudoku
-  data cannot trigger program launches. The opt-in voice activation setting can
-  open one of eight fixed destinations only after confirmation.
+- **One opt-in mouse hook, no keyboard hook.** The tray icon uses a WPF
+  message callback on its own hidden window for tray clicks and Explorer
+  restarts, and accepts callbacks only for CloClo's tray ID. The only global
+  input hook is the low-level mouse hook of **Hold right-click to talk**,
+  installed only while that Privacy option is on and removed when it's turned
+  off or CloClo closes. It loads no DLL into other programs (Windows calls
+  back into CloClo), reacts only to the right button, and keeps no positions
+  or history. “Open dictation folder” opens Explorer after an explicit click.
+  The media picker and its label do not activate other apps; saved dictation
+  and Sudoku data cannot trigger program launches. Hold to talk can open one
+  of eight fixed destinations only.
 
 **What CloClo checks before it runs** (in `NativeLibraryCheck`, before WPF
 loads anything)

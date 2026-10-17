@@ -82,12 +82,10 @@ public class WidgetSettings
     // Speaks a short welcome using the local account name when it is a
     // simple, safe-to-say name. The user can disable it in Privacy.
     public bool SpeakGreeting { get; set; } = true;
-    // Explicit opt-in. When enabled, local microphone transcription listens
-    // for "CloClo" while the speech editor is closed. Audio is never saved.
-    public bool VoiceActivationEnabled { get; set; } = false;
-    // Opt-in accessible alternative to the visual Yes/No app-launch dialog.
-    // Silence and unrecognized speech cancel; the approved app list is unchanged.
-    public bool SpokenVoiceConfirmationEnabled { get; set; } = false;
+    // Explicit opt-in (it watches the right mouse button system-wide):
+    // holding right-click anywhere opens the microphone, and releasing it
+    // opens the approved app that was named. Audio is never saved.
+    public bool PushToTalkEnabled { get; set; } = false;
     // Steers voice-command recognition toward Arabic speech. English command
     // phrases are still accepted; the approved app list does not change.
     public bool VoiceCommandsInArabic { get; set; } = false;

@@ -187,26 +187,11 @@ public partial class MainWindow : Window
     // The Layer Sudoku window, while it's open (one at a time).
     private SudokuWindow? _sudoku;
     private DictationCaptureWindow? _dictationWindow;
-    private LocalAudioTranscriber? _voiceActivation;
-    private CancellationTokenSource? _spokenConfirmationCancellation;
-    private Task _voiceActivationStop = Task.CompletedTask;
-    private bool _voiceActivationStarting;
     private bool _voiceActivationClosing;
+    // Hold to talk doesn't start while a speech editor or voice test uses
+    // the microphone, or while the azan plays.
     private bool _voicePausedForEditor;
-    // The microphone is released while the azan plays and reopened after.
-    // Custom and workout reminders leave it open.
     private bool _voicePausedForAudio;
-    private bool _voiceActionPending;
-    private bool _voiceArmed;
-    private DateTime _voiceArmedUntil;
-    private string _voiceCommandText = "";
-    private int _voiceCommandSegments;
-    private DispatcherTimer? _voiceArmTimer;
-    private const int VoiceCommandArmSeconds = 8;
-    private const int MaximumVoiceCommandSegments = 4;
-    private DispatcherTimer? _voiceRetryTimer;
-    private int _voiceRetryDelaySeconds = 2;
-    private DateTime _voiceListeningSinceUtc;
     private SelectionDetailsWindow? _selectionDetailsWindow;
     private int _selectionDetailsRequest;
     private WindowsStatusWindow? _windowsStatusWindow;
@@ -253,14 +238,8 @@ public partial class MainWindow : Window
         Closing += (_, _) =>
         {
             _voiceActivationClosing = true;
-            if (_spokenConfirmationCancellation != null)
-            {
-                _spokenConfirmationCancellation.Cancel();
-                SpeechReader.Stop();
-            }
-            StopVoiceRetryTimer();
+            UpdatePushToTalkHook(); // closing: removes the mouse watcher
             Keeper.SetVoiceStatus("off");
-            _ = StopVoiceActivationAsync();
             // SystemEvents holds its handlers in a static list, so leaving this
             // one attached would keep the whole window alive past close.
             Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
@@ -328,6 +307,7 @@ public partial class MainWindow : Window
         PlaceWindow();
         SetupTrayIcon();
         CreateAvatarHitWindow();
+        UpdatePushToTalkHook();
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
 
         Topmost = _settings.AlwaysOnTop;
@@ -340,7 +320,6 @@ public partial class MainWindow : Window
         SetupCustomReminderTimer();
         SetupPrayerTimer();
         QueueGreeting();
-        if (_settings.VoiceActivationEnabled) _ = StartVoiceActivationAsync();
 
         ApplyDisplaySettings();
         RefreshBattery();
@@ -612,8 +591,7 @@ public partial class MainWindow : Window
         ShowSensitive(window);
     }
 
-    // Voice activation is paused while the test listens, so saying "CloClo"
-    // into it doesn't also wake CloClo.
+    // Hold to talk is paused while the test listens on the microphone.
     private void ShowSoundPatternTest()
     {
         if (_soundPatternWindow != null)
@@ -624,8 +602,7 @@ public partial class MainWindow : Window
         }
 
         _voicePausedForEditor = true;
-        StopVoiceRetryTimer();
-        _ = StopVoiceActivationAsync();
+        AbortPushToTalk();
         var window = new SoundPatternTestWindow
         {
             Owner = this,
@@ -635,14 +612,14 @@ public partial class MainWindow : Window
         window.Closed += (_, _) =>
         {
             if (ReferenceEquals(_soundPatternWindow, window)) _soundPatternWindow = null;
-            if (_dictationWindow == null && !VoiceTestWindowOpen) ResumeVoiceActivationAfterEditor();
+            if (_dictationWindow == null && !VoiceTestWindowOpen) ResumeVoiceAfterEditor();
         };
         PositionBesideWidget(window);
         ShowSensitive(window);
     }
 
-    // Like the sound pattern test, voice activation pauses while this window
-    // can record, so saying "CloClo" into it doesn't also wake CloClo.
+    // Like the sound pattern test, hold to talk pauses while this window
+    // can record.
     private void ShowVoiceSignals()
     {
         if (_voiceSignalsWindow != null)
@@ -653,8 +630,7 @@ public partial class MainWindow : Window
         }
 
         _voicePausedForEditor = true;
-        StopVoiceRetryTimer();
-        _ = StopVoiceActivationAsync();
+        AbortPushToTalk();
         var window = new VoiceSignalsWindow
         {
             Owner = this,
@@ -664,20 +640,20 @@ public partial class MainWindow : Window
         window.Closed += (_, _) =>
         {
             if (ReferenceEquals(_voiceSignalsWindow, window)) _voiceSignalsWindow = null;
-            if (_dictationWindow == null && !VoiceTestWindowOpen) ResumeVoiceActivationAfterEditor();
+            if (_dictationWindow == null && !VoiceTestWindowOpen) ResumeVoiceAfterEditor();
         };
         PositionBesideWidget(window);
         ShowSensitive(window);
     }
 
-    // The voice test windows record from the microphone; voice activation
-    // stays paused while any of them is open. (The dictation editor resumes
-    // it itself when its capture stops, so it isn't counted here.)
+    // The voice test windows record from the microphone; hold to talk stays
+    // paused while any of them is open. (The dictation editor resumes it
+    // itself when its capture stops, so it isn't counted here.)
     private bool VoiceTestWindowOpen =>
         _soundPatternWindow != null || _voiceSignalsWindow != null ||
         _davidMatchWindow != null || _voiceConverterWindow != null;
 
-    // Builds words from letters - no microphone, so voice activation stays on.
+    // Builds words from letters - no microphone, so hold to talk stays on.
     private void ShowLetterSignals()
     {
         if (_letterSignalsWindow != null)
@@ -700,7 +676,7 @@ public partial class MainWindow : Window
         ShowSensitive(window);
     }
 
-    // Records like Voice signals, so voice activation pauses while it's open.
+    // Records like Voice signals, so hold to talk pauses while it's open.
     private void ShowVoiceConverter()
     {
         if (_voiceConverterWindow != null)
@@ -711,8 +687,7 @@ public partial class MainWindow : Window
         }
 
         _voicePausedForEditor = true;
-        StopVoiceRetryTimer();
-        _ = StopVoiceActivationAsync();
+        AbortPushToTalk();
         var window = new VoiceConverterWindow
         {
             Owner = this,
@@ -722,13 +697,13 @@ public partial class MainWindow : Window
         window.Closed += (_, _) =>
         {
             if (ReferenceEquals(_voiceConverterWindow, window)) _voiceConverterWindow = null;
-            if (_dictationWindow == null && !VoiceTestWindowOpen) ResumeVoiceActivationAfterEditor();
+            if (_dictationWindow == null && !VoiceTestWindowOpen) ResumeVoiceAfterEditor();
         };
         PositionBesideWidget(window);
         ShowSensitive(window);
     }
 
-    // Records like Voice signals, so voice activation pauses while it's open.
+    // Records like Voice signals, so hold to talk pauses while it's open.
     private void ShowDavidMatch()
     {
         if (_davidMatchWindow != null)
@@ -739,8 +714,7 @@ public partial class MainWindow : Window
         }
 
         _voicePausedForEditor = true;
-        StopVoiceRetryTimer();
-        _ = StopVoiceActivationAsync();
+        AbortPushToTalk();
         var window = new DavidMatchWindow
         {
             Owner = this,
@@ -750,7 +724,7 @@ public partial class MainWindow : Window
         window.Closed += (_, _) =>
         {
             if (ReferenceEquals(_davidMatchWindow, window)) _davidMatchWindow = null;
-            if (_dictationWindow == null && !VoiceTestWindowOpen) ResumeVoiceActivationAfterEditor();
+            if (_dictationWindow == null && !VoiceTestWindowOpen) ResumeVoiceAfterEditor();
         };
         PositionBesideWidget(window);
         ShowSensitive(window);
@@ -768,7 +742,7 @@ public partial class MainWindow : Window
             new("Show Bluetooth and headphones", "bluetooth headphones headset earbuds earphones audio devices connected", WidgetSearchActionKind.Toggle, ToggleShowDevices, () => _settings.ShowDevices),
             new("File summary and search", "files folder documents dashboard find text word phrase grep size count docx", WidgetSearchActionKind.OpenWindow, ShowFileInsights),
             new("Scientific calculator", "math arithmetic trig sin cos log square root", WidgetSearchActionKind.OpenWindow, ShowScientificCalculator),
-            new("Sound pattern test", "voice signal microphone wake word cloclo accessibility", WidgetSearchActionKind.OpenWindow, ShowSoundPatternTest),
+            new("Sound pattern test", "voice signal microphone cloclo accessibility", WidgetSearchActionKind.OpenWindow, ShowSoundPatternTest),
             new("Voice signals", "waveform david hoda microphone record compare accessibility", WidgetSearchActionKind.OpenWindow, ShowVoiceSignals),
             new("Find it in David's words", "david match word microphone record recognise accessibility", WidgetSearchActionKind.OpenWindow, ShowDavidMatch),
             new("Voice converter", "david convert my voice microphone record compare accessibility", WidgetSearchActionKind.OpenWindow, ShowVoiceConverter),
@@ -785,8 +759,7 @@ public partial class MainWindow : Window
             new("Privacy: Hide from screen sharing", "capture screenshots toggle", WidgetSearchActionKind.Toggle, ToggleHideFromScreenCapture, () => _settings.HideFromScreenCapture),
             new("Privacy: Show notification text", "notifications privacy toggle", WidgetSearchActionKind.Toggle, ToggleNotificationText, () => _settings.ShowNotificationText),
             new("Privacy: Speak greeting", "account name startup voice toggle", WidgetSearchActionKind.Toggle, ToggleSpeakGreeting, () => _settings.SpeakGreeting),
-            new("Privacy: Voice activation", "cloclo wake word microphone voice command toggle", WidgetSearchActionKind.Toggle, ToggleVoiceActivation, () => _settings.VoiceActivationEnabled),
-            new("Privacy: Spoken voice confirmation", "accessibility hands free confirm app opening toggle", WidgetSearchActionKind.Toggle, ToggleSpokenVoiceConfirmation, () => _settings.SpokenVoiceConfirmationEnabled),
+            new("Privacy: Hold right-click to talk", "push to talk hold mouse microphone voice command open app accessibility toggle", WidgetSearchActionKind.Toggle, TogglePushToTalk, () => _settings.PushToTalkEnabled),
             new("Privacy: Voice commands in Arabic", "cloclo arabic عربي voice command language toggle", WidgetSearchActionKind.Toggle, ToggleVoiceCommandsInArabic, () => _settings.VoiceCommandsInArabic),
         };
 
@@ -949,8 +922,7 @@ public partial class MainWindow : Window
         }
 
         _voicePausedForEditor = true;
-        StopVoiceRetryTimer();
-        _ = StopVoiceActivationAsync();
+        AbortPushToTalk();
         var dialog = new DictationCaptureWindow()
         {
             Owner = this,
@@ -959,7 +931,7 @@ public partial class MainWindow : Window
         _dictationWindow = dialog;
         dialog.SaveRequested += SaveDictationText;
         dialog.OpenFolderRequested += OpenDictationFolder;
-        dialog.CaptureStopped += ResumeVoiceActivationAfterEditor;
+        dialog.CaptureStopped += ResumeVoiceAfterEditor;
         dialog.Closed += (_, _) =>
         {
             dialog.SaveRequested -= SaveDictationText;
@@ -1950,25 +1922,21 @@ public partial class MainWindow : Window
         Keeper.Perk();
     }
 
-    // Voice activation keeps the microphone open. Close it while the azan
-    // plays, so Windows shows no microphone use and nothing listens during it.
+    // Nothing listens while the azan plays: a hold in progress is dropped
+    // and a new one waits until it ends.
     private bool CloCloSoundPlaying => _azanPlayer?.IsPlaying == true;
 
     private void PauseVoiceForAudio()
     {
         if (_voicePausedForAudio) return;
         _voicePausedForAudio = true;
-        StopVoiceRetryTimer();
-        _spokenConfirmationCancellation?.Cancel();
-        if (_voiceActivation != null) _ = StopVoiceActivationAsync(abortPendingAudio: true);
+        AbortPushToTalk();
     }
 
     private void ResumeVoiceAfterAudio()
     {
         if (!_voicePausedForAudio || CloCloSoundPlaying) return;
         _voicePausedForAudio = false;
-        if (_settings.VoiceActivationEnabled && !_voicePausedForEditor && !_voiceActivationClosing)
-            _ = StartVoiceActivationAsync();
     }
 
     private void CustomReminderTimer_Tick(object? sender, EventArgs e)
@@ -2700,8 +2668,7 @@ public partial class MainWindow : Window
             Item("Hide from screen sharing", ToggleHideFromScreenCapture, isChecked: _settings.HideFromScreenCapture),
             Item("Show notification text", ToggleNotificationText, isChecked: _settings.ShowNotificationText),
             Item("Speak greeting and account name on startup", ToggleSpeakGreeting, isChecked: _settings.SpeakGreeting),
-            Item("Allow local CloClo voice activation", ToggleVoiceActivation, isChecked: _settings.VoiceActivationEnabled),
-            Item("Confirm app opening by voice", ToggleSpokenVoiceConfirmation, isChecked: _settings.SpokenVoiceConfirmationEnabled),
+            Item("Hold right-click to talk", TogglePushToTalk, isChecked: _settings.PushToTalkEnabled),
             Item("Voice commands in Arabic", ToggleVoiceCommandsInArabic, isChecked: _settings.VoiceCommandsInArabic),
         });
 
@@ -2758,435 +2725,27 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ToggleVoiceActivation()
-    {
-        _settings.VoiceActivationEnabled = !_settings.VoiceActivationEnabled;
-        _settings.Save();
-        StopVoiceRetryTimer();
-        if (_settings.VoiceActivationEnabled)
-        {
-            _voiceRetryDelaySeconds = 2;
-            ShowOneShotLabel("Local voice activation on", "Say CloClo, then an approved command. Say CloClo stop voice now to turn it off.");
-            _ = StartVoiceActivationAsync();
-        }
-        else
-        {
-            if (_spokenConfirmationCancellation != null)
-            {
-                _spokenConfirmationCancellation.Cancel();
-                SpeechReader.Stop();
-            }
-            _ = StopVoiceActivationAsync(abortPendingAudio: true);
-            Keeper.SetVoiceStatus("off");
-            ShowOneShotLabel("Voice activation off", "Microphone command capture stopped.");
-        }
-    }
-
-    private void ToggleSpokenVoiceConfirmation()
-    {
-        _settings.SpokenVoiceConfirmationEnabled = !_settings.SpokenVoiceConfirmationEnabled;
-        _settings.Save();
-        if (!_settings.SpokenVoiceConfirmationEnabled)
-        {
-            _spokenConfirmationCancellation?.Cancel();
-            if (_spokenConfirmationCancellation != null) SpeechReader.Stop();
-        }
-        ShowOneShotLabel(_settings.SpokenVoiceConfirmationEnabled
-            ? "Spoken app confirmation on" : "Spoken app confirmation off",
-            _settings.SpokenVoiceConfirmationEnabled
-                ? "Say confirm and the app name, or cancel. Silence cancels automatically."
-                : "App opening uses the Yes/No dialog.");
-    }
-
     private void ToggleVoiceCommandsInArabic()
     {
         _settings.VoiceCommandsInArabic = !_settings.VoiceCommandsInArabic;
         _settings.Save();
-        _spokenConfirmationCancellation?.Cancel();
         ShowOneShotLabel(_settings.VoiceCommandsInArabic ? "Voice commands: Arabic" : "Voice commands: English",
-            VoiceCommandHint);
-        // A running session keeps its recognition language; restart it so the
-        // change applies now. Pending confirmations restart capture themselves.
-        if (_voiceActivation == null || _voiceActionPending) return;
-        _ = RestartVoiceActivationAsync();
+            "Applies from the next hold of the right mouse button.");
     }
 
-    private async Task RestartVoiceActivationAsync()
-    {
-        await StopVoiceActivationAsync(abortPendingAudio: true);
-        if (_settings.VoiceActivationEnabled && !_voicePausedForEditor && !_voiceActivationClosing)
-            await StartVoiceActivationAsync();
-    }
-
-    private string VoiceCommandHint => _settings.VoiceCommandsInArabic
-        ? "قول: كلوكلو افتح المفكرة دلوقتي، أو كلوكلو وقف الصوت دلوقتي."
-        : "Say CloClo open an approved app now, or CloClo stop voice now.";
-
-    private void ResumeVoiceActivationAfterEditor()
+    // Speech editors and voice tests use the microphone themselves; hold to
+    // talk waits until the last of them closes.
+    private void ResumeVoiceAfterEditor()
     {
         if (VoiceTestWindowOpen) return; // still listening; it resumes on close
         _voicePausedForEditor = false;
-        StopVoiceRetryTimer();
-        if (_settings.VoiceActivationEnabled) _ = StartVoiceActivationAsync();
     }
-
-    private async Task StartVoiceActivationAsync()
-    {
-        if (_voiceActivationStarting || _voiceActivation != null || _voiceActionPending ||
-            !_settings.VoiceActivationEnabled || _voicePausedForEditor || _voicePausedForAudio ||
-            _voiceActivationClosing) return;
-        StopVoiceRetryTimer();
-        _voiceActivationStarting = true;
-        Keeper.SetVoiceStatus("processing");
-        try
-        {
-            if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000) ||
-                !System.Runtime.Intrinsics.X86.Avx2.IsSupported ||
-                !System.Runtime.Intrinsics.X86.Fma.IsSupported ||
-                (System.Runtime.Intrinsics.X86.X86Base.CpuId(1, 0).Ecx & (1 << 29)) == 0)
-                throw new NotSupportedException("Local voice activation needs Windows 11 and AVX2, FMA, and F16C.");
-
-            await _voiceActivationStop;
-            if (!_settings.VoiceActivationEnabled || _voicePausedForEditor || _voicePausedForAudio ||
-                _voiceActivationClosing) return;
-            var arabicCommands = _settings.VoiceCommandsInArabic;
-            var session = new LocalAudioTranscriber(AudioCaptureSource.Microphone,
-                recognitionPrompt: arabicCommands
-                    ? ApprovedVoiceAppLauncher.ArabicRecognitionPrompt
-                    : ApprovedVoiceAppLauncher.RecognitionPrompt);
-            _voiceActivation = session;
-            session.TextRecognized += text =>
-            {
-                if (!Dispatcher.HasShutdownStarted) Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    if (_voiceActivation == session && !_voiceActionPending) ProcessVoiceActivationText(session, text);
-                }));
-            };
-            session.Failed += message =>
-            {
-                if (!Dispatcher.HasShutdownStarted) Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    if (_voiceActivation == session) _ = RecoverVoiceActivationAsync(message);
-                }));
-            };
-            await session.StartAsync(arabicCommands ? "ar-EG" : "en-US");
-            if (_voiceActivation == session)
-            {
-                _voiceListeningSinceUtc = DateTime.UtcNow;
-                Keeper.SetVoiceStatus("wake");
-            }
-        }
-        catch (Exception ex)
-        {
-            if (_settings.VoiceActivationEnabled && !_voicePausedForEditor && !_voiceActivationClosing)
-                await RecoverVoiceActivationAsync($"Local voice activation stopped ({ex.GetType().Name}).");
-        }
-        finally
-        {
-            _voiceActivationStarting = false;
-            if (_settings.VoiceActivationEnabled && _voiceActivation == null &&
-                !_voicePausedForEditor && !_voicePausedForAudio && !_voiceActivationClosing &&
-                !_voiceActionPending && _voiceRetryTimer == null)
-                ScheduleVoiceActivationRetry("Voice capture was interrupted.");
-        }
-    }
-
-    private void ProcessVoiceActivationText(LocalAudioTranscriber session, string text)
-    {
-        if (!_settings.VoiceActivationEnabled || _voicePausedForEditor || _voiceActivationClosing) return;
-        if (ApprovedVoiceAppLauncher.IsWakePhrase(text))
-        {
-            ArmVoiceCommand("CloClo");
-            ShowOneShotLabel("CloClo is listening", VoiceCommandHint);
-            return;
-        }
-
-        if (ApprovedVoiceAppLauncher.StartsWithWakeWord(text) &&
-            !ApprovedVoiceAppLauncher.HasFinishWord(text))
-        {
-            if (ApprovedVoiceAppLauncher.IsPotentialCommand(text))
-                ArmVoiceCommand(text);
-            else
-                DisarmVoiceCommand();
-            return;
-        }
-
-        var phrase = text;
-        if (_voiceArmed && DateTime.UtcNow <= _voiceArmedUntil)
-        {
-            // Whisper can split a spoken phrase into adjacent text segments.
-            // A repeated wake word begins a new command instead of appending
-            // to the previous wake phrase.
-            if (!ApprovedVoiceAppLauncher.StartsWithWakeWord(text))
-            {
-                if (++_voiceCommandSegments > MaximumVoiceCommandSegments)
-                {
-                    DisarmVoiceCommand();
-                    Keeper.SetVoiceStatus("wake");
-                    return;
-                }
-                phrase = _voiceCommandText + " " + text;
-            }
-            _voiceCommandText = phrase.Length <= 160 ? phrase : "";
-        }
-        else
-        {
-            DisarmVoiceCommand();
-            // Ordinary background speech is ignored, including sentences that
-            // happen to end in "now". A complete one-phrase command still
-            // starts with the explicit wake name and is handled below.
-            if (!ApprovedVoiceAppLauncher.StartsWithWakeWord(text)) return;
-        }
-
-        if (ApprovedVoiceAppLauncher.IsStopVoiceCommand(phrase))
-        {
-            DisarmVoiceCommand();
-            _voiceActionPending = true;
-            Keeper.SetVoiceStatus("processing");
-            _ = DisableVoiceActivationByVoiceAsync();
-        }
-        else if (ApprovedVoiceAppLauncher.TryMatchFinishedCommand(phrase, out var app))
-        {
-            DisarmVoiceCommand();
-            _voiceActionPending = true;
-            Keeper.SetVoiceStatus("processing");
-            _ = ConfirmVoiceActivationAsync(session, app);
-        }
-        else if (ApprovedVoiceAppLauncher.HasFinishWord(phrase))
-        {
-            DisarmVoiceCommand();
-            Keeper.SetVoiceStatus("wake");
-            Keeper.SetVoiceStatus("failed");
-            ShowOneShotLabel("Voice command not recognized", VoiceCommandHint);
-        }
-        else if (!ApprovedVoiceAppLauncher.IsPotentialCommand(phrase))
-        {
-            DisarmVoiceCommand();
-            Keeper.SetVoiceStatus("wake");
-        }
-    }
-
-    private void ArmVoiceCommand(string initialText)
-    {
-        DisarmVoiceCommand();
-        _voiceArmed = true;
-        _voiceArmedUntil = DateTime.UtcNow.AddSeconds(VoiceCommandArmSeconds);
-        _voiceCommandText = initialText;
-        _voiceCommandSegments = 1;
-        _voiceArmTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(VoiceCommandArmSeconds) };
-        _voiceArmTimer.Tick += VoiceArmTimer_Tick;
-        _voiceArmTimer.Start();
-        Keeper.SetVoiceStatus("armed");
-    }
-
-    private void VoiceArmTimer_Tick(object? sender, EventArgs e)
-    {
-        DisarmVoiceCommand();
-        if (_settings.VoiceActivationEnabled && _voiceActivation != null)
-            Keeper.SetVoiceStatus("wake");
-    }
-
-    private void DisarmVoiceCommand()
-    {
-        _voiceArmed = false;
-        _voiceCommandText = "";
-        _voiceCommandSegments = 0;
-        if (_voiceArmTimer == null) return;
-        _voiceArmTimer.Stop();
-        _voiceArmTimer.Tick -= VoiceArmTimer_Tick;
-        _voiceArmTimer = null;
-    }
-
-    private async Task DisableVoiceActivationByVoiceAsync()
-    {
-        _settings.VoiceActivationEnabled = false;
-        _settings.Save();
-        StopVoiceRetryTimer();
-        try
-        {
-            // Abort capture immediately; native cleanup can finish while the
-            // fixed response plays. No more microphone data is accepted.
-            var captureStop = StopVoiceActivationAsync(abortPendingAudio: true);
-            Keeper.SetVoiceStatus("off");
-            if (!_voiceActivationClosing)
-            {
-                ShowOneShotLabel("Voice activation off", "Microphone command capture stopped.");
-                try { await SpeakFixedVoiceResponseAsync("Okay, stopping voice now."); }
-                catch { /* Spoken feedback is optional; capture is already off. */ }
-            }
-            await captureStop;
-        }
-        finally
-        {
-            _voiceActionPending = false;
-            if (_settings.VoiceActivationEnabled && !_voiceActivationClosing && !_voicePausedForEditor)
-                _ = StartVoiceActivationAsync();
-        }
-    }
-
-    private async Task ConfirmVoiceActivationAsync(LocalAudioTranscriber session, ApprovedVoiceApp app)
-    {
-        try
-        {
-            if (_voiceActivation != session) return;
-            // Keep one Windows microphone session for wake listening and
-            // confirmation. The transcriber discards input during our speech
-            // and the visual dialog, so it cannot act on its own response.
-            session.PauseVoiceRecognition();
-            var name = ApprovedVoiceAppLauncher.DisplayName(app);
-            var spokenMode = _settings.SpokenVoiceConfirmationEnabled;
-            bool confirmed;
-            if (spokenMode)
-            {
-                if (!_settings.VoiceActivationEnabled || _voiceActivationClosing) return;
-                confirmed = await AskForSpokenAppConfirmationAsync(session, app) == true;
-                if (!confirmed && _settings.SpokenVoiceConfirmationEnabled &&
-                    _settings.VoiceActivationEnabled && !_voiceActivationClosing)
-                {
-                    try { await SpeakSpokenConfirmationFeedbackAsync(app, null); }
-                    catch { /* The action is already cancelled. */ }
-                }
-            }
-            else
-            {
-                // Keep the existing visual confirmation and its fixed spoken
-                // acknowledgement unchanged for users of the default mode.
-                if (_settings.VoiceActivationEnabled && !_voiceActivationClosing)
-                {
-                    try { await SpeakVoiceCommandAcknowledgementAsync(name); }
-                    catch { /* Spoken feedback is optional; confirmation still follows. */ }
-                }
-                if (!_settings.VoiceActivationEnabled || _voiceActivationClosing) return;
-                if (Visibility != Visibility.Visible)
-                {
-                    Visibility = Visibility.Visible;
-                    if (_avatarWindow != null) _avatarWindow.Visibility = Visibility.Visible;
-                }
-                Activate();
-                confirmed = MessageBox.Show(this, $"Open {name}?", "Confirm voice command",
-                    MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
-            }
-            if (!_settings.VoiceActivationEnabled || _voiceActivationClosing ||
-                _voiceActivation != session) return;
-            if (!confirmed)
-            {
-                Keeper.SetVoiceStatus("failed");
-                ShowOneShotLabel($"Did not open {name}", "");
-                return;
-            }
-            var error = ApprovedVoiceAppLauncher.Launch(app);
-            ShowOneShotLabel(error ?? $"Opened {name}", "");
-            if (spokenMode && _settings.VoiceActivationEnabled && !_voiceActivationClosing)
-            {
-                try { await SpeakSpokenConfirmationFeedbackAsync(app, error == null); }
-                catch { /* The launch result is still shown visually. */ }
-            }
-            if (error != null)
-            {
-                Keeper.SetVoiceStatus("failed");
-                return;
-            }
-            if (_settings.VoiceActivationEnabled && !_voiceActivationClosing)
-                Keeper.SetVoiceStatus("complete");
-        }
-        catch (Exception ex)
-        {
-            Keeper.SetVoiceStatus("failed");
-            ShowOneShotLabel("App opening cancelled", $"Confirmation failed ({ex.GetType().Name}).");
-        }
-        finally
-        {
-            _voiceActionPending = false;
-            if (_settings.VoiceActivationEnabled && !_voiceActivationClosing &&
-                !_voicePausedForEditor && _voiceActivation == session)
-            {
-                session.ResumeVoiceRecognition();
-                // The capture state was left at "processing" or the reply's
-                // "armed"; a completed/failed result still shows briefly.
-                Keeper.SetVoiceStatus("wake");
-            }
-            else if (_settings.VoiceActivationEnabled)
-                _ = StartVoiceActivationAsync();
-        }
-    }
-
-    private async Task<bool?> AskForSpokenAppConfirmationAsync(LocalAudioTranscriber session, ApprovedVoiceApp app)
-    {
-        var arabic = _settings.VoiceCommandsInArabic &&
-            SpeechReader.IsVoiceAvailable(ReadAloudVoice.ArabicHoda);
-        var voice = arabic ? ReadAloudVoice.ArabicHoda : ReadAloudVoice.EnglishDavid;
-        if (!SpeechReader.IsVoiceAvailable(voice)) return null;
-
-        using var cancellation = new CancellationTokenSource();
-        _spokenConfirmationCancellation = cancellation;
-        try
-        {
-            var prompt = arabic
-                ? $"سمعت طلب فتح {ApprovedVoiceAppLauncher.ArabicDisplayName(app)}. قل أكد فتح واسم التطبيق، أو قل إلغاء."
-                : $"I heard open {ApprovedVoiceAppLauncher.DisplayName(app)}. Say confirm and the app name, or say cancel.";
-            await SpeakFixedVoiceResponseAsync(prompt, voice);
-            if (cancellation.IsCancellationRequested || !_settings.SpokenVoiceConfirmationEnabled ||
-                !_settings.VoiceActivationEnabled || _voiceActivationClosing) return null;
-
-            // The same microphone capture switches to a local decoder with no
-            // wake prompt. Only a reply naming this fixed app is accepted.
-            var answer = new TaskCompletionSource<bool?>(TaskCreationOptions.RunContinuationsAsynchronously);
-            void OnAnswer(string text)
-            {
-                var match = ApprovedVoiceAppLauncher.MatchSpokenConfirmation(text, app);
-                if (match.HasValue) answer.TrySetResult(match);
-            }
-            void OnFailure(string _) => answer.TrySetResult(null);
-            session.ConfirmationTextRecognized += OnAnswer;
-            session.Failed += OnFailure;
-            try
-            {
-                if (cancellation.IsCancellationRequested || !_settings.VoiceActivationEnabled ||
-                    _voiceActivationClosing || _voiceActivation != session) return null;
-                session.BeginVoiceConfirmation();
-                Keeper.SetVoiceStatus("armed");
-                try { return await answer.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellation.Token); }
-                catch (TimeoutException) { return null; }
-                catch (OperationCanceledException) { return null; }
-            }
-            finally
-            {
-                session.PauseVoiceRecognition();
-                session.ConfirmationTextRecognized -= OnAnswer;
-                session.Failed -= OnFailure;
-            }
-        }
-        finally
-        {
-            if (ReferenceEquals(_spokenConfirmationCancellation, cancellation))
-                _spokenConfirmationCancellation = null;
-        }
-    }
-
-    private Task SpeakSpokenConfirmationFeedbackAsync(ApprovedVoiceApp app, bool? opened)
-    {
-        var arabic = _settings.VoiceCommandsInArabic &&
-            SpeechReader.IsVoiceAvailable(ReadAloudVoice.ArabicHoda);
-        var name = arabic ? ApprovedVoiceAppLauncher.ArabicDisplayName(app)
-            : ApprovedVoiceAppLauncher.DisplayName(app);
-        var message = opened switch
-        {
-            true => arabic ? $"تم فتح {name}." : $"Opened {name}.",
-            false => arabic ? $"تعذر فتح {name}." : $"Could not open {name}.",
-            null => arabic ? "لم يتم التأكيد. تم الإلغاء." : "No confirmation. Cancelled.",
-        };
-        return SpeakFixedVoiceResponseAsync(message,
-            arabic ? ReadAloudVoice.ArabicHoda : ReadAloudVoice.EnglishDavid);
-    }
-
-    private static Task SpeakVoiceCommandAcknowledgementAsync(string appName) =>
-        SpeakFixedVoiceResponseAsync($"Okay, opening {appName} now.");
 
     private static async Task SpeakFixedVoiceResponseAsync(string message,
         ReadAloudVoice voice = ReadAloudVoice.EnglishDavid)
     {
-        // Callers provide only fixed application names or a fixed stop message,
-        // never transcript text. Microphone capture is already stopped.
+        // Callers provide only fixed phrases and fixed application names,
+        // never transcript text.
         if (!SpeechReader.IsVoiceAvailable(voice)) return;
         var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         void OnFinished() => finished.TrySetResult();
@@ -3207,56 +2766,6 @@ public partial class MainWindow : Window
         {
             SpeechReader.Finished -= OnFinished;
         }
-    }
-
-    private async Task RecoverVoiceActivationAsync(string message)
-    {
-        if (_voiceListeningSinceUtc != default &&
-            DateTime.UtcNow - _voiceListeningSinceUtc > TimeSpan.FromMinutes(1))
-            _voiceRetryDelaySeconds = 2;
-        _voiceListeningSinceUtc = default;
-        await StopVoiceActivationAsync(abortPendingAudio: true);
-        ScheduleVoiceActivationRetry(message);
-    }
-
-    private void ScheduleVoiceActivationRetry(string message)
-    {
-        if (!_settings.VoiceActivationEnabled || _voicePausedForEditor || _voicePausedForAudio ||
-            _voiceActivationClosing || _voiceRetryTimer != null) return;
-        var delay = _voiceRetryDelaySeconds;
-        _voiceRetryDelaySeconds = Math.Min(delay * 2, 60);
-        Keeper.SetVoiceStatus("processing");
-        Keeper.SetVoiceStatus("failed");
-        ShowOneShotLabel(message, $"Retrying local voice capture in {delay} seconds. Privacy remains on.");
-        _voiceRetryTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(delay) };
-        _voiceRetryTimer.Tick += VoiceRetryTimer_Tick;
-        _voiceRetryTimer.Start();
-    }
-
-    private void VoiceRetryTimer_Tick(object? sender, EventArgs e)
-    {
-        StopVoiceRetryTimer();
-        if (_settings.VoiceActivationEnabled && !_voicePausedForEditor && !_voiceActivationClosing)
-            _ = StartVoiceActivationAsync();
-    }
-
-    private void StopVoiceRetryTimer()
-    {
-        if (_voiceRetryTimer == null) return;
-        _voiceRetryTimer.Stop();
-        _voiceRetryTimer.Tick -= VoiceRetryTimer_Tick;
-        _voiceRetryTimer = null;
-    }
-
-    private async Task StopVoiceActivationAsync(bool abortPendingAudio = false)
-    {
-        var session = _voiceActivation;
-        _voiceActivation = null;
-        DisarmVoiceCommand();
-        if (!_voiceActionPending) Keeper.SetVoiceStatus("off");
-        if (session != null) _voiceActivationStop = (abortPendingAudio
-            ? session.AbortAsync() : session.DisposeAsync()).AsTask();
-        await _voiceActivationStop;
     }
 
     // Opened by Explorer's full path with the folder as an argument, not by

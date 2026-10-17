@@ -41,7 +41,7 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
     private const string ArabicPrompt = "مرحباً، كيف حالك؟ سنتحدث اليوم باللغة العربية.";
     // Playback is taken as Windows mixes it, 48 kHz float stereo.
     private const int PlaybackSampleRate = 48000;
-    // Voice activation keeps at most this much unprocessed audio, dropping
+    // Voice commands keep at most this much unprocessed audio, dropping
     // the oldest beyond it, and skips phrases that are this far behind.
     private const int VoiceCommandQueueSeconds = 20;
     private const int VoiceCommandStaleSeconds = 2;
@@ -60,11 +60,10 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
     private long _lastProgressBytes;
     private int _recognizedPhrases;
     private int _finishing;
-    // Voice commands keep one Windows microphone session open. While CloClo
-    // speaks or waits for a visual answer, captured bytes are replaced with
-    // silence before they enter the queue. Confirmation uses a separate local
-    // decoder without the wake-word prompt, on the same capture session.
-    private int _voiceRecognitionMode; // 0 = wake, 1 = silent, 2 = confirmation
+    // While CloClo speaks during a voice command ("Listening."), captured
+    // bytes are replaced with silence before they enter the queue, so its
+    // own voice can't become part of the command.
+    private int _voiceRecognitionMode; // 0 = listening, 1 = silent
     private volatile bool _reduceMicrophoneNoise = reduceMicrophoneNoise;
     private string? _deviceName;
     private string? _captureFormat;
@@ -72,7 +71,6 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
     private string? _engine;
 
     public event Action<string>? TextRecognized;
-    public event Action<string>? ConfirmationTextRecognized;
     // The phrase being spoken right now, as heard so far: replaced about once
     // a second, then cleared ("") when the phrase's final text arrives.
     public event Action<string>? InterimTextRecognized;
@@ -93,11 +91,6 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
     public void PauseVoiceRecognition()
     {
         SetVoiceRecognitionMode(1);
-    }
-
-    public void BeginVoiceConfirmation()
-    {
-        SetVoiceRecognitionMode(2);
     }
 
     public void ResumeVoiceRecognition()
@@ -128,7 +121,7 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
         // The queue is bounded by bytes, about a minute of audio for dictation
         // and playback. Packet counts would be a poor bound: microphones
         // deliver 5 to 10 ms packets, so 512 of them held under 3 seconds.
-        // Voice activation drops its oldest audio instead of failing when
+        // Voice commands drop their oldest audio instead of failing when
         // decoding falls behind; audio that old can't be a live command.
         var voiceCommands = recognitionPrompt != null;
         using var input = new PcmQueueStream(_stop.Token,
@@ -177,21 +170,13 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
             {
                 // Beam search costs more CPU per phrase but clearly improves
                 // dictation, Arabic especially. Voice commands stay greedy
-                // so wake phrases are answered promptly.
+                // so they are answered promptly.
                 builder.WithBeamSearchSamplingStrategy(beam => beam.WithBeamSize(5));
                 if (arabic)
                     builder.WithPrompt(languageTag.Equals("ar-EG", StringComparison.OrdinalIgnoreCase)
                         ? EgyptianArabicPrompt : ArabicPrompt);
             }
             using var processor = builder.Build();
-            using var confirmationProcessor = recognitionPrompt != null
-                ? factory.CreateBuilder().WithLanguage(arabic ? "ar" : "en")
-                    .WithThreads(WhisperThreads.Value)
-                    .WithAudioContextSize(arabic ? 1024 : 512)
-                    .WithSingleSegment()
-                    .WithMaxTokensPerSegment(32)
-                    .Build()
-                : null;
             // Live preview for dictation and playback: a fast greedy pass over
             // the phrase so far, with a 10-second audio window. On the test
             // clips it took about 0.6 s per update on a GPU (turbo) and 0.35 s
@@ -276,7 +261,7 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                 var builder = new WasapiRecorderBuilder().WithFormat(format);
                 // Communications mode is what echo-cancels CloClo's own voice
                 // and other speaker audio. Default-device stream routing
-                // (NAudio 3.1) silently drops it, so wake listening keeps the
+                // (NAudio 3.1) silently drops it, so voice commands keep the
                 // fixed default device; an invalidated endpoint still triggers
                 // recovery, which reopens the current default.
                 if (communicationsMode) builder.WithCommunicationsMode();
@@ -386,10 +371,10 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                     continue;
                 }
                 // A cough or click alone is skipped; Whisper tends to turn very
-                // short sounds into invented words. A confirmed voice command
-                // may be a single short word.
+                // short sounds into invented words. A voice command may be a
+                // single short word.
                 var worthDecoding = voiceCommands
-                    // A wake phrase or command is short and ends at a pause.
+                    // A spoken app name is short and ends at a pause.
                     // Sound that runs into the length limit (TV, music) and
                     // phrases left behind while an earlier one was decoding
                     // can't be a live command, so they skip Whisper.
@@ -411,8 +396,7 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                     // processor/model at that point can leave native code using
                     // freed memory. Let this bounded chunk finish before cleanup.
                     string? previousText = null;
-                    var activeProcessor = voiceMode == 2 ? confirmationProcessor! : processor;
-                    await foreach (var segment in activeProcessor.ProcessAsync(samples, CancellationToken.None))
+                    await foreach (var segment in processor.ProcessAsync(samples, CancellationToken.None))
                     {
                         if (_stop.IsCancellationRequested) continue;
                         var text = TranscriptCleanup.Clean(segment.Text);
@@ -423,13 +407,11 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                         previousText = text;
                         Interlocked.Increment(ref _recognizedPhrases);
                         // A mode change while Whisper was decoding invalidates
-                        // that result. In particular, pre-prompt speech must
-                        // never become a spoken confirmation.
+                        // that result.
                         if (voiceCommands && (Volatile.Read(ref _voiceRecognitionMode) != voiceMode ||
                                               input.Epoch != phraseEpoch))
                             continue;
-                        if (voiceMode == 2) ConfirmationTextRecognized?.Invoke(text);
-                        else TextRecognized?.Invoke(text);
+                        TextRecognized?.Invoke(text);
                         ReportProgress();
                     }
                 }

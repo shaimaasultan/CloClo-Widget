@@ -9,70 +9,51 @@ namespace CloCloWidget;
 internal enum ApprovedVoiceApp { Notepad, Paint, OneDrive, SnippingTool, Settings, YouTube, Spotify, Word }
 
 // Speech is never interpreted as a path, argument, URI, or shell command.
-// Only these fixed phrases can select a fixed app, and the widget asks the
-// user for confirmation before any activation.
+// Only these fixed names can select a fixed app.
 internal static class ApprovedVoiceAppLauncher
 {
-    // The command vocabulary steers the base model's spelling. With only the
-    // wake name, real speech came out as "Open the node bed nail" and
-    // "CloCloStopVoysNail"; with this prompt the same recordings matched,
-    // while ordinary speech was transcribed unchanged. Every app still needs
-    // the wake name, a verb, a finish word and confirmation.
-    internal const string RecognitionPrompt =
-        "CloClo, open Notepad now. CloClo, open Paint, OneDrive, Snipping Tool, Settings, YouTube, Spotify or Word now. CloClo, stop voice now.";
-    internal const string ArabicRecognitionPrompt =
-        "كلوكلو، افتح المفكرة دلوقتي. كلوكلو، افتح الرسام، ون درايف، أداة القص، الإعدادات، يوتيوب، سبوتيفاي أو وورد دلوقتي. كلوكلو، وقف الصوت دلوقتي.";
     // Phrases are compared after TranscriptCleanup.MatchingKey, so Arabic
     // entries here use its unified spelling (ا for أ/إ/آ, ه for ة, ي for ى).
+    // CloClo's name, a verb and "now" are tolerated around a held name.
     private static readonly string[] WakeNames =
         ["cloclo", "clo clo", "كلوكلو", "كلو كلو"];
     private static readonly string[] CommandVerbs =
         ["open ", "launch ", "start ", "افتح لي ", "افتحلي ", "افتح ", "شغل "];
     private static readonly string[] FinishWords = ["now", "دلوقتي", "دلوقت", "الان"];
-    private static readonly string[] StopPhrases = ["stop voice", "وقف الصوت", "اوقف الصوت", "اقفل الصوت"];
 
-    internal static bool IsWakePhrase(string transcript) =>
-        TryStripWakeName(Normalize(transcript), out var remainder) && remainder.Length == 0;
+    // Hold to talk: the user says only the app name ("Paint", "Paintbrush",
+    // "YouTube", "وورد"); the held mouse button is the intent. An "open" verb,
+    // the wake name or a finish word is tolerated but not needed. The prompt
+    // lists only the names, which steers Whisper toward their spelling.
+    internal const string RecognitionPrompt =
+        "Notepad. Paint. Paintbrush. OneDrive. Snipping Tool. Settings. YouTube. Spotify. Word.";
+    internal const string ArabicRecognitionPrompt =
+        "المفكرة. الرسام. ون درايف. أداة القص. الإعدادات. يوتيوب. سبوتيفاي. وورد.";
 
-    internal static bool StartsWithWakeWord(string transcript)
-    {
-        return TryStripWakeName(Normalize(transcript), out var remainder) && remainder.Length != 0;
-    }
-
-    internal static bool HasFinishWord(string transcript) =>
-        TryStripFinishWord(Normalize(transcript), out _);
-
-    // Only keep a wake session armed while the next words can still become a
-    // command. Ambient conversation must not be joined to later audio.
-    internal static bool IsPotentialCommand(string transcript)
-    {
-        if (!TryStripWakeName(Normalize(transcript), out var remainder)) return false;
-        if (remainder.Length == 0) return true;
-        foreach (var verb in CommandVerbs)
-        {
-            if (verb.TrimEnd().StartsWith(remainder, StringComparison.Ordinal) ||
-                remainder.StartsWith(verb, StringComparison.Ordinal)) return true;
-        }
-        foreach (var stopPhrase in StopPhrases)
-        {
-            if (stopPhrase.StartsWith(remainder, StringComparison.Ordinal)) return true;
-        }
-        return false;
-    }
-
-    internal static bool IsStopVoiceCommand(string transcript) =>
-        TryStripWakeName(Normalize(transcript), out var remainder) &&
-        TryStripFinishWord(remainder, out var command) &&
-        Array.IndexOf(StopPhrases, command) >= 0;
-
-    internal static bool TryMatchFinishedCommand(string transcript, out ApprovedVoiceApp app)
+    internal static bool TryMatchHeldCommand(string transcript, out ApprovedVoiceApp app)
     {
         app = default;
         var phrase = Normalize(transcript);
-        if (phrase.Length > 160) return false;
-        if (!TryStripWakeName(phrase, out var remainder) ||
-            !TryStripFinishWord(remainder, out var command)) return false;
-        return TryMatch(command, out app);
+        if (TryStripWakeName(phrase, out var remainder)) phrase = remainder;
+        if (TryStripFinishWord(phrase, out var command)) phrase = command;
+        foreach (var verb in CommandVerbs)
+        {
+            if (!phrase.StartsWith(verb, StringComparison.Ordinal)) continue;
+            phrase = phrase[verb.Length..];
+            break;
+        }
+        foreach (var suffix in new[] { " application", " app" })
+        {
+            if (!phrase.EndsWith(suffix, StringComparison.Ordinal)) continue;
+            phrase = phrase[..^suffix.Length];
+            break;
+        }
+        // What Whisper writes for silence or a breath is never a name.
+        if (phrase.Length == 0 || phrase is "thank you" or "thanks" or "you" or "bye" or "شكرا") return false;
+        // Exact names and known mishearings first, then a looser sound match:
+        // only a name is expected here, so "ward" can be Word and "bent"
+        // Paint. Two apps sounding equally close still match neither.
+        return TryMatch("open " + phrase, out app) || TryMatchBySound(phrase, out app, loose: true);
     }
 
     private static bool TryStripFinishWord(string phrase, out string command)
@@ -132,21 +113,6 @@ internal static class ApprovedVoiceAppLauncher
         _ => throw new ArgumentOutOfRangeException(nameof(app))
     };
 
-    // A spoken Yes without the app name can be picked up from nearby speech.
-    // Confirmation must name the same fixed target as the original command.
-    internal static bool? MatchSpokenConfirmation(string transcript, ApprovedVoiceApp expected)
-    {
-        var phrase = Normalize(transcript);
-        if (phrase is "cancel" or "no" or "الغاء" or "لا") return false;
-        foreach (var prefix in new[] { "confirm ", "اكد فتح ", "تاكيد فتح " })
-        {
-            if (!phrase.StartsWith(prefix, StringComparison.Ordinal)) continue;
-            return TryMatch("open " + phrase[prefix.Length..], out var app) && app == expected
-                ? true : null;
-        }
-        return null;
-    }
-
     internal static bool TryMatch(string transcript, out ApprovedVoiceApp app)
     {
         app = default;
@@ -199,7 +165,7 @@ internal static class ApprovedVoiceAppLauncher
 
     // Whisper spells app names inconsistently ("nodepad", "notepadd", "one
     // drive"). Names are also compared by a sound key; only these fixed names
-    // can match, and every match still needs the user's confirmation.
+    // can match.
     private static readonly (ApprovedVoiceApp App, string Name)[] SpokenNames =
     [
         (ApprovedVoiceApp.Notepad, "notepad"), (ApprovedVoiceApp.Notepad, "المفكره"),
@@ -215,7 +181,7 @@ internal static class ApprovedVoiceAppLauncher
         (ApprovedVoiceApp.Word, "word"), (ApprovedVoiceApp.Word, "وورد"),
     ];
 
-    private static bool TryMatchBySound(string phrase, out ApprovedVoiceApp app)
+    private static bool TryMatchBySound(string phrase, out ApprovedVoiceApp app, bool loose = false)
     {
         app = default;
         foreach (var brand in new[] { "microsoft ", "windows ", "مايكروسوفت " })
@@ -232,8 +198,9 @@ internal static class ApprovedVoiceAppLauncher
         {
             var target = SoundKey(name);
             // Short names must sound the same; longer ones may differ by
-            // one sound (two for the longest), as in "sniping tool".
-            var allowed = target.Length >= 7 ? 2 : target.Length >= 5 ? 1 : 0;
+            // one sound (two for the longest), as in "sniping tool". A bare
+            // held name lets short ones differ by one too ("ward" for Word).
+            var allowed = target.Length >= 7 ? 2 : target.Length >= 5 ? 1 : loose && target.Length >= 3 ? 1 : 0;
             var distance = EditDistance(key, target);
             if (distance > allowed || distance > best) continue;
             if (distance == best && candidate != app) tied = true;
