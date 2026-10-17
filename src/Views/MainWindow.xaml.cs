@@ -1266,9 +1266,11 @@ public partial class MainWindow : Window
             ShowAppPicker();
             return;
         }
+        // Still keyed "gpu" so saved icon choices carry over; the Graphics
+        // tab there lists the GPUs this icon used to show.
         if (icons.TryGetValue("gpu", out var gpuRect) && gpuRect.Contains(p))
         {
-            WatchGpus();
+            ShowWindowsStatus();
             return;
         }
         if (icons.TryGetValue("read", out var readRect) && readRect.Contains(p))
@@ -2236,7 +2238,7 @@ public partial class MainWindow : Window
         ("spotify", "Spotify"),
         ("bell", "Notifications"),
         ("search", "Search other apps"),
-        ("gpu", "GPU info"),
+        ("gpu", "Windows status"),
         ("read", "Read selection aloud"),
         ("details", "Selection details"),
         ("mic", "Dictate"),

@@ -196,7 +196,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   | YouTube / Spotify | Shows what's playing there, and keeps it updated |
   | Notifications | Shows your latest notification; the list button opens Windows' notification panel |
   | Search other apps | Lists current media sessions; selecting one watches its metadata without activating its app |
-  | GPU info | Shows the graphics cards in this PC |
+  | Windows status | Opens the Windows status window: uptime, sleep and sign-in times, CPU, memory, storage, network, power, displays, graphics and security |
   | Read selection aloud | Opens the shared speech editor, adds highlighted text, and reads it from the editor (up to 5,000 characters per reading) |
   | Selection details | Shows word, character and line counts and a short preview of highlighted text; nothing is saved (the fallback briefly copies selected text) |
   | Dictate | Opens the shared speech editor. **Dictate** uses the default microphone and bundled local Whisper model; **Read aloud** speaks the editor's text; **Transcribe playing audio** captures the web browser playing sound (or, with **Browser audio only** turned off, everything on the default speaker output) with the same local model. Load a text file (up to 256 KiB), explicitly save text to the private dictation file, or open that folder from the window. Capture continues until its toggle is turned off or the window closes |
