@@ -223,10 +223,46 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   never activates the source app.
 - **Right-click** (or double-click) for the menu: **Set location…**, **Avatar**,
   **Weather**, **Icons**, **Motion**, **Sleep after**, **Workout reminder**,
-  **Custom reminders…**, **Prayer times and azan…**, **Windows status** (local connection and fixed-drive
-  free space), **File summary and search…**, **Scientific calculator…**, **Refresh weather**, **Start new
+  **Custom reminders…**, **Prayer times and azan…**, **Windows status** (a dashboard of the
+  PC's current state, below), **File summary and search…**, **Scientific calculator…**, **Refresh weather**, **Start new
   dictation file**, **Open dictation folder**, **Privacy**, **Always on top**,
   **Start with Windows** and **Exit**.
+- **Windows status** (menu, search or its icon) is a dashboard of the PC's
+  current state in tabs. Everything is read locally without administrator
+  rights; nothing is sent, tested online or changed.
+  - **Overview:** processor and memory use, system drive space, power and
+    connection at a glance; Windows edition, version and build, system type,
+    PC name, uptime, last start and install date.
+  - **CPU and memory:** usage bars, processor model and cores, process,
+    thread and handle counts, memory in use, available, installed, modules
+    and speed, committed and cached, and the eight apps using the most
+    memory (grouped by process name).
+  - **Storage:** every fixed drive with a usage bar, free, used, capacity and
+    file system. Removable and network drives are skipped so a missing device
+    can't stall the window.
+  - **Network:** Windows' own connectivity and metered status, and for each
+    connected adapter its type, hardware, link speed, live activity, local
+    IPv4 address, DHCP and whether it has a gateway.
+  - **Power:** power source, battery charge and time left, battery saver,
+    power plan and power mode.
+  - **Display:** each monitor's name, resolution, refresh rate, scaling,
+    orientation, connection (built-in, HDMI, DisplayPort…), HDR and the GPU
+    driving it.
+  - **Graphics:** each GPU's video memory, driver version and date, and how
+    many displays it drives.
+  - **Security and updates:** antivirus, real-time and tamper protection,
+    definition and scan dates, Windows Firewall, Secure Boot, memory
+    integrity, User Account Control, Smart App Control, the latest installed
+    update and whether a restart is pending. It can't tell whether newer
+    updates exist, since that would mean contacting Windows Update.
+
+  Processor and memory refresh every 2 seconds, and the open tab's live
+  values with them; drives, network, power and displays every 15 seconds;
+  the rest when the window opens or on **Refresh**. Timers run only while the
+  window is open, and each source is read separately in the background, so a
+  slow one doesn't hold up the others. Left out on purpose: the account name,
+  MAC addresses, serial numbers, the Wi-Fi network name, IPv6 addresses and
+  the public IP, and process paths, command lines and window titles.
 - A **tray icon** (near the clock, in the hidden-icons area) has the same
   menu. Double-click it to show or hide the widget. If the widget is hidden,
   right-click the tray icon and choose **Show widget**, or launch CloClo again.

@@ -733,7 +733,7 @@ public partial class MainWindow : Window
     {
         var actions = new List<WidgetSearchAction>
         {
-            new("Windows status", "storage connection drive disk network wifi", WidgetSearchActionKind.OpenWindow, ShowWindowsStatus),
+            new("Windows status", "storage connection drive disk network wifi cpu processor memory ram process battery power display monitor gpu graphics uptime security antivirus firewall update dashboard", WidgetSearchActionKind.OpenWindow, ShowWindowsStatus),
             new("File summary and search", "files folder documents dashboard find text word phrase grep size count docx", WidgetSearchActionKind.OpenWindow, ShowFileInsights),
             new("Scientific calculator", "math arithmetic trig sin cos log square root", WidgetSearchActionKind.OpenWindow, ShowScientificCalculator),
             new("Sound pattern test", "voice signal microphone wake word cloclo accessibility", WidgetSearchActionKind.OpenWindow, ShowSoundPatternTest),

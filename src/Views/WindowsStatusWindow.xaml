@@ -1,32 +1,111 @@
 <Window x:Class="CloCloWidget.WindowsStatusWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="CloClo — Windows status" Width="360" Height="290"
-        WindowStartupLocation="Manual" ResizeMode="NoResize" ShowInTaskbar="False"
+        Title="CloClo — Windows status" Width="580" Height="600" MinWidth="440" MinHeight="420"
+        WindowStartupLocation="Manual" ShowInTaskbar="False"
         Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}">
+    <Window.Resources>
+        <Style x:Key="Hint" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="2,4,2,0" />
+        </Style>
+        <Style x:Key="Page" TargetType="ScrollViewer">
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="Padding" Value="8" />
+            <Setter Property="Focusable" Value="False" />
+        </Style>
+    </Window.Resources>
     <Grid Margin="16">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <TextBlock Text="Windows status" FontWeight="Bold" FontSize="16" Margin="0,0,0,12" />
-        <StackPanel Grid.Row="1" Margin="0,0,0,14">
-            <TextBlock Text="Connection" FontWeight="SemiBold" Margin="0,0,0,4" />
-            <TextBlock x:Name="ConnectionText" Text="Checking…" TextWrapping="Wrap" />
-            <TextBlock Text="Checks the local connection only; internet access is not tested."
-                       Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
-                       TextWrapping="Wrap" FontSize="11" Margin="0,4,0,0" />
-        </StackPanel>
-        <GroupBox Grid.Row="2" Header="Fixed drives" Padding="8">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <TextBlock x:Name="DrivesText" Text="Checking…" TextWrapping="Wrap" />
-            </ScrollViewer>
-        </GroupBox>
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-            <Button x:Name="RefreshButton" Content="Refresh" MinWidth="72" Margin="0,0,8,0" Click="Refresh_Click" />
-            <Button Content="Close" MinWidth="72" Click="Close_Click" />
-        </StackPanel>
+        <TextBlock Text="Windows status" FontWeight="Bold" FontSize="16" Margin="0,0,0,10" />
+
+        <TabControl x:Name="Tabs" Grid.Row="1" SelectionChanged="Tabs_SelectionChanged">
+            <TabItem x:Name="OverviewTab" Header="Overview">
+                <ScrollViewer Style="{StaticResource Page}">
+                    <StackPanel>
+                        <StackPanel x:Name="OverviewCards" />
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="Uptime counts from the last restart: a shutdown with Fast Startup resumes the previous session. The account name is not shown." />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem x:Name="CpuTab" Header="CPU and memory">
+                <ScrollViewer Style="{StaticResource Page}">
+                    <StackPanel>
+                        <StackPanel x:Name="CpuCards" />
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="Memory per app is its working set, grouped by process name. Only names are read: no file paths, command lines or window titles." />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem x:Name="StorageTab" Header="Storage">
+                <ScrollViewer Style="{StaticResource Page}">
+                    <StackPanel>
+                        <StackPanel x:Name="StorageCards" />
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="Fixed drives only. Removable and network drives are skipped, so a missing device or share cannot stall this window. No files are listed." />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem x:Name="NetworkTab" Header="Network">
+                <ScrollViewer Style="{StaticResource Page}">
+                    <StackPanel>
+                        <StackPanel x:Name="NetworkCards" />
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="Connection status is what Windows already knows; CloClo sends nothing to test it. Not shown: your public IP, Wi-Fi network name, MAC addresses and IPv6 addresses (which can identify you online)." />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem x:Name="PowerTab" Header="Power">
+                <ScrollViewer Style="{StaticResource Page}">
+                    <StackPanel>
+                        <StackPanel x:Name="PowerCards" />
+                        <TextBlock Style="{StaticResource Hint}" Text="Read from Windows' power status. Nothing can be changed here." />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem x:Name="DisplayTab" Header="Display">
+                <ScrollViewer Style="{StaticResource Page}">
+                    <StackPanel>
+                        <StackPanel x:Name="DisplayCards" />
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="Resolution is in physical pixels. Monitor names come from the monitor itself; serial numbers are not read." />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem x:Name="GraphicsTab" Header="Graphics">
+                <ScrollViewer Style="{StaticResource Page}">
+                    <StackPanel>
+                        <StackPanel x:Name="GraphicsCards" />
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="Adapter names and drivers as Device Manager lists them; video memory as DirectX reports it. GPU load is not measured." />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem x:Name="SecurityTab" Header="Security and updates">
+                <ScrollViewer Style="{StaticResource Page}">
+                    <StackPanel>
+                        <StackPanel x:Name="SecurityCards" />
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="Read from Windows Security and the local list of installed updates, without administrator rights. Nothing is checked online, so this cannot tell whether newer updates exist; use Settings › Windows Update for that." />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <DockPanel Grid.Row="2" Margin="0,12,0,0">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button x:Name="RefreshButton" Content="Refresh" MinWidth="72" Margin="0,0,8,0" Click="Refresh_Click" />
+                <Button Content="Close" MinWidth="72" Click="Close_Click" />
+            </StackPanel>
+            <TextBlock x:Name="FooterText" Style="{StaticResource Hint}" VerticalAlignment="Center" Margin="0,0,12,0"
+                       Text="Live values update every 2 seconds while this window is open." />
+        </DockPanel>
     </Grid>
 </Window>
