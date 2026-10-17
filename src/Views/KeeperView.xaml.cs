@@ -714,7 +714,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
             EyesClosed.Visibility = Show(EyesResting);
             HangingArms.Visibility = Show(ArmsHang);
             WorkoutArms.Visibility = Show(working);
-            PrayerArms.Visibility = PrayerMat.Visibility = Show(praying);
+            PrayerArms.Visibility = PrayerMat.Visibility = PrayedBadge.Visibility = Show(praying);
             WorkoutCountdown.Visibility = Show(working || (state == "awake" && !string.IsNullOrEmpty(_shirtName)));
             if (!working && state == "awake") WorkoutCountdown.Text = _shirtName ?? string.Empty;
             ApplyOutfit();

@@ -51,9 +51,9 @@ public partial class MainWindow : Window
     private DateTime? _workoutCountdownEnd;
     private static readonly TimeSpan BreakThreshold = TimeSpan.FromMinutes(2);
     // Set when a prayer time arrives with the prayer look on: Keeper wears
-    // prayer clothes on a prayer mat until then, ahead of every other state.
-    private DateTime? _prayerLookEnd;
-    private static readonly TimeSpan PrayerLookDuration = TimeSpan.FromMinutes(10);
+    // prayer clothes on a prayer mat, ahead of every other state, until you
+    // mark the prayer done (MarkPrayed).
+    private bool _prayerLookActive;
     private Window? _avatarWindow;
     private CommandSearchBar? _commandSearchBar;
     private ScientificCalculatorWindow? _calculatorWindow;
@@ -127,6 +127,21 @@ public partial class MainWindow : Window
     // Checked after PauseIconRect/ListIconRect, which it overlaps, so those
     // controls' clicks are claimed first.
     private static readonly Rect LabelBodyRect = new(0, 209 * Scale, 137 * Scale, 36 * Scale);
+    // At prayer time, the check badge beside the head and the head itself
+    // both mean "I've prayed". KeeperView's art is drawn in 100x140 units,
+    // placed at stage (21, 24) by a uniform Viewbox of 108x145 - padded a
+    // little so the small badge is easy to hit.
+    private static readonly Rect PrayedBadgeRect = ArtRect(77, 15, 19, 19);
+    private static readonly Rect PrayedHeadRect = ArtRect(23, 18, 54, 54);
+
+    private static Rect ArtRect(double x, double y, double width, double height)
+    {
+        const double artScale = 145.0 / 140;
+        const double artLeft = 21 + (108 - 100 * artScale) / 2;
+        return new Rect((artLeft + x * artScale - AvatarOffsetX / Scale) * Scale,
+            (24 + y * artScale - AvatarOffsetY / Scale) * Scale,
+            width * artScale * Scale, height * artScale * Scale);
+    }
 
     private static readonly string[] YoutubeAumids = { "edge", "chrome" };
     private static readonly string[] SpotifyAumids = { "spotify" };
@@ -1446,6 +1461,11 @@ public partial class MainWindow : Window
     {
         var p = e.GetPosition(_avatarWindow);
         if (p.Y >= CommandSearchTop) return;
+        if (_activityState == "prayer" && (PrayedBadgeRect.Contains(p) || PrayedHeadRect.Contains(p)))
+        {
+            MarkPrayed();
+            return;
+        }
         var icons = ComputeIconRects();
 
         if (icons.TryGetValue("youtube", out var youtubeRect) && youtubeRect.Contains(p))
@@ -1915,8 +1935,19 @@ public partial class MainWindow : Window
     {
         StopCustomReminderDisplayTimer();
         _workoutCountdownEnd = null;
-        _prayerLookEnd = DateTime.Now + PrayerLookDuration;
+        _prayerLookActive = true;
         UpdateActivityState();
+    }
+
+    // From the check badge, a click on the head or "I've prayed" in the menu:
+    // back to the everyday look, with a small nod of acknowledgement.
+    private void MarkPrayed()
+    {
+        if (!_prayerLookActive) return;
+        _prayerLookActive = false;
+        _activeStreakStart = DateTime.Now; // the next work stretch starts fresh
+        UpdateActivityState();
+        Keeper.Perk();
     }
 
     // Voice activation keeps the microphone open. Close it while the azan
@@ -2041,9 +2072,10 @@ public partial class MainWindow : Window
     // Four states. Prayer comes first, then sleep takes priority over the
     // workout nudge (if you've actually stepped away, you don't also need a
     // "take a break" pose):
-    // - prayer: for PrayerLookDuration from a prayer time, with the prayer
-    //   look on, whether or not you're at the PC — like the azan itself.
-    //   Custom reminders wait meanwhile (they only fire while awake).
+    // - prayer: from a prayer time, with the prayer look on, until you mark
+    //   it prayed, whether or not you're at the PC. The next prayer time
+    //   simply continues it. Custom reminders wait meanwhile (they only
+    //   fire while awake).
     // - asleep: idle for at least SleepAfterMinutes.
     // - workout: it's been at least WorkoutAfterMinutes since the last real
     //   break (an idle stretch of BreakThreshold+, before the pose ever
@@ -2053,14 +2085,14 @@ public partial class MainWindow : Window
     // - awake: neither.
     private void UpdateActivityState()
     {
-        if (_prayerLookEnd is { } prayerEnd)
+        if (_prayerLookActive)
         {
-            if (_settings.PrayerLookEnabled && DateTime.Now < prayerEnd)
+            if (_settings.PrayerLookEnabled)
             {
                 SetActivityState("prayer");
                 return;
             }
-            _prayerLookEnd = null;
+            _prayerLookActive = false;
             _activeStreakStart = DateTime.Now; // the next work stretch starts fresh
         }
 
@@ -2310,6 +2342,11 @@ public partial class MainWindow : Window
         var menu = new ContextMenu();
         if (includeShowHide)
             menu.Items.Add(Item(Visibility == Visibility.Visible ? "Hide widget" : "Show widget", ToggleVisible));
+        if (_activityState == "prayer")
+        {
+            menu.Items.Add(Item("I've prayed", MarkPrayed));
+            menu.Items.Add(new Separator());
+        }
         menu.Items.Add(Item("Set location…", OpenLocationDialog));
         menu.Items.Add(BuildAvatarMenu());
         menu.Items.Add(BuildSkyMenu());

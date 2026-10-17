@@ -476,6 +476,14 @@
                         <Path x:Name="PrayerArmR" Data="M65 80 Q71 91 53 92" Stroke="{StaticResource PrayerRobe}" StrokeThickness="7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
                         <Ellipse Canvas.Left="48" Canvas.Top="87.5" Width="8" Height="8" Fill="{StaticResource Skin}" />
                     </Canvas>
+                    <!-- Prayer time: the "I've prayed" check beside the head. A
+                         click on it (or on the head) ends the prayer look -
+                         PrayedRect in MainWindow.xaml.cs must match. -->
+                    <Canvas x:Name="PrayedBadge" Canvas.Left="80" Canvas.Top="18" Width="13" Height="13" Visibility="Collapsed">
+                        <Ellipse Width="13" Height="13" Fill="#2e8b57" Stroke="White" StrokeThickness="1.1" />
+                        <Path Data="M3.6 6.8 L5.7 8.9 L9.6 4.4" Stroke="White" StrokeThickness="1.6"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                    </Canvas>
 
                     <Canvas x:Name="UmbrellaHeld" Visibility="Collapsed">
                         <Line X1="69" Y1="100" X2="70" Y2="20" Stroke="{StaticResource Metal3}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />

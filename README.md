@@ -157,10 +157,15 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   that works with or without the azan. At each prayer time Keeper changes
   into a white thobe and kufi, and Lady Keeper into a long prayer dress and a
   hijab that covers her hair. Both stand barefoot on a prayer mat with eyes
-  closed and hands folded on the chest. The look lasts 10 minutes and shows
-  the "Fajr prayer time"-style label. It comes before sleep, the stretch
-  break and custom reminders. A stretch break in progress ends and counts as
-  done, and custom reminders wait until the look ends. It keeps the calm
+  closed and hands folded on the chest, and the "Fajr prayer time"-style
+  label shows. The look stays until you mark the prayer done: click the
+  green check beside the head, click the head itself, or choose **I've
+  prayed** at the top of the right-click menu. Keeper gives a small nod and
+  goes back to the everyday look. If you haven't marked it by the next
+  prayer time, the look simply carries on. It isn't kept if CloClo restarts.
+  It comes before sleep, the stretch break and custom reminders. A stretch
+  break in progress ends and counts as done, and custom reminders wait until
+  you've marked the prayer. It keeps the calm
   breathing in full and gentle motion, stays completely still in still mode,
   and doesn't sway in the wind. Turning the option off ends a look in
   progress. It uses the same local calculation, location and method as the
