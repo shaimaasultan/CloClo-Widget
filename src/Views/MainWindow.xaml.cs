@@ -191,6 +191,7 @@ public partial class MainWindow : Window
     private SelectionDetailsWindow? _selectionDetailsWindow;
     private int _selectionDetailsRequest;
     private WindowsStatusWindow? _windowsStatusWindow;
+    private FileInsightsWindow? _fileInsightsWindow;
     // The avatar's head, in this window's units: where the bubble's tail points.
     private const double HeadY = 52 * Scale;
     private DispatcherTimer? _stopwatchTimer;
@@ -536,6 +537,29 @@ public partial class MainWindow : Window
         ShowSensitive(window);
     }
 
+    private void ShowFileInsights()
+    {
+        if (_fileInsightsWindow != null)
+        {
+            if (_fileInsightsWindow.WindowState == WindowState.Minimized) _fileInsightsWindow.WindowState = WindowState.Normal;
+            _fileInsightsWindow.Activate();
+            return;
+        }
+
+        var window = new FileInsightsWindow
+        {
+            Owner = this,
+            Topmost = _settings.AlwaysOnTop,
+        };
+        _fileInsightsWindow = window;
+        window.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_fileInsightsWindow, window)) _fileInsightsWindow = null;
+        };
+        PositionBesideWidget(window);
+        ShowSensitive(window);
+    }
+
     private void ShowScientificCalculator()
     {
         if (_calculatorWindow != null)
@@ -710,6 +734,7 @@ public partial class MainWindow : Window
         var actions = new List<WidgetSearchAction>
         {
             new("Windows status", "storage connection drive disk network wifi", WidgetSearchActionKind.OpenWindow, ShowWindowsStatus),
+            new("File summary and search", "files folder documents dashboard find text word phrase grep size count docx", WidgetSearchActionKind.OpenWindow, ShowFileInsights),
             new("Scientific calculator", "math arithmetic trig sin cos log square root", WidgetSearchActionKind.OpenWindow, ShowScientificCalculator),
             new("Sound pattern test", "voice signal microphone wake word cloclo accessibility", WidgetSearchActionKind.OpenWindow, ShowSoundPatternTest),
             new("Voice signals", "waveform david hoda microphone record compare accessibility", WidgetSearchActionKind.OpenWindow, ShowVoiceSignals),
@@ -1881,6 +1906,7 @@ public partial class MainWindow : Window
         menu.Items.Add(Item("Custom reminders…", OpenCustomReminders));
         menu.Items.Add(Item("Prayer times and azan…", OpenPrayerTimes));
         menu.Items.Add(Item("Windows status…", ShowWindowsStatus));
+        menu.Items.Add(Item("File summary and search…", ShowFileInsights));
         menu.Items.Add(Item("Scientific calculator…", ShowScientificCalculator));
         menu.Items.Add(Item("Sound pattern test…", ShowSoundPatternTest));
         menu.Items.Add(Item("Voice signals…", ShowVoiceSignals));

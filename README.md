@@ -122,6 +122,47 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   reminders and replies, read-aloud text and previews) uses one audio
   session, so Windows shows a single CloClo entry and volume in the volume
   mixer instead of adding a new entry each time.
+- **File summary and search:** open **File summary and search…** from the
+  right-click menu or the search box (try "files", "folder" or "find text").
+  Choose a folder (**Include subfolders** is on by default; untick it for that
+  folder only) or pick one or more files. The **Summary** tab shows the number
+  of files, total size, a breakdown by file type with each type's share of the
+  size, the ten largest and ten newest files, and line and word counts for the
+  text files. The **Search** tab finds a word or sentence in those files,
+  ignoring case: the whole phrase must appear on one line (any spacing between
+  its words matches), and **Whole words** stops "cat" matching "category". Each
+  match shows the file, line number, the text around it with the phrase
+  highlighted, and the folder; results are listed by file and line when the
+  search finishes. **Filter results** narrows the matches already found,
+  without searching again: pick a file type (the list shows each type's
+  match count), and/or type text that the file name, folder or matching line
+  must contain. The status line then says how many matches are shown, and
+  **Clear filters** shows them all again. A chosen type stays chosen for the
+  next search. Double-click a match or use **Open file**: text files open
+  in Notepad (Ctrl+G goes to the line) and Word documents in your usual app.
+  **Show in folder** (or double-clicking a largest/newest file) opens File
+  Explorer with the file selected. Listing, counting and searching run in the
+  background with a progress bar and **Cancel**.
+  - *What is read:* plain-text and source-code files by extension (`.txt`,
+    `.md`, `.csv`, `.log`, `.json`, `.xml`, `.yaml`, `.ini`, `.html`, `.css`,
+    `.js`/`.ts`, `.cs`, `.py`, `.java`, `.c`/`.cpp`, `.go`, `.rs`, `.sql`,
+    `.ps1`, `.bat`, `.sh`, `.srt` and similar), in UTF-8 or with a UTF-16 byte
+    order mark, plus the body text of Word `.docx` documents, where the line
+    number is the paragraph number (shown as ¶). A "text" file that turns out
+    to be binary is skipped. PDFs and other formats are counted in the summary
+    but not read: reading PDF text needs a third-party parser, which CloClo
+    doesn't ship.
+  - *Limits:* hidden and system files, and folder links (junctions and
+    symbolic links), are skipped; listing stops at 200,000 files; text files
+    over 32 MB and `.docx` files over 64 MB are listed but not read; a search
+    stops after 5,000 matches. Network shares are refused.
+  - *Privacy:* everything is read locally, nothing is saved or sent, and the
+    chosen folder isn't remembered; closing the window cancels the work and
+    forgets the list and results. Files are only opened for reading, and
+    **Open file** only opens the text and Word types above, so a match can't
+    start a program or script: scripts open as text in Notepad. The window
+    follows the screen-capture privacy setting, since it shows file names and
+    contents.
 - **Scientific calculator:** open it from the search box or right-click menu.
   It supports typed expressions, a keypad, degree/radian mode, trigonometry,
   logarithms, roots, powers, factorials and `Ans`. Calculations use a bounded
@@ -159,7 +200,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   holds up to seven choices at once.
 
   The search box below the widget finds right-click menu actions, including
-  **Windows status**, **Scientific calculator**, **Custom reminders**,
+  **Windows status**, **File summary and search**, **Scientific calculator**, **Custom reminders**,
   **Prayer times and azan**,
   **Open dictation folder**, and avatar, weather and privacy settings.
   Suggestions open below or beside the box; choose with the mouse or arrow
@@ -183,7 +224,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
 - **Right-click** (or double-click) for the menu: **Set location…**, **Avatar**,
   **Weather**, **Icons**, **Motion**, **Sleep after**, **Workout reminder**,
   **Custom reminders…**, **Prayer times and azan…**, **Windows status** (local connection and fixed-drive
-  free space), **Scientific calculator…**, **Refresh weather**, **Start new
+  free space), **File summary and search…**, **Scientific calculator…**, **Refresh weather**, **Start new
   dictation file**, **Open dictation folder**, **Privacy**, **Always on top**,
   **Start with Windows** and **Exit**.
 - A **tray icon** (near the clock, in the hidden-icons area) has the same
@@ -191,8 +232,8 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   right-click the tray icon and choose **Show widget**, or launch CloClo again.
 - **Privacy:** by default, CloClo requests Windows capture exclusion for the
   widget and several tool windows that show private content, including
-  clipboard history, QR codes, selection details, Windows status and the
-  calculator. This helps with supported Windows capture paths; it is not a
+  clipboard history, QR codes, selection details, Windows status, file
+  summary and search, and the calculator. This helps with supported Windows capture paths; it is not a
   guarantee against every recorder or a camera pointed at the screen.
   Notification text can be switched off so only the sending app's name shows.
 - **Weather** refreshes every 20 minutes from
@@ -553,6 +594,14 @@ records the SHA-256 of every native runtime DLL it ships
   (right-click → Privacy). [Windows documents this as a capture aid](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowdisplayaffinity),
   not a security boundary or a guarantee against every way to record a screen.
   Notification text can be switched off so only the sending app's name shows.
+- **File summary and search reads, never runs.** Only files on local drives
+  are listed, folder links aren't followed, and only the text and `.docx`
+  types it knows are opened, read-only. A `.docx` is read as a zip with DTDs
+  refused and its expanded size checked first; sizes, file counts and match
+  counts are capped. **Open file** starts Notepad with the path as an
+  argument; only a `.docx` is passed to File Explorer to open in the app
+  Windows uses for Word documents. **Show in folder** only selects the file in
+  File Explorer. No other file type is ever opened, so nothing found is run.
 - **Careful with your selection.** "Read selection", "Selection details", "Convert" and "QR" first
   ask the app for highlighted text through UI Automation. If the app does not
   expose it, the widget refocuses that app, sends Ctrl+C, reads the copied text,
