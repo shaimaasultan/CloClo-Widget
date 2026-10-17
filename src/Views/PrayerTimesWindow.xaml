@@ -51,9 +51,13 @@
             </DockPanel>
             <TextBlock x:Name="StatusText" TextWrapping="Wrap" Margin="0,0,0,8" />
         </StackPanel>
-        <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="Cancel" IsCancel="True" MinWidth="75" Margin="0,0,8,0" />
-            <Button Content="Save" IsDefault="True" MinWidth="75" Click="Save_Click" />
-        </StackPanel>
+        <DockPanel Grid.Row="6">
+            <Button x:Name="QiblaButton" Content="Qibla direction…" Click="Qibla_Click" Padding="10,0"
+                    DockPanel.Dock="Left" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Cancel" IsCancel="True" MinWidth="75" Margin="0,0,8,0" />
+                <Button Content="Save" IsDefault="True" MinWidth="75" Click="Save_Click" />
+            </StackPanel>
+        </DockPanel>
     </Grid>
 </Window>

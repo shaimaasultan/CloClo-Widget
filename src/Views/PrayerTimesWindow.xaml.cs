@@ -14,6 +14,7 @@ public partial class PrayerTimesWindow : Window
     private readonly TimeZoneInfo _timeZone;
     private readonly string? _timeZoneId;
     private readonly LocalAudioPlayer _preview = new();
+    private readonly WidgetSettings _settings;
     private string? _audioPath;
 
     public bool AzanEnabled => EnableAzanBox.IsChecked == true;
@@ -25,6 +26,7 @@ public partial class PrayerTimesWindow : Window
     public PrayerTimesWindow(WidgetSettings settings)
     {
         InitializeComponent();
+        _settings = settings;
         _latitude = settings.Latitude;
         _longitude = settings.Longitude;
         _timeZoneId = settings.LocationTimeZoneId;
@@ -100,6 +102,12 @@ public partial class PrayerTimesWindow : Window
         StatusText.Text = _preview.TryPlay(_audioPath)
             ? "Playing preview. Close this window to stop it."
             : "The audio file is missing, unreadable, or over 30 MB.";
+    }
+
+    private void Qibla_Click(object sender, RoutedEventArgs e)
+    {
+        var qibla = new QiblaWindow(_settings) { Owner = this, Topmost = Topmost };
+        qibla.ShowDialog();
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)
