@@ -50,6 +50,7 @@
                             <Setter Property="Padding" Value="8,4" />
                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                             <Setter Property="VerticalContentAlignment" Value="Center" />
+                            <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleName}" />
                         </Style>
                     </ListBox.ItemContainerStyle>
                 </ListBox>

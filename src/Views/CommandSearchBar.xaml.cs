@@ -48,6 +48,11 @@ public sealed record WidgetSearchBadge(string Label, string Color);
 public sealed record WidgetSearchSuggestion(WidgetSearchAction Action, string BadgeLabel, string BadgeColor)
 {
     public string Label => Action.Label;
+
+    // Screen readers announce this instead of the record's generated ToString().
+    public string AccessibleName => $"{Label}, {BadgeLabel}";
+
+    public override string ToString() => AccessibleName;
 }
 
 public partial class CommandSearchBar : UserControl
