@@ -31,7 +31,7 @@
                     <StackPanel>
                         <StackPanel x:Name="OverviewCards" />
                         <TextBlock Style="{StaticResource Hint}"
-                                   Text="Uptime counts from the last restart: a shutdown with Fast Startup resumes the previous session. The account name is not shown." />
+                                   Text="Uptime counts from the last restart: a shutdown with Fast Startup resumes the previous session, and sleeping (closing the lid) or signing out does not reset it. Asleep is the part of it spent in sleep or hibernation; the times come from the wake events Windows logs. Each day counts from midnight, or from when Windows started; “Since sign-in” counts from your last sign-in that day, from the sign-ins Windows logs. Signed in is when this session began. The account name is not shown." />
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

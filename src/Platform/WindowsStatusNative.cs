@@ -38,6 +38,31 @@ internal static class WindowsStatusNative
             (ulong)info.SystemCache * page, info.ProcessCount, info.ThreadCount, info.HandleCount);
     }
 
+    // ---- Uptime and sign-in ----
+
+    // Time Windows has been awake since it started: the interrupt-time
+    // clock that stops during sleep and hibernation, unlike TickCount64.
+    public static TimeSpan? AwakeSinceBoot() =>
+        QueryUnbiasedInterruptTime(out var ticks) ? TimeSpan.FromTicks((long)ticks) : null;
+
+    // When this Windows session was signed in to (local time). Signing out
+    // and back in starts a new session; locking or sleeping does not. Only
+    // the logon time is read from the session record, not the account name.
+    public static DateTime? SessionSignInTime()
+    {
+        if (!WTSQuerySessionInformation(IntPtr.Zero, -1, WTSSessionInfo, out var buffer, out var bytes) || buffer == IntPtr.Zero)
+            return null;
+        try
+        {
+            var offset = (int)Marshal.OffsetOf<WTSINFOW>(nameof(WTSINFOW.LogonTime));
+            if (bytes < offset + sizeof(long)) return null;
+            var fileTime = Marshal.ReadInt64(buffer, offset);
+            return fileTime > 0 ? DateTime.FromFileTimeUtc(fileTime).ToLocalTime() : null;
+        }
+        catch { return null; }
+        finally { WTSFreeMemory(buffer); }
+    }
+
     // ---- Power ----
 
     public record PowerStatus(bool? OnAc, bool BatterySaver);
@@ -359,6 +384,20 @@ internal static class WindowsStatusNative
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string szDevice;
     }
 
+    private const int WTSSessionInfo = 24;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct WTSINFOW
+    {
+        public int State;
+        public uint SessionId, IncomingBytes, OutgoingBytes, IncomingFrames, OutgoingFrames,
+            IncomingCompressedBytes, OutgoingCompressedBytes;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string WinStationName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 17)] public string Domain;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 21)] public string UserName;
+        public long ConnectTime, DisconnectTime, LastInputTime, LogonTime, CurrentTime;
+    }
+
     private delegate bool MonitorEnumProc(IntPtr monitor, IntPtr hdc, IntPtr rect, IntPtr data);
 
     [DllImport("kernel32.dll")] private static extern bool GetSystemTimes(out long idle, out long kernel, out long user);
@@ -367,6 +406,10 @@ internal static class WindowsStatusNative
     [DllImport("kernel32.dll")] private static extern bool K32GetPerformanceInfo(ref PERFORMANCE_INFORMATION info, uint size);
     [DllImport("kernel32.dll")] private static extern bool GetSystemPowerStatus(out SYSTEM_POWER_STATUS status);
     [DllImport("kernel32.dll")] private static extern IntPtr LocalFree(IntPtr memory);
+    [DllImport("kernel32.dll")] private static extern bool QueryUnbiasedInterruptTime(out ulong unbiasedTime);
+    [DllImport("wtsapi32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool WTSQuerySessionInformation(IntPtr server, int sessionId, int infoClass, out IntPtr buffer, out int bytes);
+    [DllImport("wtsapi32.dll")] private static extern void WTSFreeMemory(IntPtr memory);
     [DllImport("powrprof.dll")] private static extern uint PowerGetActiveScheme(IntPtr rootPowerKey, out IntPtr activeScheme);
     [DllImport("powrprof.dll")]
     private static extern uint PowerReadFriendlyName(IntPtr rootPowerKey, ref Guid scheme, IntPtr subGroup, IntPtr setting, IntPtr buffer, ref uint bufferSize);

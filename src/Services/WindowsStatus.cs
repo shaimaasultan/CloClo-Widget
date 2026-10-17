@@ -25,7 +25,7 @@ internal static class WindowsStatus
     // ---- Overview ----
 
     public record OsInfo(string? Edition, string? Version, string? Build, string Architecture,
-        string PcName, DateTime? Installed, TimeSpan Uptime);
+        string PcName, DateTime? Installed, TimeSpan Uptime, DateTime? SignedIn);
 
     public static OsInfo ReadOs()
     {
@@ -56,12 +56,113 @@ internal static class WindowsStatus
             "arm64" => "64-bit (ARM64)",
             "x86" => "32-bit (x86)",
             var other => other,
-        }, Environment.MachineName, installed, Uptime());
+        }, Environment.MachineName, installed, Uptime(), WindowsStatusNative.SessionSignInTime());
     }
 
     // Time since Windows last started. A shutdown with Fast Startup resumes
     // the previous session, so only a restart resets it (as in Task Manager).
     public static TimeSpan Uptime() => TimeSpan.FromMilliseconds(Environment.TickCount64);
+
+    // Of that, the time spent in sleep or hibernation (closing the lid,
+    // usually): uptime less the time Windows was awake.
+    public static TimeSpan? Asleep(TimeSpan uptime)
+    {
+        if (WindowsStatusNative.AwakeSinceBoot() is not { } awake) return null;
+        return uptime > awake ? uptime - awake : TimeSpan.Zero;
+    }
+
+    public record SleepPeriod(DateTime Start, DateTime End, bool Hibernated);
+
+    // Each sleep or hibernation since Windows started, oldest first, from
+    // the event Windows itself logs on every wake (Power-Troubleshooter 1,
+    // readable without administrator rights). CloClo can't time these
+    // itself: it isn't running while the PC sleeps after a sign-out. Null
+    // when the log can't be read.
+    public static List<SleepPeriod>? ReadSleepPeriods()
+    {
+        var events = ReadSystemEvents("Microsoft-Windows-Power-Troubleshooter", "EventID=1");
+        if (events == null) return null;
+        var periods = new List<SleepPeriod>();
+        foreach (var (_, data) in events)
+        {
+            if (!data.TryGetValue("SleepTime", out var sleep) || !data.TryGetValue("WakeTime", out var wake)
+                || !DateTime.TryParse(sleep, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var start)
+                || !DateTime.TryParse(wake, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var end)
+                || end <= start)
+                continue;
+            // EffectiveState 5 is hibernation (S4); lower states are sleep.
+            var hibernated = data.TryGetValue("EffectiveState", out var state) && state == "5";
+            periods.Add(new SleepPeriod(DateTime.SpecifyKind(start, DateTimeKind.Utc).ToLocalTime(),
+                DateTime.SpecifyKind(end, DateTimeKind.Utc).ToLocalTime(), hibernated));
+        }
+        return periods.OrderBy(p => p.Start).ToList();
+    }
+
+    // SignedOut is null while that session is still signed in.
+    public record SignInSession(DateTime SignedIn, DateTime? SignedOut);
+
+    // This account's sign-ins since Windows started, oldest first, from
+    // Winlogon's sign-in (7001) and sign-out (7002) events, paired by their
+    // session number. The account SID only filters out other accounts'
+    // sessions; it isn't kept or shown. Null when the log can't be read.
+    public static List<SignInSession>? ReadSignIns()
+    {
+        var events = ReadSystemEvents("Microsoft-Windows-Winlogon", "(EventID=7001 or EventID=7002)");
+        if (events == null) return null;
+        var me = System.Security.Principal.WindowsIdentity.GetCurrent().User?.Value;
+        var sessions = new List<SignInSession>();
+        var open = new Dictionary<string, int>(); // session number → index in sessions
+        foreach (var (record, data) in events.OrderBy(e => e.Record.Time))
+        {
+            if (me == null || !data.TryGetValue("UserSid", out var sid) || sid != me
+                || !data.TryGetValue("TSId", out var session))
+                continue;
+            if (record.Id == 7001)
+            {
+                open[session] = sessions.Count;
+                sessions.Add(new SignInSession(record.Time, null));
+            }
+            else if (open.Remove(session, out var index))
+            {
+                sessions[index] = sessions[index] with { SignedOut = record.Time };
+            }
+        }
+        return sessions;
+    }
+
+    // Events of one System-log provider since Windows started, with their
+    // named data values. Null when the log can't be read.
+    private static List<((int Id, DateTime Time) Record, Dictionary<string, string> Data)>? ReadSystemEvents(
+        string provider, string idFilter)
+    {
+        try
+        {
+            var started = DateTime.UtcNow - Uptime();
+            var query = new System.Diagnostics.Eventing.Reader.EventLogQuery("System",
+                System.Diagnostics.Eventing.Reader.PathType.LogName,
+                $"*[System[Provider[@Name='{provider}'] and {idFilter} and " +
+                $"TimeCreated[@SystemTime>='{started:yyyy-MM-ddTHH:mm:ss}Z']]]");
+            using var reader = new System.Diagnostics.Eventing.Reader.EventLogReader(query);
+            var events = new List<((int, DateTime), Dictionary<string, string>)>();
+            for (var record = reader.ReadEvent(); record != null; record = reader.ReadEvent())
+            {
+                using (record)
+                {
+                    if (record.TimeCreated is not { } time) continue;
+                    var data = System.Xml.Linq.XElement.Parse(record.ToXml()).Descendants()
+                        .Where(e => e.Name.LocalName == "Data" && e.Attribute("Name") != null)
+                        .GroupBy(e => e.Attribute("Name")!.Value)
+                        .ToDictionary(g => g.Key, g => g.First().Value);
+                    events.Add(((record.Id, time), data));
+                }
+            }
+            return events;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     // ---- Processor and memory ----
 
@@ -125,11 +226,14 @@ internal static class WindowsStatus
         }
     }
 
-    public record Live(TimeSpan Uptime, double? CpuPercent, WindowsStatusNative.Memory? Memory,
+    public record Live(TimeSpan Uptime, TimeSpan? Asleep, double? CpuPercent, WindowsStatusNative.Memory? Memory,
         WindowsStatusNative.Performance? Performance);
 
-    public static Live ReadLive(Sampler sampler) =>
-        new(Uptime(), sampler.CpuPercent(), WindowsStatusNative.ReadMemory(), WindowsStatusNative.ReadPerformance());
+    public static Live ReadLive(Sampler sampler)
+    {
+        var uptime = Uptime();
+        return new(uptime, Asleep(uptime), sampler.CpuPercent(), WindowsStatusNative.ReadMemory(), WindowsStatusNative.ReadPerformance());
+    }
 
     public record ProcessMemory(string Name, int Count, long Bytes);
 

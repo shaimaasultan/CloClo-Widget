@@ -38,6 +38,8 @@ public partial class WindowsStatusWindow : Window
     private WindowsStatus.NetworkState? _network;
     private WindowsStatus.PowerState? _power;
     private WindowsStatus.UpdateState? _updates;
+    private List<WindowsStatus.SleepPeriod>? _sleeps;
+    private List<WindowsStatus.SignInSession>? _signIns;
 
     public WindowsStatusWindow()
     {
@@ -68,6 +70,7 @@ public partial class WindowsStatusWindow : Window
 
     private Task RefreshAllAsync() => Task.WhenAll(
         Read("os", WindowsStatus.ReadOs, os => { _os = os; ShowOverview(); }),
+        ReadSleeps(),
         Read("processor", WindowsStatus.ReadProcessor, p => { _processor = p; ShowCpu(); }),
         ReadLive(),
         Read("processes", () => WindowsStatus.ReadTopProcesses(TopProcessCount), p => { _processes = p; ShowCpu(); }),
@@ -101,7 +104,16 @@ public partial class WindowsStatusWindow : Window
         _ = ReadNetwork();
         _ = ReadPower();
         _ = Read("displays", WindowsStatus.ReadDisplays, ShowDisplays);
+        _ = ReadSleeps();
     }
+
+    // The PC can sleep while this window is open, so these are read again
+    // on the slow timer; each is one filtered event-log query.
+    private Task ReadSleeps() => Read("sleeps", () => (WindowsStatus.ReadSleepPeriods(), WindowsStatus.ReadSignIns()), read =>
+    {
+        (_sleeps, _signIns) = read;
+        ShowOverview();
+    });
 
     private Task ReadLive() => Read("live", () => WindowsStatus.ReadLive(_sampler), live =>
     {
@@ -192,13 +204,31 @@ public partial class WindowsStatusWindow : Window
         if (uptime != null)
         {
             pc.Add(("Up for", Duration(uptime.Value)));
-            pc.Add(("Last started", (DateTime.Now - uptime.Value).ToString("g")));
+            pc.Add(("Started", When(DateTime.Now - uptime.Value)));
+        }
+        if (_os?.SignedIn is { } signedIn) pc.Add(("Signed in", WithDate(signedIn)));
+        // The most recent sign-out since Windows started, and how long it
+        // stayed signed out until the next sign-in (or until now).
+        if (_signIns?.LastOrDefault(s => s.SignedOut != null)?.SignedOut is { } signedOut)
+        {
+            pc.Add(("Last signed out", WithDate(signedOut)));
+            var next = _signIns.FirstOrDefault(s => s.SignedIn >= signedOut)?.SignedIn;
+            pc.Add(("Signed out for", next is { } back
+                ? $"{Duration(back - signedOut)} ({When(signedOut)} → {When(back)})"
+                : $"{Duration(DateTime.Now - signedOut)} (since {When(signedOut)})"));
+        }
+        // Without the wake events there's no per-day split, only totals.
+        if (_sleeps == null && _live?.Asleep is { } asleep && uptime != null)
+        {
+            pc.Add(("Asleep for", Duration(asleep)));
+            pc.Add(("Awake for", Duration(uptime.Value - asleep)));
         }
         if (_os?.Installed is { } installed) pc.Add(("Windows installed", installed.ToString("d")));
 
         var cards = new List<Card>();
         if (glance.Count > 0) cards.Add(new Card("At a glance", glance));
         if (pc.Count > 0) cards.Add(new Card("This PC", pc));
+        if (_sleeps != null && uptime != null) cards.AddRange(DayCards(DateTime.Now - uptime.Value, DateTime.Now, _sleeps, _signIns));
         Show(OverviewCards, cards.Count > 0 ? cards : [Card.Message("Reading…")]);
     }
 
@@ -439,6 +469,88 @@ public partial class WindowsStatusWindow : Window
         >= 1e3 => $"{bitsPerSecond / 1e3:0} Kbps",
         _ => $"{bitsPerSecond:0} bps",
     };
+
+    private const int MaxDayCards = 7;
+
+    // One card per calendar day since Windows started, newest first: the
+    // part of the day it was on, split into awake and asleep. Sleeps that
+    // cross midnight count toward each day for the hours in it.
+    private static IEnumerable<Card> DayCards(DateTime started, DateTime now,
+        List<WindowsStatus.SleepPeriod> sleeps, List<WindowsStatus.SignInSession>? signIns)
+    {
+        for (var day = now.Date; day >= started.Date && day > now.Date.AddDays(-MaxDayCards); day = day.AddDays(-1))
+        {
+            var from = day > started ? day : started;
+            var to = day.AddDays(1) < now ? day.AddDays(1) : now;
+            var asleep = AsleepWithin(sleeps, from, to);
+            var rows = new List<(string, string)>
+            {
+                ("Counted", Span(from, to, now)),
+                ("Awake for", Duration(to - from - asleep)),
+                ("Asleep for", asleep > TimeSpan.Zero ? Duration(asleep) : "Not asleep"),
+            };
+
+            // The day as a timeline: awake stretches between its sleeps.
+            var cursor = from;
+            foreach (var p in sleeps.Where(p => p.End > from && p.Start < to))
+            {
+                var sleepFrom = p.Start > from ? p.Start : from;
+                if (sleepFrom > cursor) rows.Add(("Awake", $"{Span(cursor, sleepFrom, now)} · {Duration(sleepFrom - cursor)}"));
+                rows.Add((p.Hibernated ? "Hibernated" : "Asleep", $"{Period(p)} · {Duration(p.End - p.Start)}"));
+                cursor = p.End < to ? p.End : to;
+            }
+            if (to > cursor) rows.Add(("Awake", $"{Span(cursor, to, now)} · {Duration(to - cursor)}"));
+
+            // From the last sign-in that reaches into this day, until its
+            // sign-out, midnight or now; counted within the day only.
+            if (signIns?.LastOrDefault(s => s.SignedIn < to && (s.SignedOut ?? now) > from) is { } session)
+            {
+                var since = session.SignedIn > from ? session.SignedIn : from;
+                var until = session.SignedOut is { } signedOut && signedOut < to ? signedOut : to;
+                var end = until == now ? $"{until:t} (now)"
+                    : until == session.SignedOut ? $"{until:t} (signed out)"
+                    : $"{until:t}";
+                var signedIn = session.SignedIn.Date == day ? $"{session.SignedIn:t}" : When(session.SignedIn);
+                rows.Add(("Since sign-in", $"{signedIn} → {end} · " +
+                    $"{Duration(until - since - AsleepWithin(sleeps, since, until))} awake"));
+            }
+
+            var title = day == now.Date ? "Today" : day == now.Date.AddDays(-1) ? "Yesterday" : day.ToString("dddd");
+            yield return new Card($"{title}, {day.ToString(MonthDay)}", rows);
+        }
+    }
+
+    private static TimeSpan AsleepWithin(List<WindowsStatus.SleepPeriod> sleeps, DateTime from, DateTime to) =>
+        TimeSpan.FromTicks(sleeps.Where(p => p.End > from && p.Start < to)
+            .Sum(p => ((p.End < to ? p.End : to) - (p.Start > from ? p.Start : from)).Ticks));
+
+    // "12:00 AM → 1:03 AM", or "1:44 PM → 2:21 PM (now)".
+    private static string Span(DateTime from, DateTime to, DateTime now) =>
+        $"{from:t} → {(to == now ? $"{to:t} (now)" : $"{to:t}")}";
+
+    // "1:45 PM · Sat, Oct 17": the time with its date always shown.
+    private static string WithDate(DateTime time) => $"{time:t} · {time.ToString("ddd, " + MonthDay)}";
+
+    // Windows' month/day order with a short month name: "Oct 17" or "17 Oct".
+    private static string MonthDay =>
+        System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.MonthDayPattern.Replace("MMMM", "MMM");
+
+    // "1:45 PM" today, "10:41 PM yesterday", "Tue 9:12 AM" this week, or
+    // the short date and time before that. Uses Windows' own time format.
+    private static string When(DateTime time)
+    {
+        var days = (DateTime.Today - time.Date).Days;
+        return days switch
+        {
+            0 => time.ToString("t"),
+            1 => $"{time:t} yesterday",
+            > 1 and < 7 => $"{time:ddd} {time:t}",
+            _ => time.ToString("g"),
+        };
+    }
+
+    // "1:03 AM → 1:44 PM", with the day on either end when it isn't today.
+    private static string Period(WindowsStatus.SleepPeriod p) => $"{When(p.Start)} → {When(p.End)}";
 
     private static string Duration(TimeSpan span) =>
         span.TotalDays >= 1 ? $"{(int)span.TotalDays} d {span.Hours} h {span.Minutes} min"
