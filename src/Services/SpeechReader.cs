@@ -1,10 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Windows.Media.Core;
-using Windows.Media.Playback;
+using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
 using Windows.Media.SpeechSynthesis;
 
 namespace CloCloWidget;
@@ -25,8 +26,11 @@ public static class SpeechReader
 {
     private static readonly SpeechSynthesizer Synth = new();
     private static readonly SemaphoreSlim SynthesisGate = new(1, 1);
-    private static readonly MediaPlayer Player = new();
     private static readonly object PlaybackLock = new();
+    // Speech plays through WASAPI in CloClo's default audio session, the one
+    // the azan and reminder sounds use, so Windows lists CloClo once. The
+    // WinRT MediaPlayer used before opened a second session of its own.
+    private static WasapiPlayer? _player;
     private static PlaybackResources? _playbackResources;
     private static long _requestVersion;
     // Plenty for a highlighted paragraph; an accidental select-all of a huge
@@ -39,25 +43,36 @@ public static class SpeechReader
     // or failed. A request replaced by a newer one ends with the newer one.
     public static event Action? Finished;
 
-    static SpeechReader()
+    // Ends the current reading: the player and the synthesized audio (MBs
+    // for a long selection) are let go. With "which", only if that player is
+    // still the current one; a replaced reading ends silently.
+    private static void Release(WasapiPlayer? which = null)
     {
-        // The player would otherwise keep the last synthesized audio (MBs
-        // for a long selection) as its source until the next reading.
-        Player.MediaEnded += (_, _) => Release();
-        Player.MediaFailed += (_, _) => Release();
-    }
-
-    private static void Release()
-    {
+        WasapiPlayer? player;
         PlaybackResources? resources;
         lock (PlaybackLock)
         {
-            Player.Source = null;
+            if (which != null && !ReferenceEquals(which, _player)) return;
+            player = _player;
             resources = _playbackResources;
+            _player = null;
             _playbackResources = null;
         }
+        DisposePlayer(player);
         resources?.Dispose();
         Finished?.Invoke();
+    }
+
+    private static void OnPlaybackStopped(object? sender, StoppedEventArgs e) =>
+        Release(sender as WasapiPlayer);
+
+    // Never blocks: PlaybackStopped can run on the playback thread itself.
+    private static void DisposePlayer(WasapiPlayer? player)
+    {
+        if (player == null) return;
+        player.PlaybackStopped -= OnPlaybackStopped;
+        try { _ = player.DisposeAsync().AsTask().ContinueWith(_ => { }, TaskScheduler.Default); }
+        catch { /* the output device went away */ }
     }
 
     public static bool IsVoiceAvailable(ReadAloudVoice voice) => FindVoice(voice) != null;
@@ -74,7 +89,9 @@ public static class SpeechReader
     public static void Stop()
     {
         Interlocked.Increment(ref _requestVersion);
-        if (Player.Source == null)
+        bool playing;
+        lock (PlaybackLock) playing = _player != null;
+        if (!playing)
         {
             // Nothing playing yet (or still synthesizing): reading is over
             // all the same, and listeners such as the microphone pause for
@@ -82,7 +99,6 @@ public static class SpeechReader
             Finished?.Invoke();
             return;
         }
-        Player.Pause();
         Release();
     }
 
@@ -92,7 +108,7 @@ public static class SpeechReader
         var resources = new PlaybackResources();
         try
         {
-            var list = new MediaPlaybackList();
+            var parts = new List<ISampleProvider>();
             await SynthesisGate.WaitAsync();
             try
             {
@@ -117,14 +133,17 @@ public static class SpeechReader
                         resources.Dispose();
                         return;
                     }
-                    var source = MediaSource.CreateFromStream(stream, stream.ContentType);
-                    resources.Own(source);
-                    var item = new MediaPlaybackItem(source);
-                    list.Items.Add(item);
+                    // The synthesized stream is a WAV file; decode it in memory.
+                    var wav = new MemoryStream();
+                    using (var read = stream.AsStreamForRead()) await read.CopyToAsync(wav);
+                    wav.Position = 0;
+                    var reader = new WaveFileReader(wav);
+                    resources.Own(reader);
+                    parts.Add(reader.ToSampleProvider());
                 }
             }
             finally { SynthesisGate.Release(); }
-            if (list.Items.Count == 0)
+            if (parts.Count == 0)
             {
                 resources.Dispose();
                 if (version == Volatile.Read(ref _requestVersion))
@@ -143,17 +162,23 @@ public static class SpeechReader
                     resources.Dispose();
                     return;
                 }
-                Player.Source = null;
+                // A newer reading replaces this one without "Finished".
+                DisposePlayer(_player);
+                _player = null;
                 _playbackResources?.Dispose();
                 _playbackResources = resources;
                 try
                 {
-                    Player.Source = list;
-                    Player.Play();
+                    var player = new WasapiPlayerBuilder().Build();
+                    player.PlaybackStopped += OnPlaybackStopped;
+                    _player = player;
+                    player.Init(new ConcatenatingSampleProvider(ToCommonFormat(parts)).ToWaveProvider());
+                    player.Play();
                 }
                 catch
                 {
-                    Player.Source = null;
+                    DisposePlayer(_player);
+                    _player = null;
                     _playbackResources = null;
                     throw;
                 }
@@ -173,6 +198,18 @@ public static class SpeechReader
             // No matching voice, no audio device, etc. — reading aloud is a
             // bonus on top of the label already showing the text, not worth
             // surfacing a failure for.
+        }
+    }
+
+    // Runs read by different voices can differ in sample rate or channels;
+    // they are played back to back in the first run's format.
+    private static IEnumerable<ISampleProvider> ToCommonFormat(List<ISampleProvider> parts)
+    {
+        var rate = parts[0].WaveFormat.SampleRate;
+        foreach (var part in parts)
+        {
+            var mono = part.WaveFormat.Channels == 2 ? part.ToMono() : part;
+            yield return mono.WaveFormat.SampleRate == rate ? mono : new WdlResamplingSampleProvider(mono, rate);
         }
     }
 
@@ -213,8 +250,7 @@ public static class SpeechReader
         voice.Language.StartsWith("ar", StringComparison.OrdinalIgnoreCase);
 
     // Splits into runs of consecutive words sharing a script, each to be
-    // synthesized (and queued for playback, via MediaPlaybackList's own
-    // auto-advance) with the matching voice — so e.g. "مرحبا Ahmad, كيف
+    // synthesized (and played back to back) with the matching voice — so e.g. "مرحبا Ahmad, كيف
     // حالك؟" has "مرحبا" and "كيف حالك؟" read in Arabic and "Ahmad," read in
     // English, rather than the whole line read by whichever voice matched
     // the first Arabic character found anywhere in it.

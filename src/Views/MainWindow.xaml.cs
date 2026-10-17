@@ -174,10 +174,9 @@ public partial class MainWindow : Window
     private bool _voiceActivationStarting;
     private bool _voiceActivationClosing;
     private bool _voicePausedForEditor;
-    // The microphone is released while the azan or a custom reminder plays
-    // (its audio file and spoken text) and reopened after.
+    // The microphone is released while the azan plays and reopened after.
+    // Custom and workout reminders leave it open.
     private bool _voicePausedForAudio;
-    private bool _reminderSpeaking;
     private bool _voiceActionPending;
     private bool _voiceArmed;
     private DateTime _voiceArmedUntil;
@@ -229,7 +228,6 @@ public partial class MainWindow : Window
         // one background collection after their references have been cleared.
         _memoryRelease.Tick += (_, _) => { _memoryRelease.Stop(); _ = Task.Run(ReleaseMemory); };
         SpeechReader.Finished += () => Dispatcher.BeginInvoke(new Action(ScheduleMemoryRelease));
-        SpeechReader.Finished += () => Dispatcher.BeginInvoke(new Action(ReminderSpeechEnded));
         SourceInitialized += MainWindow_SourceInitialized;
         Loaded += MainWindow_Loaded;
         Closing += (_, _) =>
@@ -1510,11 +1508,9 @@ public partial class MainWindow : Window
         _playedPrayerInstants.RemoveWhere(ticks => ticks < now.AddDays(-2).UtcTicks);
     }
 
-    // Voice activation keeps the microphone open. Close it while the azan or
-    // a custom reminder plays, so Windows shows no microphone use and
-    // nothing listens during it.
-    private bool CloCloSoundPlaying =>
-        _azanPlayer?.IsPlaying == true || _reminderAudioPlayer?.IsPlaying == true || _reminderSpeaking;
+    // Voice activation keeps the microphone open. Close it while the azan
+    // plays, so Windows shows no microphone use and nothing listens during it.
+    private bool CloCloSoundPlaying => _azanPlayer?.IsPlaying == true;
 
     private void PauseVoiceForAudio()
     {
@@ -1577,43 +1573,21 @@ public partial class MainWindow : Window
                 _reminderAudioPlayer.Finished += ReminderAudioFinished;
             }
             _reminderSpeechAfterAudio = reminder.Speak ? reminder.Message : null;
-            if (_reminderAudioPlayer.TryPlay(reminder.AudioPath))
-            {
-                PauseVoiceForAudio();
-                return;
-            }
+            if (_reminderAudioPlayer.TryPlay(reminder.AudioPath)) return;
             _reminderSpeechAfterAudio = null;
         }
-        if (reminder.Speak) SpeakReminder(reminder.Message);
-        else ResumeVoiceAfterAudio(); // an earlier reminder was cut short
+        if (reminder.Speak) SpeechReader.Speak(reminder.Message);
     }
 
+    // Reminders play in CloClo's one audio session and keep the microphone
+    // open: voice listening carries on, and echo cancellation keeps CloClo
+    // from hearing its own sound.
     private void ReminderAudioFinished()
     {
         var message = _reminderSpeechAfterAudio;
         _reminderSpeechAfterAudio = null;
         if (message != null && !_voiceActivationClosing && _azanPlayer?.IsPlaying != true)
-            SpeakReminder(message);
-        else
-            ResumeVoiceAfterAudio();
-    }
-
-    private void SpeakReminder(string message)
-    {
-        _reminderSpeaking = true;
-        PauseVoiceForAudio();
-        // SpeechReader.Finished follows every reading, including a failed
-        // or stopped one, so the microphone always comes back.
-        SpeechReader.Speak(message);
-    }
-
-    // SpeechReader.Finished fires for any reading; only a reminder's own
-    // speech reopens the microphone, and only once nothing else is playing.
-    private void ReminderSpeechEnded()
-    {
-        if (!_reminderSpeaking) return;
-        _reminderSpeaking = false;
-        ResumeVoiceAfterAudio();
+            SpeechReader.Speak(message);
     }
 
     private void ShowCustomReminder(string message)
@@ -1697,10 +1671,21 @@ public partial class MainWindow : Window
         {
             _workoutCountdownEnd = DateTime.Now + BreakThreshold;
             SetActivityState("workout");
+            SpeakWorkoutReminder();
             return;
         }
 
         SetActivityState("awake");
+    }
+
+    // Said once as the stretch-break pose starts, in CloClo's audio session
+    // with the microphone left open. The azan takes priority.
+    private void SpeakWorkoutReminder()
+    {
+        if (_voiceActivationClosing || _azanPlayer?.IsPlaying == true) return;
+        var arabic = _settings.VoiceCommandsInArabic && SpeechReader.IsVoiceAvailable(ReadAloudVoice.ArabicHoda);
+        SpeechReader.Speak(arabic ? "وقت استراحة قصيرة. قوم اتمطع شوية." : "Time for a short stretch break.",
+            selectedVoice: arabic ? ReadAloudVoice.ArabicHoda : null);
     }
 
     private void SetActivityState(string state)
@@ -2092,7 +2077,6 @@ public partial class MainWindow : Window
         if (saved != true) return;
         _reminderAudioPlayer?.Stop();
         _reminderSpeechAfterAudio = null;
-        ResumeVoiceAfterAudio();
         _settings.CustomReminders = dialog.Reminders.ToList();
         _settings.Save();
         var now = DateTime.Now;

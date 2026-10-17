@@ -95,12 +95,16 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   interval and wears workout clothes during a stretch-break reminder. The
   **Motion** menu offers full, gentle and still modes. Time of day adds small
   visual details; the clock and weather text adapt to the desktop background.
-- **Reminders:** **Workout reminder** offers a fixed activity interval.
+- **Reminders:** **Workout reminder** offers a fixed activity interval;
+  when the stretch-break pose starts, CloClo says "Time for a short stretch
+  break" (in Arabic with Hoda when Arabic voice commands are on).
   **Custom reminders…** lets you keep up to five messages, each with a
   choice of 15, 30, 45, 60, 90 or 120 minutes, active hours, an on/off switch
   and optional speech or a chosen local MP3/WAV sound. Audio plays before
   speech when both are enabled. They use your PC's local time and show while the avatar
-  is awake; the reminder outfit returns to normal after the message. The optional startup
+  is awake; the reminder outfit returns to normal after the message.
+  Reminders play and speak while voice activation is listening and leave the
+  microphone open; it closes only when you turn voice activation off. The optional startup
   greeting speaks the local account name and briefly salutes; turn it off
   under **Privacy**.
 - **Prayer times and azan:** open **Prayer times and azan…** from the menu or
@@ -113,11 +117,11 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   recording at the five prayer times while it is running; it does not replay
   prayers missed while the PC is
   asleep or CloClo is closed. Compare calculated times with your local mosque.
-  While the azan or a custom reminder plays (its audio file and its spoken
-  text), voice activation closes the microphone and reopens it once nothing
-  is playing. The azan, reminder audio and previews play in CloClo's one
-  audio session, so they share a single CloClo entry and volume in the
-  Windows volume mixer instead of adding a new entry each time.
+  While the azan plays, voice activation closes the microphone and reopens
+  it afterwards. Everything CloClo plays (the azan, reminder sounds, spoken
+  reminders and replies, read-aloud text and previews) uses one audio
+  session, so Windows shows a single CloClo entry and volume in the volume
+  mixer instead of adding a new entry each time.
 - **Scientific calculator:** open it from the search box or right-click menu.
   It supports typed expressions, a keypad, degree/radian mode, trigonometry,
   logarithms, roots, powers, factorials and `Ans`. Calculations use a bounded
