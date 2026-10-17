@@ -1226,6 +1226,7 @@ public partial class MainWindow : Window
     // Keeper draws beside the uptime (the render window takes no mouse
     // input). Hovering it shows how much of the uptime was sleep.
     private Border? _uptimeHover;
+    private ToolTip? _uptimeTip;
     private int _uptimeTipVersion;
 
     private void CreateUptimeHover(Canvas hitSurface)
@@ -1236,13 +1237,17 @@ public partial class MainWindow : Window
             Visibility = Visibility.Collapsed,
         };
         // Opened by hand: the avatar window is never activated, and WPF's
-        // own tooltip timing doesn't open tooltips for it.
-        var tip = new ToolTip { MaxWidth = 340, PlacementTarget = _uptimeHover, Placement = PlacementMode.Bottom };
+        // own tooltip timing doesn't open tooltips for it. It opens beside
+        // the widget, level with the moon, so Keeper's motion never sits
+        // on top of it (WPF flips it right if there's no room on the left).
+        var tip = _uptimeTip = new ToolTip { MaxWidth = 340, PlacementTarget = hitSurface, Placement = PlacementMode.Left };
+        tip.Opened += (_, _) => RaiseAboveWidget(tip);
         var delay = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         delay.Tick += (_, _) =>
         {
             delay.Stop();
             FillUptimeTip(tip);
+            tip.VerticalOffset = Canvas.GetTop(_uptimeHover);
             tip.IsOpen = true;
         };
         _uptimeHover.MouseEnter += (_, _) => delay.Start();
@@ -1905,6 +1910,14 @@ public partial class MainWindow : Window
         var suggestionsHwnd = _commandSearchBar?.SuggestionsWindowHandle ?? IntPtr.Zero;
         if (suggestionsHwnd != IntPtr.Zero)
             SetWindowPos(suggestionsHwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
+        if (_uptimeTip?.IsOpen == true) RaiseAboveWidget(_uptimeTip);
+    }
+
+    // A popup has its own HWND; put it in front of the widget's windows.
+    private void RaiseAboveWidget(System.Windows.Media.Visual popupContent)
+    {
+        if (PresentationSource.FromVisual(popupContent) is HwndSource { Handle: var popupHwnd } && popupHwnd != IntPtr.Zero)
+            SetWindowPos(popupHwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
     }
 
     private void ApplyDisplaySettings()
