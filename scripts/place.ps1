@@ -11,6 +11,10 @@
 #                      (the GPU speech runtime is named 'gpu\<file>.dll')
 #   $AcceptThumbprint  a changed signing certificate (or 'unsigned') that the
 #                      user confirmed with YES, otherwise ''
+#   $RecitationsSource the project's Assets\Recitations folder
+#   $RecitationsCount  how many recitation files the installer found there
+#   $RecitationsDigest one SHA-256 over all of them (see Get-RecitationDigest),
+#                      or '' when there are none
 #
 # Run as administrator, it trusts nothing it is handed:
 # - the install folder is worked out here, from Windows' own record of
@@ -24,6 +28,8 @@
 #   the exe signed by the same certificate as the installed copy (unless the
 #   user accepted the change), each WPF DLL signed by Microsoft and each
 #   Whisper CPU or GPU DLL signed by the new exe's signer;
+# - Quran recitations, if any, are copied into Recitations\<reciter>\ and
+#   checked there as a set: the same count and the same combined SHA-256;
 # - then the folders are swapped by renaming, which fails as a whole while
 #   the old copy is in use; on any failure the previous copy is put back.
 # It writes no registry keys and no log files. The result is the exit code:
@@ -44,6 +50,35 @@ $stage = $dest + '.new'
 $old = $dest + '.old'
 function Fail([int]$code) { throw ('exit ' + $code) }
 function Clear-Dir([string]$path) { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force } }
+# Quran recitations the person downloaded into Assets\Recitations\ (which
+# git ignores): <reciter>\<SSSAAA>.mp3 only, with plain names, up to
+# 30 MB each. Anything else is left out, and a link anywhere refuses the lot,
+# since place.ps1 reads these as administrator. The same two functions are in
+# place.ps1, so both sides list and hash the set identically.
+function Get-RecitationFiles([string]$dir) {
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { return }
+    if ((Get-Item -LiteralPath $dir -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { Fail 5 }
+    foreach ($reciter in @(Get-ChildItem -LiteralPath $dir -Force -Directory)) {
+        if ($reciter.Attributes -band [IO.FileAttributes]::ReparsePoint) { Fail 5 }
+        if ($reciter.Name -cnotmatch '^[A-Za-z0-9_.-]{1,64}$') { continue }
+        foreach ($f in @(Get-ChildItem -LiteralPath $reciter.FullName -Force -File)) {
+            if ($f.Attributes -band [IO.FileAttributes]::ReparsePoint) { Fail 5 }
+            if ($f.Name -cnotmatch '^[0-9]{6}\.mp3$' -or $f.Length -le 0 -or $f.Length -gt 30MB) { continue }
+            [pscustomobject]@{ Rel = $reciter.Name + '\' + $f.Name; Path = $f.FullName; Length = $f.Length }
+        }
+    }
+}
+
+# One SHA-256 over the whole set: its "<reciter>\<file>=<SHA-256>" lines,
+# sorted ordinally and joined. Thousands of files would not fit on the
+# administrator command line one by one; this single value does.
+function Get-RecitationDigest($items) {
+    $lines = [string[]]@($items | ForEach-Object { $_.Rel + '=' + (Get-FileHash -LiteralPath $_.Path -Algorithm SHA256).Hash })
+    [Array]::Sort($lines, [StringComparer]::Ordinal)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($lines -join "`n"))) -replace '-', ''
+}
+
 try {
 Clear-Dir $stage
 Clear-Dir $old
@@ -71,11 +106,32 @@ $item = Get-Item -LiteralPath (Join-Path $Source $n) -Force
 if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { Fail 5 }
 Copy-Item -LiteralPath $item.FullName -Destination (Join-Path $stage $n)
 }
+# Quran recitations, when the installer found some: copied, then checked as a
+# set inside Program Files against the count and SHA-256 it was handed.
+$recRoot = Join-Path $stage 'Recitations'
+$recitationCount = 0
+if ($RecitationsDigest) {
+if ($RecitationsDigest -notmatch '^[0-9A-F]{64}$' -or $RecitationsCount -notmatch '^[0-9]{1,6}$') { Fail 5 }
+New-Item -ItemType Directory -Path $recRoot | Out-Null
+foreach ($r in @(Get-RecitationFiles $RecitationsSource)) {
+    $reciterDir = Join-Path $recRoot (Split-Path $r.Rel -Parent)
+    if (-not (Test-Path -LiteralPath $reciterDir)) { New-Item -ItemType Directory -Path $reciterDir | Out-Null }
+    Copy-Item -LiteralPath $r.Path -Destination (Join-Path $recRoot $r.Rel)
+}
+$stagedRecitations = @(Get-RecitationFiles $recRoot)
+$recitationCount = $stagedRecitations.Count
+if ($recitationCount -ne [int]$RecitationsCount -or (Get-RecitationDigest $stagedRecitations) -ne $RecitationsDigest) { Fail 7 }
+if (@(Get-ChildItem -LiteralPath $recRoot -Force -Recurse -File).Count -ne $recitationCount) { Fail 7 }
+if (@(Get-ChildItem -LiteralPath $recRoot -Force -Recurse -Directory | Where-Object { $_.Parent.FullName -ne $recRoot }).Count) { Fail 7 }
+}
 # Checked inside Program Files: exactly the expected files, each exactly as built.
-# The only folder allowed is gpu\, and only when the build has one.
-$folders = @(Get-ChildItem -LiteralPath $stage -Force -Recurse -Directory)
+# The only folder allowed is gpu\, and only when the build has one, besides
+# the Recitations\ tree checked above.
+$inRecitations = { param($i) $i.FullName -eq $recRoot -or $i.FullName.StartsWith($recRoot + '\') }
+$folders = @(Get-ChildItem -LiteralPath $stage -Force -Recurse -Directory | Where-Object { -not (& $inRecitations $_) })
 if ($folders.Count -gt 1 -or ($folders.Count -eq 1 -and $folders[0].FullName -ne (Join-Path $stage 'gpu'))) { Fail 7 }
-$staged = @(Get-ChildItem -LiteralPath $stage -Force -Recurse -File)
+if ((Test-Path -LiteralPath $recRoot) -and -not $RecitationsDigest) { Fail 7 }
+$staged = @(Get-ChildItem -LiteralPath $stage -Force -Recurse -File | Where-Object { -not (& $inRecitations $_) })
 if ($staged.Count -ne $want.Count) { Fail 7 }
 foreach ($f in $staged) {
 $rel = $f.FullName.Substring($stage.Length + 1)

@@ -305,6 +305,15 @@ total so far.
   for them, so they are for your own use and aren't included in this
   repository. Other reciters are in folders beside `Alafasy_64kbps` on the
   same site.
+
+  *Protected copy:* a Program Files install (`scripts/Install-CloClo.cmd`)
+  also copies the `.mp3` files in `Assets\Recitations\<reciter>\` to
+  `C:\Program Files\CloClo\Recitations\`, where only administrators can
+  change them (see [Per-user or Program Files](#per-user-or-program-files)).
+  With no reciter folder chosen, the window uses those installed
+  recitations by itself ("Installed: Alafasy_64kbps"), and **Reciter
+  folder…** opens there. If you chose the project folder before, choose the
+  installed one once to use the protected copy.
 - **Avatar reminder:** under **Remind**, choose every 30 minutes, 1 hour or 2
   hours to have Keeper show the ayah you're learning now and then. It shows
   only while the avatar is awake, like the custom reminders.
@@ -727,6 +736,14 @@ administrator, `place.ps1` trusts nothing it's handed:
   holds exactly the expected files, each with exactly its built SHA-256, the
   exe signed by the same certificate as the installed copy (or the one you
   accepted), and every DLL intact and signed by Microsoft;
+- Quran recitations: any `<reciter>\SSSAAA.mp3` files in the project's
+  `Assets\Recitations\` (plain names, up to 30 MB each; other files are left
+  out and a link refuses the install) are copied into
+  `CloClo.new\Recitations\`. There can be thousands, too many to list one by
+  one on the administrator command line, so the installer passes their count
+  and one SHA-256 over all of them (each file's name and SHA-256, sorted),
+  and `place.ps1` recomputes it over its own copies in Program Files; any
+  difference refuses the install. A per-user install leaves them out;
 - only then does it swap the folders. A swap fails as a whole while the old
   copy is in use, and on any failure the previous copy is put back — CloClo
   is never left half-installed.

@@ -231,8 +231,10 @@ public partial class QuranWindow : Window
         SurahProgress.Value = done;
         ProgressText.Text = $"{done} of {info.AyahCount} ayat memorized in {info.Name} · {_store.Memorized.Count} in all";
 
-        FolderText.Text = _store.AudioFolder ?? "No reciter folder: text only";
-        StatusText.Text = _notice ?? (_store.AudioFolder != null && missing is { } m
+        var installed = _store.AudioFolder == null ? QuranStore.InstalledReciterFolder() : null;
+        FolderText.Text = _store.AudioFolder
+            ?? (installed != null ? $"Installed: {System.IO.Path.GetFileName(installed)}" : "No reciter folder: text only");
+        StatusText.Text = _notice ?? (_store.EffectiveAudioFolder != null && missing is { } m
             ? $"The reciter folder has no {surah:000}{m:000}.mp3, so {(range ? "these ayat are" : "this ayah is")} text only."
             : "");
     }
@@ -380,6 +382,9 @@ public partial class QuranWindow : Window
     private void ChooseFolder_Click(object sender, RoutedEventArgs e)
     {
         var picker = new OpenFolderDialog { Title = "Choose a folder of per-ayah recitations (001001.mp3 …)", Multiselect = false };
+        // Start at the recitations a Program Files install put beside CloClo.
+        if (System.IO.Directory.Exists(QuranStore.InstalledRecitationsRoot))
+            picker.InitialDirectory = QuranStore.InstalledRecitationsRoot;
         if (picker.ShowDialog(this) != true) return;
         if (!QuranStore.IsAllowedFolder(picker.FolderName))
         {

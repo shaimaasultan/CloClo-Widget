@@ -51,13 +51,37 @@ public sealed class QuranStore
         return Memorized.Count(i => i >= first && i < last);
     }
 
+    // Where a Program Files install puts the recitations it found in the
+    // project's Assets\Recitations (one folder per reciter).
+    public static string InstalledRecitationsRoot => Path.Combine(AppContext.BaseDirectory, "Recitations");
+
+    // The first installed reciter folder with any recitations, or null.
+    public static string? InstalledReciterFolder()
+    {
+        try
+        {
+            if (!Directory.Exists(InstalledRecitationsRoot)) return null;
+            return Directory.GetDirectories(InstalledRecitationsRoot)
+                .OrderBy(d => d, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault(d => Directory.EnumerateFiles(d, "??????.mp3").Any());
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    // The folder chosen in the window, or else the installed recitations.
+    public string? EffectiveAudioFolder => AudioFolder ?? InstalledReciterFolder();
+
     // The recitation file for an ayah, if the folder has a playable one.
     public string? AudioFileFor(int surah, int ayah)
     {
-        if (!IsAllowedFolder(AudioFolder)) return null;
+        var folder = EffectiveAudioFolder;
+        if (!IsAllowedFolder(folder)) return null;
         foreach (var extension in new[] { ".mp3", ".wav" })
         {
-            var path = Path.Combine(AudioFolder!, $"{surah:000}{ayah:000}{extension}");
+            var path = Path.Combine(folder!, $"{surah:000}{ayah:000}{extension}");
             if (LocalAudioPlayer.IsPlayable(path)) return path;
         }
         return null;
