@@ -155,7 +155,7 @@ two decimal places.
   e.g. "Wi-Fi, 3 of 4 bars, private network, not metered". It comes from
   Windows' own record of the connection, updates when Windows reports a
   change, and sends nothing; network names are never shown. Turn it off with
-  **Show internet connection** in the right-click menu or search.
+  **Show internet connection** under right-click → **Privacy**, or search.
 - **Bluetooth and headphones:** next to the internet icon, the Bluetooth rune
   shows while Bluetooth is on (bright with a device connected, faint with
   none; hidden while it's off), and a headphones glyph shows while sound
@@ -166,7 +166,7 @@ two decimal places.
   Windows' own radio, Bluetooth and sound-device events, and device names are
   never shown. Headphones plugged into a jack that Windows still calls
   "Speakers" can't be told apart. Turn them off with **Show Bluetooth and
-  headphones**.
+  headphones** under right-click → **Privacy**.
 - **Where they sit:** these icons go beside the battery percentage when they
   fit before the sun or moon, or on a row of their own in the top-left
   column otherwise. On a PC without a battery they come first in the column.
@@ -294,13 +294,18 @@ notifications until you choose **Notifications** from the icon bar or search.
 
 ### Search box
 
-<img src="docs/screenshots/features/search.png" alt="Search box with 'st' typed and suggestions such as Windows status, Show PC uptime, Custom reminders, Refresh weather and Start new dictation file, each with a coloured badge" width="400" align="right">
+<img src="docs/screenshots/features/search.png" alt="Search box with 'st' typed and suggestions such as Windows status, Privacy: Show PC uptime, Weather: Refresh weather and Dictation: Start new dictation file, each with a coloured badge" width="400" align="right">
 
 The search box below the widget finds right-click menu actions, including
 **Windows status**, **File summary and search**, **Scientific calculator**,
 **Custom reminders**, **Prayer times and azan**, **Open dictation folder**,
 and avatar, weather and privacy settings.
 
+- Actions that live in a submenu start with its name, as in the menu:
+  **Privacy: Show internet connection**, **Weather: Refresh weather**,
+  **Dictation: Open dictation folder**, **Voice converters: Letter
+  signals**. Typing just the action ("internet") or just the submenu
+  ("privacy") finds it.
 - Suggestions open below or beside the box; choose with the mouse or arrow
   keys and Enter. Esc closes them.
 - Coloured badges distinguish windows, menus, watchers, file actions and
@@ -315,16 +320,24 @@ and avatar, weather and privacy settings.
 
 ### Right-click menu
 
-<img src="docs/screenshots/features/menu.png" alt="CloClo's right-click menu: Set location, Avatar, Weather, Icons, Motion, Sleep after, Workout reminder, Custom reminders, Prayer times and azan, Windows status, toggles, tools, Privacy, Always on top, Start with Windows and Exit" width="300" align="right">
+<img src="docs/screenshots/features/menu.png" alt="CloClo's right-click menu: Set location, Avatar, Weather, Icons, Motion, Sleep after, Workout reminder, Custom reminders, Prayer times and azan, Windows status, File summary and search, Scientific calculator, Voice converters, Dictation, Privacy and Exit" width="300" align="right">
 
 **Right-click** (or double-click) for the menu: **Set location…**,
 **Avatar**, **Weather**, **Icons**, **Motion**, **Sleep after**, **Workout
 reminder**, **Custom reminders…**, **Prayer times and azan…**, **Windows
-status** (a dashboard of the PC's current state), **Show PC uptime**, **Show
-internet connection**, **Show Bluetooth and headphones**, **File summary and
-search…**, **Scientific calculator…**, the voice signal tools, **Refresh
-weather**, **Start new dictation file**, **Open dictation folder**,
-**Privacy**, **Always on top**, **Start with Windows** and **Exit**.
+status…** (a dashboard of the PC's current state), **File summary and
+search…**, **Scientific calculator…**, **Voice converters**, **Dictation**,
+**Privacy** and **Exit**. The submenus hold:
+
+- **Weather:** the sky to show (live or one you pick) and **Refresh weather**.
+- **Voice converters:** Sound pattern test, Voice signals, Find it in David's
+  words, Voice converter and Letter signals.
+- **Dictation:** **Start new dictation file** and **Open dictation folder**.
+- **Privacy:** Hide from screen sharing, Show notification text, Speak
+  greeting, Hold right-click to talk and Voice commands in Arabic, then the
+  display and startup settings: **Show PC uptime**, **Show internet
+  connection**, **Show Bluetooth and headphones**, **Always on top** and
+  **Start with Windows**.
 
 With **Hold right-click to talk** on, holding the button for a second talks
 to CloClo instead of opening the menu.
@@ -448,8 +461,9 @@ a bounded local arithmetic parser, not a scripting engine or network service.
 
 <img src="docs/screenshots/features/voice-converter.png" alt="Voice converter window comparing the synthesized David voice saying 'cloclo' and 'youtube' as waveforms, with Record me and pitch controls" width="560">
 
-The search box and right-click menu open Sound pattern test, Voice signals,
-Find it in David's words, Voice converter, and Letter signals. These local
+The search box and right-click → **Voice converters** open Sound pattern
+test, Voice signals, Find it in David's words, Voice converter, and Letter
+signals. These local
 experiments compare microphone samples with synthesized Windows voices.
 Recordings stay in memory and stop when their windows close. Sound pattern
 test can save measured sound pieces to
@@ -794,7 +808,7 @@ folder you can write to, so the check is weaker; the script says so.)
 | "The .NET SDK wasn't found" | Install the .NET 10 SDK from dotnet.microsoft.com (it installs under Program Files) |
 | CloClo says it "won't start while these files are next to it" or "found native files it can't verify" | Something placed files beside or into CloClo — delete the files it names, consider a malware scan, and reinstall |
 | CloClo "won't run with a .NET profiler attached" | Remove the listed environment variables (System Properties → Environment Variables), sign out and back in |
-| CloClo doesn't start at sign-in | Check **Settings → Apps → Startup** has CloClo switched on; otherwise right-click it → **Start with Windows** off and on again |
+| CloClo doesn't start at sign-in | Check **Settings → Apps → Startup** has CloClo switched on; otherwise right-click it → **Privacy** → **Start with Windows** off and on again |
 | "Source files … changed while building" | Something edited the project during the build — run the install again, and use `scripts/Check-Source.cmd` if you didn't expect changes |
 | `scripts/Check-Source.cmd`: "isn't installed with a source record yet" | The installed copy predates source records — run `scripts/Install-CloClo.cmd` once |
 | `scripts/Check-Source.cmd` lists changes you didn't make | Don't build or install; look at the listed files first (`git diff` shows what changed) |

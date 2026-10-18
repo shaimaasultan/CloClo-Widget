@@ -737,25 +737,25 @@ public partial class MainWindow : Window
         var actions = new List<WidgetSearchAction>
         {
             new("Windows status", "storage connection drive disk network wifi cpu processor memory ram process battery power display monitor gpu graphics uptime security antivirus firewall update dashboard", WidgetSearchActionKind.OpenWindow, ShowWindowsStatus),
-            new("Show PC uptime", "uptime boot started restart running time since", WidgetSearchActionKind.Toggle, ToggleShowUptime, () => _settings.ShowUptime),
-            new("Show internet connection", "network wifi wi-fi ethernet wired cellular mobile 5g 4g lte offline metered public private signal bars", WidgetSearchActionKind.Toggle, ToggleShowNetwork, () => _settings.ShowNetwork),
-            new("Show Bluetooth and headphones", "bluetooth headphones headset earbuds earphones audio devices connected", WidgetSearchActionKind.Toggle, ToggleShowDevices, () => _settings.ShowDevices),
+            new("Privacy: Show PC uptime", "uptime boot started restart running time since", WidgetSearchActionKind.Toggle, ToggleShowUptime, () => _settings.ShowUptime),
+            new("Privacy: Show internet connection", "network wifi wi-fi ethernet wired cellular mobile 5g 4g lte offline metered public private signal bars", WidgetSearchActionKind.Toggle, ToggleShowNetwork, () => _settings.ShowNetwork),
+            new("Privacy: Show Bluetooth and headphones", "bluetooth headphones headset earbuds earphones audio devices connected", WidgetSearchActionKind.Toggle, ToggleShowDevices, () => _settings.ShowDevices),
             new("File summary and search", "files folder documents dashboard find text word phrase grep size count docx", WidgetSearchActionKind.OpenWindow, ShowFileInsights),
             new("Scientific calculator", "math arithmetic trig sin cos log square root", WidgetSearchActionKind.OpenWindow, ShowScientificCalculator),
-            new("Sound pattern test", "voice signal microphone cloclo accessibility", WidgetSearchActionKind.OpenWindow, ShowSoundPatternTest),
-            new("Voice signals", "waveform david hoda microphone record compare accessibility", WidgetSearchActionKind.OpenWindow, ShowVoiceSignals),
-            new("Find it in David's words", "david match word microphone record recognise accessibility", WidgetSearchActionKind.OpenWindow, ShowDavidMatch),
-            new("Voice converter", "david convert my voice microphone record compare accessibility", WidgetSearchActionKind.OpenWindow, ShowVoiceConverter),
-            new("Letter signals", "letters formant table build word david compare signal", WidgetSearchActionKind.OpenWindow, ShowLetterSignals),
+            new("Voice converters: Sound pattern test", "voice signal microphone cloclo accessibility", WidgetSearchActionKind.OpenWindow, ShowSoundPatternTest),
+            new("Voice converters: Voice signals", "waveform david hoda microphone record compare accessibility", WidgetSearchActionKind.OpenWindow, ShowVoiceSignals),
+            new("Voice converters: Find it in David's words", "david match word microphone record recognise accessibility", WidgetSearchActionKind.OpenWindow, ShowDavidMatch),
+            new("Voice converters: Voice converter", "david convert my voice microphone record compare accessibility", WidgetSearchActionKind.OpenWindow, ShowVoiceConverter),
+            new("Voice converters: Letter signals", "letters formant table build word david compare signal", WidgetSearchActionKind.OpenWindow, ShowLetterSignals),
             new("Custom reminders", "reminder remainder schedule message", WidgetSearchActionKind.OpenWindow, OpenCustomReminders),
             new("Prayer times and azan", "salah fajr dhuhr asr maghrib isha adhan", WidgetSearchActionKind.OpenWindow, OpenPrayerTimes),
-            new("Open dictation folder", "dictation files recordings", WidgetSearchActionKind.OpenFolder, OpenDictationFolder),
+            new("Dictation: Open dictation folder", "dictation files recordings", WidgetSearchActionKind.OpenFolder, OpenDictationFolder),
             new("Set location", "city place weather gps", WidgetSearchActionKind.OpenWindow, OpenLocationDialog),
-            new("Refresh weather", "forecast update", WidgetSearchActionKind.Run, () => _ = RefreshWeatherAsync()),
-            new("Start new dictation file", "dictate speech recording", WidgetSearchActionKind.CreateFile, StartNewDictationFile),
+            new("Weather: Refresh weather", "forecast update", WidgetSearchActionKind.Run, () => _ = RefreshWeatherAsync()),
+            new("Dictation: Start new dictation file", "dictate speech recording", WidgetSearchActionKind.CreateFile, StartNewDictationFile),
             new("Hide widget (restore from tray)", "visibility tray hide", WidgetSearchActionKind.Hide, ToggleVisible),
-            new("Always on top", "toggle floating", WidgetSearchActionKind.Toggle, ToggleAlwaysOnTop, () => _settings.AlwaysOnTop),
-            new("Start with Windows", "startup login toggle", WidgetSearchActionKind.Toggle, ToggleStartWithWindows, () => StartupRegistration.IsEnabled()),
+            new("Privacy: Always on top", "toggle floating", WidgetSearchActionKind.Toggle, ToggleAlwaysOnTop, () => _settings.AlwaysOnTop),
+            new("Privacy: Start with Windows", "startup login toggle", WidgetSearchActionKind.Toggle, ToggleStartWithWindows, () => StartupRegistration.IsEnabled()),
             new("Privacy: Hide from screen sharing", "capture screenshots toggle", WidgetSearchActionKind.Toggle, ToggleHideFromScreenCapture, () => _settings.HideFromScreenCapture),
             new("Privacy: Show notification text", "notifications privacy toggle", WidgetSearchActionKind.Toggle, ToggleNotificationText, () => _settings.ShowNotificationText),
             new("Privacy: Speak greeting", "account name startup voice toggle", WidgetSearchActionKind.Toggle, ToggleSpeakGreeting, () => _settings.SpeakGreeting),
@@ -2361,22 +2361,22 @@ public partial class MainWindow : Window
         menu.Items.Add(Item("Custom reminders…", OpenCustomReminders));
         menu.Items.Add(Item("Prayer times and azan…", OpenPrayerTimes));
         menu.Items.Add(Item("Windows status…", ShowWindowsStatus));
-        menu.Items.Add(Item("Show PC uptime", ToggleShowUptime, isChecked: _settings.ShowUptime));
-        menu.Items.Add(Item("Show internet connection", ToggleShowNetwork, isChecked: _settings.ShowNetwork));
-        menu.Items.Add(Item("Show Bluetooth and headphones", ToggleShowDevices, isChecked: _settings.ShowDevices));
         menu.Items.Add(Item("File summary and search…", ShowFileInsights));
         menu.Items.Add(Item("Scientific calculator…", ShowScientificCalculator));
-        menu.Items.Add(Item("Sound pattern test…", ShowSoundPatternTest));
-        menu.Items.Add(Item("Voice signals…", ShowVoiceSignals));
-        menu.Items.Add(Item("Find it in David's words…", ShowDavidMatch));
-        menu.Items.Add(Item("Voice converter…", ShowVoiceConverter));
-        menu.Items.Add(Item("Letter signals…", ShowLetterSignals));
-        menu.Items.Add(Item("Refresh weather", () => _ = RefreshWeatherAsync()));
-        menu.Items.Add(Item("Start new dictation file", StartNewDictationFile));
-        menu.Items.Add(Item("Open dictation folder", OpenDictationFolder));
+        menu.Items.Add(SubMenu("Voice converters", new object[]
+        {
+            Item("Sound pattern test…", ShowSoundPatternTest),
+            Item("Voice signals…", ShowVoiceSignals),
+            Item("Find it in David's words…", ShowDavidMatch),
+            Item("Voice converter…", ShowVoiceConverter),
+            Item("Letter signals…", ShowLetterSignals),
+        }));
+        menu.Items.Add(SubMenu("Dictation", new object[]
+        {
+            Item("Start new dictation file", StartNewDictationFile),
+            Item("Open dictation folder", OpenDictationFolder),
+        }));
         menu.Items.Add(BuildPrivacyMenu());
-        menu.Items.Add(Item("Always on top", ToggleAlwaysOnTop, isChecked: _settings.AlwaysOnTop));
-        menu.Items.Add(Item("Start with Windows", ToggleStartWithWindows, isChecked: StartupRegistration.IsEnabled()));
         menu.Items.Add(new Separator());
         menu.Items.Add(Item("Exit", () => System.Windows.Application.Current.Shutdown()));
         return menu;
@@ -2415,7 +2415,9 @@ public partial class MainWindow : Window
     }
 
     private MenuItem BuildSkyMenu() =>
-        SubMenu("Weather", SkyOptions.Select(opt => Item(opt.Label, () => SetSky(opt.Value), isChecked: _settings.Sky == opt.Value)));
+        SubMenu("Weather", SkyOptions.Select(opt => (object)Item(opt.Label, () => SetSky(opt.Value), isChecked: _settings.Sky == opt.Value))
+            .Append(new Separator())
+            .Append(Item("Refresh weather", () => _ = RefreshWeatherAsync())));
 
     private static readonly (string Value, string Label)[] MotionOptions =
     {
@@ -2706,6 +2708,12 @@ public partial class MainWindow : Window
             Item("Speak greeting and account name on startup", ToggleSpeakGreeting, isChecked: _settings.SpeakGreeting),
             Item("Hold right-click to talk", TogglePushToTalk, isChecked: _settings.PushToTalkEnabled),
             Item("Voice commands in Arabic", ToggleVoiceCommandsInArabic, isChecked: _settings.VoiceCommandsInArabic),
+            new Separator(),
+            Item("Show PC uptime", ToggleShowUptime, isChecked: _settings.ShowUptime),
+            Item("Show internet connection", ToggleShowNetwork, isChecked: _settings.ShowNetwork),
+            Item("Show Bluetooth and headphones", ToggleShowDevices, isChecked: _settings.ShowDevices),
+            Item("Always on top", ToggleAlwaysOnTop, isChecked: _settings.AlwaysOnTop),
+            Item("Start with Windows", ToggleStartWithWindows, isChecked: StartupRegistration.IsEnabled()),
         });
 
     private void ToggleHideFromScreenCapture()
