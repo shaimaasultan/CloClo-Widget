@@ -215,6 +215,14 @@ Asr, are selectable. Times are displayed in the saved location's time zone
 when available. Changing **Set location…** recalculates the schedule for that
 city. Compare calculated times with your local mosque.
 
+- **Qibla direction:** **Qibla direction…** at the bottom of the window shows
+  the direction of the Kaaba from your saved location on two compasses: the
+  shortest route on the globe (the heading most mosques and Qibla apps use)
+  and the straight line on a flat map, with a short explanation of why they
+  differ. North is at the top. On a PC with a compass sensor the compasses
+  turn with the PC, and **Read aloud** speaks the directions.
+
+  <img src="docs/screenshots/features/qibla.png" alt="Qibla direction window for Cairo: Qibla 136° SE on the globe compass and 138° SE on the flat-map compass, with Read aloud and Close" width="460">
 - **Azan:** automatic azan is off until you choose a local MP3 or WAV
   recording and enable it. CloClo plays the recording at the five prayer
   times while it is running; it does not replay prayers missed while the PC
