@@ -473,6 +473,10 @@ under right-click → **Privacy**. Until then its entry under right-click → **
 trending sources** is greyed out (hover it to see why), and choosing it from
 search only says it's off. Turning an opt-in off closes its window.
 
+| Only arXiv allowed: the other two are greyed out | arXiv newest papers in Mathematics |
+|---|---|
+| <img src="docs/screenshots/features/sub-trends.png" alt="Right-click menu with Online trending sources open: Google Trends and Wikipedia most-read greyed out, arXiv newest papers available" width="420"> | <img src="docs/screenshots/features/trends-arxiv.png" alt="arXiv newest papers window for Mathematics: ranked cards with title, sub-field and date, authors, the start of the abstract and a PDF link" width="380"> |
+
 - **Google Trends…** lists today's trending searches for a country, ranked,
   with the approximate number of searches and up to three related news
   headlines with their sources. Pick the country at the top (18 are offered;
