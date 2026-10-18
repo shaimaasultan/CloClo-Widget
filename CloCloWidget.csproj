@@ -93,6 +93,15 @@
            Text="$(ArabicWhisperModel) is altered or incomplete. Delete it and build again to download the pinned model." />
   </Target>
 
+  <!-- The Quran text, surah names and Saheeh International's English
+       meaning for memorization, from tanzil.net, unchanged. Compiled into the signed exe like the daily content, so
+       nothing can swap the text on disk and nothing is fetched. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\Quran\quran-uthmani.txt" LogicalName="CloCloWidget.Quran.quran-uthmani.txt" />
+    <EmbeddedResource Include="Assets\Quran\quran-data.xml" LogicalName="CloCloWidget.Quran.quran-data.xml" />
+    <EmbeddedResource Include="Assets\Quran\en.sahih.txt" LogicalName="CloCloWidget.Quran.en.sahih.txt" />
+  </ItemGroup>
+
   <!-- Keep the verified model as a separate installed data file. Bundling it
        into the exe would inflate the executable and duplicate it in memory. -->
   <ItemGroup>

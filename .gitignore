@@ -3,3 +3,6 @@ obj/
 publish/
 *.user
 dist/
+# Per-ayah Quran recitations downloaded for local use (large, and not ours
+# to redistribute); CloClo's Quran window plays them from here.
+Assets/Recitations/

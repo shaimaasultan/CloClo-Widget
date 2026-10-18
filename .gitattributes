@@ -11,3 +11,6 @@
 *.png binary
 *.pfx binary
 Assets/Models/ggml-base.bin filter=lfs diff=lfs merge=lfs -text
+# The Tanzil Quran text and metadata are kept byte-for-byte as published
+# (their licence forbids changing the text), so never convert them.
+Assets/Quran/* -text

@@ -249,6 +249,55 @@ city. Compare calculated times with your local mosque.
   single CloClo entry and volume in the volume mixer instead of adding a new
   entry each time.
 
+### Quran memorization
+
+<img src="docs/screenshots/features/quran.png" alt="Quran memorization window showing Ayat al-Kursi (Al-Baqara 255) in large Uthmani script with its English meaning underneath, Show English ticked, Previous, +1 read and Memorized — next ayah buttons, the surah progress bar and the reciter folder, pause and reminder settings" width="460">
+
+Open **Quran memorization…** from the right-click menu, the search box (try
+"quran" or "حفظ") or its 📗 icon on the icon bar. It works one ayah at a
+time and is completely offline:
+
+1. Pick a surah and ayah at the top (it remembers where you are).
+2. The ayah is shown large in Uthmani script, with its number in ornate
+   brackets. On the first ayah of a surah the basmala is shown above it and
+   isn't part of what you memorize (Al-Fatiha and At-Tawba excepted).
+3. Press **▶ Repeat** to hear it on a loop, with a short pause between
+   repetitions (1, 2, 3 or 5 seconds). The counter shows how many times
+   you've heard it; **❚❚ Pause** stops it.
+4. When you know it, press **✓ Memorized — next ayah**. It's marked
+   memorized and the next ayah starts straight away, still looping; at the
+   end of a surah the next surah begins. **◀ Previous** goes back without
+   unmarking anything.
+5. Tick **Show English** to see the meaning under the Arabic, in Saheeh
+   International's translation (the Arabic is set a little smaller so both
+   fit). It's off by default, so the Arabic stays the focus, and remembered
+   once you turn it on.
+
+The progress bar shows how many ayat of the surah you've memorized, and the
+total so far.
+
+- **Recitation audio:** choose **Reciter folder…**, a folder on this PC of
+  per-ayah recordings named like [everyayah.com](https://everyayah.com)'s
+  (`001001.mp3` is Al-Fatiha 1, `002255.mp3` Al-Baqara 255; `.wav` works
+  too). CloClo never downloads audio: you choose the reciter and copy the
+  files yourself. Without a folder, or for an ayah missing from it, the
+  window is text only and **+1 read** counts your own readings instead.
+- **Avatar reminder:** under **Remind**, choose every 30 minutes, 1 hour or 2
+  hours to have Keeper show the ayah you're learning now and then. It shows
+  only while the avatar is awake, like the custom reminders.
+- **With other sounds:** hold to talk doesn't listen while the recitation
+  plays, and the azan or a reminder sound stops the loop.
+- **The text** is the [Tanzil Project](https://tanzil.net)'s verified
+  Uthmani text (version 1.1) with its surah names, licensed CC BY 3.0 and
+  included unchanged with its copyright notice. It's compiled into the
+  signed exe, so it can't be altered on disk and nothing is fetched.
+  Compare with a printed mushaf if in doubt.
+- **The English** is Saheeh International's translation as published by
+  Tanzil, also included unchanged and compiled into the exe. Tanzil offers
+  it for non-commercial use with attribution, which suits CloClo as a free
+  app; anyone redistributing CloClo commercially would need Saheeh
+  International's permission.
+
 ### Icon bar
 
 The row under the temperature holds up to 7 of these at a time, picked in
@@ -272,6 +321,7 @@ example **icon stopwatch**):
 | Stopwatch | One click starts it, the next pauses it, the next stops and resets it; the time shows top-left, under the battery |
 | Daily quote, word, joke & fact | A speech bubble with today's quote, an English → Arabic word (with an example), a joke and a "did you know" fact; click it for the next one, × or Esc to close. All built in - nothing is fetched |
 | Layer Sudoku (daily game) | Opens the Layer Sudoku game - today's daily puzzle (the same one the HTML version gives, with a streak), or 6×6 to 16×16 at four levels; layer view, method-following hints, notes, undo, timer and pause. Progress is saved |
+| Quran memorization | Opens the [Quran memorization](#quran-memorization) window at the ayah you're learning |
 
 | Daily bubble | Stopwatch |
 |---|---|
@@ -320,11 +370,12 @@ and avatar, weather and privacy settings.
 
 ### Right-click menu
 
-<img src="docs/screenshots/features/menu.png" alt="CloClo's right-click menu: Set location, Avatar, Weather, Icons, Motion, Sleep after, Workout reminder, Custom reminders, Prayer times and azan, Windows status, File summary and search, Scientific calculator, Online trending sources, Voice converters, Dictation, Privacy and Exit" width="300" align="right">
+<img src="docs/screenshots/features/menu.png" alt="CloClo's right-click menu: Set location, Avatar, Weather, Icons, Motion, Sleep after, Workout reminder, Custom reminders, Prayer times and azan, Quran memorization, Windows status, File summary and search, Scientific calculator, Online trending sources, Voice converters, Dictation, Privacy and Exit" width="300" align="right">
 
 **Right-click** (or double-click) for the menu: **Set location…**,
 **Avatar**, **Weather**, **Icons**, **Motion**, **Sleep after**, **Workout
-reminder**, **Custom reminders…**, **Prayer times and azan…**, **Windows
+reminder**, **Custom reminders…**, **Prayer times and azan…**, **Quran
+memorization…**, **Windows
 status…** (a dashboard of the PC's current state), **File summary and
 search…**, **Scientific calculator…**, **Online trending sources**, **Voice
 converters**, **Dictation**, **Privacy** and **Exit**. The submenus hold:
@@ -571,6 +622,7 @@ the menu of whatever is under the cursor. Details are under
 - **Where things are kept:**
   - Settings: `%AppData%\CloCloWidget\settings.json`
   - Sudoku progress: `%AppData%\CloCloWidget\sudoku.json`
+  - Quran memorization progress: `%AppData%\CloCloWidget\quran.json`
   - Dictation: `%LocalAppData%\CloCloWidget\Dictation`
   - Error log: `%LocalAppData%\CloCloWidget\errors.log`
 

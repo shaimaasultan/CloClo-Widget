@@ -106,7 +106,7 @@ public partial class MainWindow : Window
     // currently enabled.
     private static readonly string[] IconOrder =
     {
-        "youtube", "spotify", "bell", "search", "gpu", "read", "details", "mic", "convert", "color", "qr", "volume", "clipboard", "stopwatch", "daily", "sudoku",
+        "youtube", "spotify", "bell", "search", "gpu", "read", "details", "mic", "convert", "color", "qr", "volume", "clipboard", "stopwatch", "daily", "sudoku", "quran",
     };
     private const double IconWidth = 18, IconGap = 2, IconTop = 187, IconHeight = 20;
     // Matches #mediaBar's own left:10px anchor (stage x=10, i.e. relative
@@ -189,6 +189,9 @@ public partial class MainWindow : Window
     private DailyBubbleWindow? _dailyBubble;
     // The Layer Sudoku window, while it's open (one at a time).
     private SudokuWindow? _sudoku;
+    private QuranWindow? _quranWindow;
+    private QuranStore? _quranStore;
+    private DateTime _lastQuranReminder = DateTime.Now;
     private DictationCaptureWindow? _dictationWindow;
     private bool _voiceActivationClosing;
     // Hold to talk doesn't start while a speech editor or voice test uses
@@ -794,6 +797,7 @@ public partial class MainWindow : Window
                 ToggleStopwatch, CurrentBadge: StopwatchSearchBadge),
             new("Daily quote, word, joke and fact", "bubble today", WidgetSearchActionKind.Toggle, ToggleDailyBubble, () => _dailyBubble != null),
             new("Layer Sudoku", "daily game puzzle", WidgetSearchActionKind.OpenWindow, OpenSudoku),
+            new("Quran memorization", "quran koran hifz memorize memorise ayah aya surah sura recite قرآن حفظ", WidgetSearchActionKind.OpenWindow, OpenQuran),
         });
 
         foreach (var opt in AvatarOptions)
@@ -1557,6 +1561,11 @@ public partial class MainWindow : Window
             OpenSudoku();
             return;
         }
+        if (icons.TryGetValue("quran", out var quranRect) && quranRect.Contains(p))
+        {
+            OpenQuran();
+            return;
+        }
         if (icons.TryGetValue("daily", out var dailyRect) && dailyRect.Contains(p))
         {
             ToggleDailyBubble();
@@ -1931,6 +1940,7 @@ public partial class MainWindow : Window
                     _reminderAudioPlayer?.Stop();
                     _reminderSpeechAfterAudio = null;
                     SpeechReader.Stop();
+                    _quranWindow?.StopRecitation();
                     if (_azanPlayer == null)
                     {
                         _azanPlayer = new LocalAudioPlayer();
@@ -1969,7 +1979,7 @@ public partial class MainWindow : Window
 
     // Nothing listens while the azan plays: a hold in progress is dropped
     // and a new one waits until it ends.
-    private bool CloCloSoundPlaying => _azanPlayer?.IsPlaying == true;
+    private bool CloCloSoundPlaying => _azanPlayer?.IsPlaying == true || _quranWindow?.IsReciting == true;
 
     private void PauseVoiceForAudio()
     {
@@ -2010,8 +2020,48 @@ public partial class MainWindow : Window
             _customReminderLastChecked[reminder] = now;
             ShowCustomReminder(reminder.Message);
             PlayCustomReminderAudio(reminder);
-            break;
+            return; // the Quran reminder waits a minute rather than replace it
         }
+        QuranReminderTick(now);
+    }
+
+    // The avatar shows the ayah being memorized every so often, if chosen in
+    // the Quran window - only while awake, like the custom reminders.
+    private void QuranReminderTick(DateTime now)
+    {
+        if (_activityState != "awake") { _lastQuranReminder = now; return; }
+        _quranStore ??= QuranStore.Load();
+        var minutes = _quranStore.ReminderMinutes;
+        if (minutes <= 0 || now - _lastQuranReminder < TimeSpan.FromMinutes(minutes)) return;
+        _lastQuranReminder = now;
+        var (surah, ayah) = (_quranStore.Surah, _quranStore.Ayah);
+        var text = QuranText.GetAyah(surah, ayah).Text;
+        ShowOneShotLabel($"Quran · {QuranText.GetSurah(surah).Name} {surah}:{ayah}", text.Length > 70 ? text[..70] + "…" : text);
+    }
+
+    private void OpenQuran()
+    {
+        if (_quranWindow != null)
+        {
+            if (_quranWindow.WindowState == WindowState.Minimized) _quranWindow.WindowState = WindowState.Normal;
+            _quranWindow.Activate();
+            return;
+        }
+        _quranStore ??= QuranStore.Load();
+        var window = new QuranWindow(_quranStore) { Owner = this, Topmost = _settings.AlwaysOnTop };
+        window.RecitingChanged += on =>
+        {
+            if (on) PauseVoiceForAudio();
+            else ResumeVoiceAfterAudio();
+        };
+        _quranWindow = window;
+        window.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_quranWindow, window)) _quranWindow = null;
+            ResumeVoiceAfterAudio();
+        };
+        PositionBesideWidget(window);
+        ShowToolWindow(window);
     }
 
     private void PlayCustomReminderAudio(CustomReminderSettings reminder)
@@ -2028,6 +2078,7 @@ public partial class MainWindow : Window
                 _reminderAudioPlayer.Finished += ReminderAudioFinished;
             }
             _reminderSpeechAfterAudio = reminder.Speak ? reminder.Message : null;
+            _quranWindow?.StopRecitation();
             if (_reminderAudioPlayer.TryPlay(reminder.AudioPath)) return;
             _reminderSpeechAfterAudio = null;
         }
@@ -2369,6 +2420,7 @@ public partial class MainWindow : Window
         menu.Items.Add(WithGlyph(BuildWorkoutMenu(), "\uE916"));
         menu.Items.Add(Item("Custom reminders…", OpenCustomReminders, icon: Glyph("\uEA8F")));
         menu.Items.Add(Item("Prayer times and azan…", OpenPrayerTimes, icon: MosqueIcon()));
+        menu.Items.Add(Item("Quran memorization…", OpenQuran, icon: Glyph("\uE82D")));
         menu.Items.Add(Item("Windows status…", ShowWindowsStatus, icon: Glyph("\uE7F4")));
         menu.Items.Add(Item("File summary and search…", ShowFileInsights, icon: Glyph("\uE721")));
         menu.Items.Add(Item("Scientific calculator…", ShowScientificCalculator, icon: Glyph("\uE8EF")));
@@ -2731,6 +2783,7 @@ public partial class MainWindow : Window
         ("stopwatch", "Stopwatch"),
         ("daily", "Daily quote, word, joke & fact"),
         ("sudoku", "Layer Sudoku (daily game)"),
+        ("quran", "Quran memorization"),
     };
 
     private MenuItem BuildIconsMenu() =>
