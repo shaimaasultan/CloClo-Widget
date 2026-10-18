@@ -282,6 +282,24 @@ total so far.
   too). CloClo never downloads audio: you choose the reciter and copy the
   files yourself. Without a folder, or for an ayah missing from it, the
   window is text only and **+1 read** counts your own readings instead.
+
+  *Getting Mishary Alafasy's recitation:* everyayah.com publishes each ayah
+  as its own file at `https://everyayah.com/data/Alafasy_64kbps/SSSAAA.mp3`
+  (surah and ayah, three digits each). Save the ones you need into one
+  folder, for example `Assets\Recitations\Alafasy_64kbps\` in the project
+  (git ignores `Assets/Recitations/`), then choose that folder under
+  **Reciter folder…**. Al-Fatiha and Al-Baqara are 293 files, about 57 MB.
+  In Git Bash, this fetches them, pausing briefly between files:
+
+  ```bash
+  mkdir -p Assets/Recitations/Alafasy_64kbps && cd Assets/Recitations/Alafasy_64kbps
+  for s in 1:7 2:286; do for a in $(seq 1 ${s#*:}); do f=$(printf "%03d%03d.mp3" ${s%:*} $a); [ -s $f ] || curl -sf -o $f "https://everyayah.com/data/Alafasy_64kbps/$f"; sleep 0.2; done; done
+  ```
+
+  The recordings are the reciter's work, and everyayah.com states no licence
+  for them, so they are for your own use and aren't included in this
+  repository. Other reciters are in folders beside `Alafasy_64kbps` on the
+  same site.
 - **Avatar reminder:** under **Remind**, choose every 30 minutes, 1 hour or 2
   hours to have Keeper show the ayah you're learning now and then. It shows
   only while the avatar is awake, like the custom reminders.
