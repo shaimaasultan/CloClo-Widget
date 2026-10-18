@@ -320,16 +320,20 @@ and avatar, weather and privacy settings.
 
 ### Right-click menu
 
-<img src="docs/screenshots/features/menu.png" alt="CloClo's right-click menu: Set location, Avatar, Weather, Icons, Motion, Sleep after, Workout reminder, Custom reminders, Prayer times and azan, Windows status, File summary and search, Scientific calculator, Voice converters, Dictation, Privacy and Exit" width="300" align="right">
+<img src="docs/screenshots/features/menu.png" alt="CloClo's right-click menu: Set location, Avatar, Weather, Icons, Motion, Sleep after, Workout reminder, Custom reminders, Prayer times and azan, Windows status, File summary and search, Scientific calculator, Online trending sources, Voice converters, Dictation, Privacy and Exit" width="300" align="right">
 
 **Right-click** (or double-click) for the menu: **Set location…**,
 **Avatar**, **Weather**, **Icons**, **Motion**, **Sleep after**, **Workout
 reminder**, **Custom reminders…**, **Prayer times and azan…**, **Windows
 status…** (a dashboard of the PC's current state), **File summary and
-search…**, **Scientific calculator…**, **Voice converters**, **Dictation**,
-**Privacy** and **Exit**. The submenus hold:
+search…**, **Scientific calculator…**, **Online trending sources**, **Voice
+converters**, **Dictation**, **Privacy** and **Exit**. The submenus hold:
 
 - **Weather:** the sky to show (live or one you pick) and **Refresh weather**.
+- **Online trending sources:** **Google Trends…**, **Wikipedia
+  most-read…** and **arXiv newest papers…**, each greyed out until it's
+  allowed under Privacy (see
+  [Online trending sources](#online-trending-sources)).
 - **Voice converters:** Sound pattern test, Voice signals, Find it in David's
   words, Voice converter and Letter signals.
 - **Dictation:** **Start new dictation file** and **Open dictation folder**.
@@ -337,7 +341,9 @@ search…**, **Scientific calculator…**, **Voice converters**, **Dictation**,
   greeting, Hold right-click to talk and Voice commands in Arabic, then the
   display and startup settings: **Show PC uptime**, **Show internet
   connection**, **Show Bluetooth and headphones**, **Always on top** and
-  **Start with Windows**.
+  **Start with Windows**, and last the three online opt-ins: **Allow Google
+  Trends (online)**, **Allow Wikipedia most-read (online)** and **Allow
+  arXiv newest papers (online)**.
 
 With **Hold right-click to talk** on, holding the button for a second talks
 to CloClo instead of opening the menu.
@@ -456,6 +462,47 @@ powers, factorials and `Ans`. The result updates as you type. Calculations use
 a bounded local arithmetic parser, not a scripting engine or network service.
 
 <br clear="right">
+
+### Online trending sources
+
+Three optional windows show what people are looking at today and the newest
+research papers. Each goes online, so each is a separate opt-in that is
+**off by default**: turn on **Allow Google Trends (online)**, **Allow
+Wikipedia most-read (online)** or **Allow arXiv newest papers (online)**
+under right-click → **Privacy**. Until then its entry under right-click → **Online
+trending sources** is greyed out (hover it to see why), and choosing it from
+search only says it's off. Turning an opt-in off closes its window.
+
+- **Google Trends…** lists today's trending searches for a country, ranked,
+  with the approximate number of searches and up to three related news
+  headlines with their sources. Pick the country at the top (18 are offered;
+  the default follows Windows' region setting). Click a topic to search it,
+  or a headline to read it.
+- **Wikipedia most-read…** lists the 25 most-read articles in English,
+  Arabic, French, German, Spanish or Italian Wikipedia, with each one's views,
+  how that compares with the day before (▲ up, ▼ down) and a one-line
+  description. Wikipedia publishes the list a day or two after the day ends,
+  so the window shows the newest list available and says which day it
+  covers. Click an article to open it.
+- **arXiv newest papers…** lists the 25 newest papers submitted to
+  [arXiv](https://arxiv.org) in a subject you pick (Mathematics, the default;
+  Computer science, Artificial intelligence, Machine learning, Physics,
+  Quantum physics, Astrophysics, Statistics, Quantitative biology,
+  Quantitative finance, Economics or Electrical engineering). Each shows its
+  sub-field, submission date, authors and the start of its abstract (maths
+  appears as the authors wrote it, in LaTeX). Click a title for the abstract
+  page, or **PDF** for the paper. arXiv papers are preprints, not peer
+  reviewed, and arXiv announces new ones on weekdays, so over a weekend the
+  newest can be a day or two old.
+
+The windows fetch only when they open or when you press **Refresh**;
+nothing runs in the background. Google is sent only the country code,
+Wikipedia only the language and a date, and arXiv only the subject (and
+CloClo waits three seconds between arXiv requests, as arXiv asks). Text is
+shown as plain text, and
+links open in Microsoft Edge from Program Files after its Microsoft
+signature is checked, and only if they are `https://` links. Arabic titles
+and headlines are laid out right to left.
 
 ### Voice signal tools
 
@@ -864,8 +911,18 @@ records the SHA-256 of every native runtime DLL it ships
 - **No browser engine.** Keeper is drawn natively in WPF, so there's no web
   page, script or embedded Chromium to attack. The only network calls are
   HTTPS requests to Open-Meteo (weather, place search) and OpenStreetMap
-  Nominatim ("Use my location"), with fixed hosts, a 15-second timeout and a
-  1 MB response limit.
+  Nominatim ("Use my location"), plus, only after you allow each one under
+  Privacy, Google Trends (`trends.google.com`, sent the country code),
+  Wikipedia (`<language>.wikipedia.org`, sent the language and a date) and
+  arXiv (`export.arxiv.org`, sent the subject). All
+  use fixed hosts, no cookies or redirects, a 15-second timeout and a 1 MB
+  response limit.
+- **Trending lists are text, links are checked.** The Google and arXiv
+  feeds are parsed as XML with DTDs refused; titles and headlines are shown as plain text with
+  control characters removed and lengths capped. A link opens only if it's an
+  absolute `https://` URL without a user name or password, and only in
+  Microsoft Edge from Program Files after its Microsoft signature is checked
+  (never through the shell or a protocol handler).
 - **Location stays coarse.** Coordinates are rounded to about 1 km before
   they're saved or sent anywhere; a precise GPS fix never leaves the machine.
 - **Capture exclusion request.** By default, CloClo asks Windows to exclude

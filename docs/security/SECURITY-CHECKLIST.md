@@ -12,7 +12,8 @@ evidence is stated in the item where available. `[ ]` = still awaiting the real-
 ## 1. What CloClo shows, reads and sends
 
 - [x] **No browser engine:** Keeper is drawn natively in WPF — no web page, script or embedded Chromium; one process instead of seven (`f4c3068`)
-- [x] Network calls only to fixed HTTPS hosts (Open-Meteo, OpenStreetMap Nominatim), through one shared app-lifetime client with system TLS validation, redirects and cookies disabled, a 15-second timeout, a 1 MB response limit and 10-minute pooled-connection lifetime (`65ffb7a`, `90e33d8`, `7c9d17b`)
+- [x] Network calls only to fixed HTTPS hosts (Open-Meteo, OpenStreetMap Nominatim, and Google Trends, Wikipedia and arXiv only after their separate Privacy opt-ins), through one shared app-lifetime client with system TLS validation, redirects and cookies disabled, a 15-second timeout, a 1 MB response limit and 10-minute pooled-connection lifetime (`65ffb7a`, `90e33d8`, `7c9d17b`)
+- [x] Online trending sources are off by default, each its own opt-in; fetched only on open or Refresh, sending only a country code (Google), language and date (Wikipedia) or subject (arXiv, with 3 s between requests). RSS/Atom parsed with DTDs prohibited and no resolver; text shown as plain text, control characters stripped, lengths capped; links opened only if absolute https without user info, in signature-checked Microsoft Edge from Program Files, never via the shell
 - [x] **Location stays coarse:** coordinates rounded to ~1 km when saved, when loaded from older settings and before any request (`65ffb7a`, `90e33d8`)
 - [x] **Out of screen sharing:** the widget and the clipboard-history and QR windows are excluded from screenshots, recordings and screen sharing by default (`WDA_EXCLUDEFROMCAPTURE`), with a Privacy toggle (`5236a1d`)
 - [x] Notification text can be switched off so only the sending app's name shows (`5236a1d`)

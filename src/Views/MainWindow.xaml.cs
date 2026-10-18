@@ -57,6 +57,9 @@ public partial class MainWindow : Window
     private Window? _avatarWindow;
     private CommandSearchBar? _commandSearchBar;
     private ScientificCalculatorWindow? _calculatorWindow;
+    private TrendsWindow? _googleTrendsWindow;
+    private TrendsWindow? _wikipediaTrendsWindow;
+    private TrendsWindow? _arxivWindow;
     private SoundPatternTestWindow? _soundPatternWindow;
     private VoiceSignalsWindow? _voiceSignalsWindow;
     private DavidMatchWindow? _davidMatchWindow;
@@ -742,6 +745,9 @@ public partial class MainWindow : Window
             new("Privacy: Show Bluetooth and headphones", "bluetooth headphones headset earbuds earphones audio devices connected", WidgetSearchActionKind.Toggle, ToggleShowDevices, () => _settings.ShowDevices),
             new("File summary and search", "files folder documents dashboard find text word phrase grep size count docx", WidgetSearchActionKind.OpenWindow, ShowFileInsights),
             new("Scientific calculator", "math arithmetic trig sin cos log square root", WidgetSearchActionKind.OpenWindow, ShowScientificCalculator),
+            new("Online trending sources: Google Trends", "trends trending searches today news popular online internet", WidgetSearchActionKind.OpenWindow, () => ShowTrends(TrendSource.Google)),
+            new("Online trending sources: Wikipedia most-read", "trends trending wiki articles popular today online internet", WidgetSearchActionKind.OpenWindow, () => ShowTrends(TrendSource.Wikipedia)),
+            new("Online trending sources: arXiv newest papers", "papers research science preprints math physics computer latest published online internet", WidgetSearchActionKind.OpenWindow, () => ShowTrends(TrendSource.Arxiv)),
             new("Voice converters: Sound pattern test", "voice signal microphone cloclo accessibility", WidgetSearchActionKind.OpenWindow, ShowSoundPatternTest),
             new("Voice converters: Voice signals", "waveform david hoda microphone record compare accessibility", WidgetSearchActionKind.OpenWindow, ShowVoiceSignals),
             new("Voice converters: Find it in David's words", "david match word microphone record recognise accessibility", WidgetSearchActionKind.OpenWindow, ShowDavidMatch),
@@ -761,6 +767,9 @@ public partial class MainWindow : Window
             new("Privacy: Speak greeting", "account name startup voice toggle", WidgetSearchActionKind.Toggle, ToggleSpeakGreeting, () => _settings.SpeakGreeting),
             new("Privacy: Hold right-click to talk", "push to talk hold mouse microphone voice command open app accessibility toggle", WidgetSearchActionKind.Toggle, TogglePushToTalk, () => _settings.PushToTalkEnabled),
             new("Privacy: Voice commands in Arabic", "cloclo arabic عربي voice command language toggle", WidgetSearchActionKind.Toggle, ToggleVoiceCommandsInArabic, () => _settings.VoiceCommandsInArabic),
+            new("Privacy: Allow Google Trends (online)", "trends trending internet network online toggle", WidgetSearchActionKind.Toggle, ToggleGoogleTrends, () => _settings.GoogleTrendsEnabled),
+            new("Privacy: Allow Wikipedia most-read (online)", "trends trending wiki internet network online toggle", WidgetSearchActionKind.Toggle, ToggleWikipediaTrends, () => _settings.WikipediaTrendsEnabled),
+            new("Privacy: Allow arXiv newest papers (online)", "papers research science internet network online toggle", WidgetSearchActionKind.Toggle, ToggleArxivPapers, () => _settings.ArxivPapersEnabled),
         };
 
         // All icon actions remain available here even when their icon is hidden.
@@ -2363,6 +2372,12 @@ public partial class MainWindow : Window
         menu.Items.Add(Item("Windows status…", ShowWindowsStatus, icon: Glyph("\uE7F4")));
         menu.Items.Add(Item("File summary and search…", ShowFileInsights, icon: Glyph("\uE721")));
         menu.Items.Add(Item("Scientific calculator…", ShowScientificCalculator, icon: Glyph("\uE8EF")));
+        menu.Items.Add(WithGlyph(SubMenu("Online trending sources", new object[]
+        {
+            TrendsItem("Google Trends…", TrendSource.Google, _settings.GoogleTrendsEnabled, "\uE721"),
+            TrendsItem("Wikipedia most-read…", TrendSource.Wikipedia, _settings.WikipediaTrendsEnabled, "\uE8F1"),
+            TrendsItem("arXiv newest papers…", TrendSource.Arxiv, _settings.ArxivPapersEnabled, "\uE7BE"),
+        }), "\uE774"));
         menu.Items.Add(WithGlyph(SubMenu("Voice converters", new object[]
         {
             Item("Sound pattern test…", ShowSoundPatternTest, icon: Glyph("\uE9D9")),
@@ -2759,6 +2774,10 @@ public partial class MainWindow : Window
             Item("Show Bluetooth and headphones", ToggleShowDevices, isChecked: _settings.ShowDevices),
             Item("Always on top", ToggleAlwaysOnTop, isChecked: _settings.AlwaysOnTop),
             Item("Start with Windows", ToggleStartWithWindows, isChecked: StartupRegistration.IsEnabled()),
+            new Separator(),
+            Item("Allow Google Trends (online)", ToggleGoogleTrends, isChecked: _settings.GoogleTrendsEnabled),
+            Item("Allow Wikipedia most-read (online)", ToggleWikipediaTrends, isChecked: _settings.WikipediaTrendsEnabled),
+            Item("Allow arXiv newest papers (online)", ToggleArxivPapers, isChecked: _settings.ArxivPapersEnabled),
         });
 
     private void ToggleHideFromScreenCapture()
@@ -2812,6 +2831,90 @@ public partial class MainWindow : Window
             _greetingTimer.Tick -= GreetingTimer_Tick;
             _greetingTimer = null;
         }
+    }
+
+    // A trending source's menu entry is only active once its Privacy opt-in
+    // is on; the tooltip says where to turn it on.
+    private MenuItem TrendsItem(string header, TrendSource source, bool allowed, string glyph)
+    {
+        var item = Item(header, () => ShowTrends(source), enabled: allowed, icon: Glyph(glyph));
+        if (!allowed)
+        {
+            item.ToolTip = "Turn this on under Privacy first. It goes online.";
+            ToolTipService.SetShowOnDisabled(item, true);
+        }
+        return item;
+    }
+
+    private void ShowTrends(TrendSource source)
+    {
+        var (allowed, name) = source switch
+        {
+            TrendSource.Google => (_settings.GoogleTrendsEnabled, "Google Trends"),
+            TrendSource.Arxiv => (_settings.ArxivPapersEnabled, "arXiv newest papers"),
+            _ => (_settings.WikipediaTrendsEnabled, "Wikipedia most-read"),
+        };
+        if (!allowed)
+        {
+            ShowOneShotLabel($"{name} is off", "Turn it on under right-click → Privacy. It goes online.");
+            return;
+        }
+
+        var open = source switch
+        {
+            TrendSource.Google => _googleTrendsWindow,
+            TrendSource.Arxiv => _arxivWindow,
+            _ => _wikipediaTrendsWindow,
+        };
+        if (open != null)
+        {
+            if (open.WindowState == WindowState.Minimized) open.WindowState = WindowState.Normal;
+            open.Activate();
+            return;
+        }
+
+        var window = new TrendsWindow(source, _settings) { Owner = this, Topmost = _settings.AlwaysOnTop };
+        switch (source)
+        {
+            case TrendSource.Google: _googleTrendsWindow = window; break;
+            case TrendSource.Arxiv: _arxivWindow = window; break;
+            default: _wikipediaTrendsWindow = window; break;
+        }
+        window.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_googleTrendsWindow, window)) _googleTrendsWindow = null;
+            if (ReferenceEquals(_wikipediaTrendsWindow, window)) _wikipediaTrendsWindow = null;
+            if (ReferenceEquals(_arxivWindow, window)) _arxivWindow = null;
+        };
+        PositionBesideWidget(window);
+        ShowToolWindow(window);
+    }
+
+    private void ToggleGoogleTrends()
+    {
+        _settings.GoogleTrendsEnabled = !_settings.GoogleTrendsEnabled;
+        _settings.Save();
+        if (!_settings.GoogleTrendsEnabled) _googleTrendsWindow?.Close();
+        ShowOneShotLabel(_settings.GoogleTrendsEnabled ? "Google Trends allowed" : "Google Trends off",
+            _settings.GoogleTrendsEnabled ? "Open it from Online trending sources." : "CloClo won't contact Google Trends.");
+    }
+
+    private void ToggleWikipediaTrends()
+    {
+        _settings.WikipediaTrendsEnabled = !_settings.WikipediaTrendsEnabled;
+        _settings.Save();
+        if (!_settings.WikipediaTrendsEnabled) _wikipediaTrendsWindow?.Close();
+        ShowOneShotLabel(_settings.WikipediaTrendsEnabled ? "Wikipedia most-read allowed" : "Wikipedia most-read off",
+            _settings.WikipediaTrendsEnabled ? "Open it from Online trending sources." : "CloClo won't contact Wikipedia.");
+    }
+
+    private void ToggleArxivPapers()
+    {
+        _settings.ArxivPapersEnabled = !_settings.ArxivPapersEnabled;
+        _settings.Save();
+        if (!_settings.ArxivPapersEnabled) _arxivWindow?.Close();
+        ShowOneShotLabel(_settings.ArxivPapersEnabled ? "arXiv newest papers allowed" : "arXiv newest papers off",
+            _settings.ArxivPapersEnabled ? "Open it from Online trending sources." : "CloClo won't contact arXiv.");
     }
 
     private void ToggleVoiceCommandsInArabic()

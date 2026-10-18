@@ -98,6 +98,17 @@ public class WidgetSettings
     public string LadyOutfit { get; set; } = "classic";
     // Avatar and decorative weather motion: full, gentle, or still.
     public string MotionMode { get; set; } = "full";
+    // Online trending sources: each is a separate explicit opt-in under
+    // Privacy, off by default, since they are the only feature beyond weather
+    // and place search that contacts the internet. Google gets only the
+    // country code; Wikipedia only the language and a date; arXiv only the
+    // subject.
+    public bool GoogleTrendsEnabled { get; set; } = false;
+    public bool WikipediaTrendsEnabled { get; set; } = false;
+    public bool ArxivPapersEnabled { get; set; } = false;
+    public string? GoogleTrendsCountry { get; set; }
+    public string WikipediaTrendsLanguage { get; set; } = "en";
+    public string ArxivSubject { get; set; } = "math.*";
 
     // Two decimals is ~1 km: plenty for weather and a city name, without
     // keeping or sending a precise position.
@@ -159,6 +170,9 @@ public class WidgetSettings
         Sky = Sky is not null && AllowedSkies.Contains(Sky) ? Sky : "auto";
         Avatar = Avatar is "keeper" or "lady" ? Avatar : "keeper";
         MotionMode = MotionMode is "full" or "gentle" or "still" ? MotionMode : "full";
+        GoogleTrendsCountry = TrendsService.IsGoogleCountry(GoogleTrendsCountry) ? GoogleTrendsCountry : null;
+        WikipediaTrendsLanguage = TrendsService.IsWikipediaLanguage(WikipediaTrendsLanguage) ? WikipediaTrendsLanguage : "en";
+        ArxivSubject = TrendsService.IsArxivSubject(ArxivSubject) ? ArxivSubject : "math.*";
         KeeperOutfit = IsAllowedOutfit(KeeperOutfit) ? KeeperOutfit : "classic";
         LadyOutfit = IsAllowedOutfit(LadyOutfit) ? LadyOutfit : "classic";
         SleepAfterMinutes = AllowedSleepIntervals.Contains(SleepAfterMinutes) ? SleepAfterMinutes : 5;
