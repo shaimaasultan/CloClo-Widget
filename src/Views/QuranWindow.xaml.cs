@@ -30,6 +30,10 @@ public partial class QuranWindow : Window
     private static readonly Brush HighlightBrush = Frozen(Color.FromRgb(0xe6, 0xc4, 0x76));
 
     private readonly QuranStore _store;
+    // The signed recitation pack installed beside CloClo, used when no
+    // reciter folder is chosen; packs that failed their checks are named.
+    private readonly RecitationPack? _pack;
+    private readonly List<string> _rejectedPacks;
     private readonly LocalAudioPlayer _player = new();
     private readonly DispatcherTimer _gapTimer = new();
     private readonly List<Run> _ayahRuns = new();
@@ -56,6 +60,7 @@ public partial class QuranWindow : Window
     {
         InitializeComponent();
         _store = store;
+        _pack = RecitationPack.OpenInstalled(out _rejectedPacks);
         HeaderGlyph.Text = "\uE82D";
         FooterText.Text = QuranText.Attribution + " " + QuranText.EnglishAttribution +
                           " Recitations: per-ayah MP3 files named like everyayah.com's " +
@@ -79,6 +84,7 @@ public partial class QuranWindow : Window
         {
             SetReciting(false);
             _player.Dispose();
+            _pack?.Dispose();
         };
 
         EnglishBox.IsChecked = _store.ShowEnglish;
@@ -191,11 +197,18 @@ public partial class QuranWindow : Window
         return $"{(char)0xFD3F}{digits}{(char)0xFD3E}";
     }
 
-    // The first ayah of the range with no recitation file, or null if all have one.
+    // Recitations come from the chosen folder, or else the installed pack.
+    private bool UsingPack => _store.AudioFolder == null && _pack != null;
+
+    private bool HasAudio(int surah, int ayah) =>
+        UsingPack ? _pack!.Has(surah, ayah) : _store.AudioFileFor(surah, ayah) != null;
+
+    // The first ayah of the range with no recitation, or null if all have one.
     private int? MissingAudio()
     {
+        if (_store.AudioFolder == null && _pack == null) return Start;
         for (var ayah = Start; ayah <= End; ayah++)
-            if (_store.AudioFileFor(_store.Surah, ayah) == null) return ayah;
+            if (!HasAudio(_store.Surah, ayah)) return ayah;
         return null;
     }
 
@@ -231,12 +244,16 @@ public partial class QuranWindow : Window
         SurahProgress.Value = done;
         ProgressText.Text = $"{done} of {info.AyahCount} ayat memorized in {info.Name} · {_store.Memorized.Count} in all";
 
-        var installed = _store.AudioFolder == null ? QuranStore.InstalledReciterFolder() : null;
+        UseInstalledButton.Visibility = _store.AudioFolder != null && _pack != null ? Visibility.Visible : Visibility.Collapsed;
         FolderText.Text = _store.AudioFolder
-            ?? (installed != null ? $"Installed: {System.IO.Path.GetFileName(installed)}" : "No reciter folder: text only");
-        StatusText.Text = _notice ?? (_store.EffectiveAudioFolder != null && missing is { } m
-            ? $"The reciter folder has no {surah:000}{m:000}.mp3, so {(range ? "these ayat are" : "this ayah is")} text only."
-            : "");
+            ?? (_pack != null ? $"Installed: {_pack.Reciter} ({(_pack.Signed ? "signed pack" : "unsigned build")})" : "No reciter folder: text only");
+        var source = UsingPack ? "The installed recitations have" : "The reciter folder has";
+        StatusText.Text = _notice
+            ?? ((_store.AudioFolder != null || _pack != null) && missing is { } m
+                ? $"{source} no recitation of {surah}:{m}, so {(range ? "these ayat are" : "this ayah is")} text only."
+                : _store.AudioFolder == null && _rejectedPacks.Count > 0
+                    ? $"Not used - failed its signature check: {string.Join(", ", _rejectedPacks)}. Reinstall CloClo."
+                    : "");
     }
 
     private void SetReciting(bool on)
@@ -261,10 +278,13 @@ public partial class QuranWindow : Window
 
     private void PlayCurrent()
     {
-        var path = _store.AudioFileFor(_store.Surah, Start + _playIndex);
-        if (path == null || !_player.TryPlay(path))
+        var ayah = Start + _playIndex;
+        var played = UsingPack
+            ? _player.TryPlay(_pack!.Read(_store.Surah, ayah))
+            : _store.AudioFileFor(_store.Surah, ayah) is { } path && _player.TryPlay(path);
+        if (!played)
         {
-            _notice = "Couldn't play the recitation file. Check the reciter folder.";
+            _notice = UsingPack ? "Couldn't play the recitation from the installed pack." : "Couldn't play the recitation file. Check the reciter folder.";
             SetReciting(false);
             return;
         }
@@ -382,9 +402,6 @@ public partial class QuranWindow : Window
     private void ChooseFolder_Click(object sender, RoutedEventArgs e)
     {
         var picker = new OpenFolderDialog { Title = "Choose a folder of per-ayah recitations (001001.mp3 …)", Multiselect = false };
-        // Start at the recitations a Program Files install put beside CloClo.
-        if (System.IO.Directory.Exists(QuranStore.InstalledRecitationsRoot))
-            picker.InitialDirectory = QuranStore.InstalledRecitationsRoot;
         if (picker.ShowDialog(this) != true) return;
         if (!QuranStore.IsAllowedFolder(picker.FolderName))
         {
@@ -398,6 +415,15 @@ public partial class QuranWindow : Window
         _notice = _store.AudioFileFor(1, 1) != null || _store.AudioFileFor(_store.Surah, Start) != null
             ? null
             : "No files named like 001001.mp3 were found in that folder.";
+        UpdateState();
+    }
+
+    private void UseInstalled_Click(object sender, RoutedEventArgs e)
+    {
+        SetReciting(false);
+        _store.AudioFolder = null;
+        _store.Save();
+        _notice = null;
         UpdateState();
     }
 

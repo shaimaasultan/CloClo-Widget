@@ -67,6 +67,11 @@ public static partial class NativeLibraryCheck
         "ggml-base.bin", "ggml-large-v3-turbo-q5_0.bin",
     };
     private const string GpuRuntimeFolder = "gpu";
+    // Signed Quran recitation packs (data only, see RecitationPack). Windows
+    // never loads DLLs from this subfolder by itself, and CloClo checks each
+    // pack's signature before reading it, so here it's enough that the
+    // folder holds nothing but plainly named pack files.
+    private const string RecitationsFolder = "Recitations";
 
     // The verified DLLs, held open (read-share only) for the process's lifetime.
     private static readonly List<FileStream> HeldOpen = new();
@@ -136,11 +141,14 @@ public static partial class NativeLibraryCheck
             var name = Path.GetFileName(entry);
             if (Directory.Exists(entry))
             {
-                if (!name.Equals(GpuRuntimeFolder, StringComparison.OrdinalIgnoreCase) ||
-                    new DirectoryInfo(entry).Attributes.HasFlag(FileAttributes.ReparsePoint))
+                if (new DirectoryInfo(entry).Attributes.HasFlag(FileAttributes.ReparsePoint))
                     strangers.Add(name + "\\");
-                else
+                else if (name.Equals(GpuRuntimeFolder, StringComparison.OrdinalIgnoreCase))
                     strangers.AddRange(UnverifiedGpuRuntimeEntries(entry).Select(n => name + "\\" + n));
+                else if (name.Equals(RecitationsFolder, StringComparison.OrdinalIgnoreCase))
+                    strangers.AddRange(UnexpectedRecitationEntries(entry).Select(n => name + "\\" + n));
+                else
+                    strangers.Add(name + "\\");
             }
             else if (name.Equals(exeName, StringComparison.OrdinalIgnoreCase) || AllowedAppFiles.Contains(name)) continue;
             else if (!name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || !HoldIfVerified(entry)) strangers.Add(name);
@@ -200,6 +208,21 @@ public static partial class NativeLibraryCheck
             else if (!name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ||
                      File.GetAttributes(entry).HasFlag(FileAttributes.ReparsePoint) ||
                      !HoldIfVerified(entry, PinnedWhisperGpuLibraries)) bad.Add(name);
+        }
+        return bad;
+    }
+
+    // Recitations\ may hold only CloClo.Recitations.<name>.dll pack files:
+    // no subfolders, links or other files.
+    private static IEnumerable<string> UnexpectedRecitationEntries(string folder)
+    {
+        var bad = new List<string>();
+        foreach (var entry in Directory.EnumerateFileSystemEntries(folder))
+        {
+            var name = Path.GetFileName(entry);
+            if (Directory.Exists(entry)) bad.Add(name + "\\");
+            else if (!System.Text.RegularExpressions.Regex.IsMatch(name, @"^CloClo\.Recitations\.[A-Za-z0-9_.-]{1,64}\.dll$") ||
+                     File.GetAttributes(entry).HasFlag(FileAttributes.ReparsePoint)) bad.Add(name);
         }
         return bad;
     }
@@ -334,6 +357,24 @@ public static partial class NativeLibraryCheck
     // Voice commands may launch only fixed Microsoft executables in protected
     // Windows or Program Files locations. Reuse the existing signature check.
     internal static bool IsTrustedMicrosoftExecutable(string path) => IsMicrosoftSigned(path);
+
+    // A data file packed and signed at install (a Quran recitation pack): its
+    // signature must be intact and its signer the exe's own certificate; an
+    // unsigned exe accepts only an unsigned pack. CloClo's certificate is
+    // usually self-signed and deliberately not trusted by Windows, so
+    // WinVerifyTrust's "untrusted root" answers are accepted - they come only
+    // after the file's digest has matched its signature. A changed byte gives
+    // TRUST_E_BAD_DIGEST instead and is refused.
+    internal static bool IsSignedLikeExe(string path)
+    {
+        const int Trusted = 0;
+        const int UntrustedRoot = unchecked((int)0x800B0109);   // CERT_E_UNTRUSTEDROOT
+        const int Chaining = unchecked((int)0x800B010A);        // CERT_E_CHAINING
+        const int NoSignature = unchecked((int)0x800B0100);     // TRUST_E_NOSIGNATURE
+        var result = WinVerifyTrustFile(path);
+        if (result == NoSignature) return HasSameSignerAsExe(path); // true only when the exe is unsigned too
+        return result is Trusted or UntrustedRoot or Chaining && HasSameSignerAsExe(path);
+    }
 
     // Hash matching is mandatory, including for self-signed CloClo builds.
     // A signed installation additionally requires each Whisper DLL to carry

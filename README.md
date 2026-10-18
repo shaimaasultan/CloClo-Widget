@@ -306,14 +306,18 @@ total so far.
   repository. Other reciters are in folders beside `Alafasy_64kbps` on the
   same site.
 
-  *Protected copy:* a Program Files install (`scripts/Install-CloClo.cmd`)
-  also copies the `.mp3` files in `Assets\Recitations\<reciter>\` to
-  `C:\Program Files\CloClo\Recitations\`, where only administrators can
-  change them (see [Per-user or Program Files](#per-user-or-program-files)).
-  With no reciter folder chosen, the window uses those installed
-  recitations by itself ("Installed: Alafasy_64kbps"), and **Reciter
-  folder…** opens there. If you chose the project folder before, choose the
-  installed one once to use the protected copy.
+  *Signed recitation pack:* every install packs the `.mp3` files in each
+  `Assets\Recitations\<reciter>\` folder into one file,
+  `Recitations\CloClo.Recitations.<reciter>.dll` beside CloClo. It's a .NET
+  assembly with no code, only the recitations, signed with the same
+  certificate as CloClo itself. CloClo never loads it as code. It holds the
+  file open read-only, checks that the signature is intact and that its
+  signer is CloClo's own (an unsigned build accepts only an unsigned pack),
+  then reads each recitation out of it and plays it from memory, so no MP3
+  is written to disk. With no reciter folder chosen, the window uses the
+  pack by itself ("Installed: Alafasy_64kbps (signed pack)"). If you chose a
+  folder before, **Use installed** switches back to the pack. A pack that
+  fails its check isn't used, and the window says so.
 - **Avatar reminder:** under **Remind**, choose every 30 minutes, 1 hour or 2
   hours to have Keeper show the ayah you're learning now and then. It shows
   only while the avatar is awake, like the custom reminders.
@@ -736,14 +740,12 @@ administrator, `place.ps1` trusts nothing it's handed:
   holds exactly the expected files, each with exactly its built SHA-256, the
   exe signed by the same certificate as the installed copy (or the one you
   accepted), and every DLL intact and signed by Microsoft;
-- Quran recitations: any `<reciter>\SSSAAA.mp3` files in the project's
-  `Assets\Recitations\` (plain names, up to 30 MB each; other files are left
-  out and a link refuses the install) are copied into
-  `CloClo.new\Recitations\`. There can be thousands, too many to list one by
-  one on the administrator command line, so the installer passes their count
-  and one SHA-256 over all of them (each file's name and SHA-256, sorted),
-  and `place.ps1` recomputes it over its own copies in Program Files; any
-  difference refuses the install. A per-user install leaves them out;
+- Quran recitation packs (`Recitations\CloClo.Recitations.<reciter>.dll`,
+  built by `scripts\pack-recitations.ps1` from the project's
+  `Assets\Recitations\<reciter>\SSSAAA.mp3` files) are checked like every
+  other file: by name, by SHA-256, and as signed by the exe's own
+  certificate. `Recitations\` is the only folder allowed besides `gpu\`, and
+  CloClo's startup check accepts nothing in it but pack files;
 - only then does it swap the folders. A swap fails as a whole while the old
   copy is in use, and on any failure the previous copy is put back — CloClo
   is never left half-installed.

@@ -69,6 +69,32 @@ public sealed class LocalAudioPlayer : IDisposable
         }
     }
 
+    // An MP3 held in memory (a recitation read from a signed pack); never
+    // written to disk.
+    public bool TryPlay(byte[]? mp3)
+    {
+        if (_disposed || mp3 is not { Length: > 0 } || mp3.Length > MaxAudioBytes) return false;
+        try
+        {
+            Stop();
+            var reader = new StreamMediaFoundationReader(new MemoryStream(mp3, writable: false));
+            _reader = reader;
+            var gain = new VolumeSampleProvider(reader.ToSampleProvider()) { Volume = PlaybackGain };
+            _player = new WasapiPlayerBuilder().Build();
+            _player.PlaybackStopped += OnPlaybackStopped;
+            _player.Init(gain.ToWaveProvider());
+            IsPlaying = true;
+            _player.Play();
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
+                                   ArgumentException or InvalidOperationException or COMException)
+        {
+            Stop();
+            return false;
+        }
+    }
+
     public static bool IsPlayable(string? path)
     {
         if (!IsAllowedLocalAudioFile(path)) return false;

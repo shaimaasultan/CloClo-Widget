@@ -216,35 +216,6 @@ function Quote([string]$text) { "'" + $text.Replace("'", "''") + "'" }
 # the user's own registry, for both install kinds; the administrator step
 # writes no registry keys. Its uninstall command is the uninstall.ps1 copied
 # into the install folder, run by PowerShell's full path.
-# Quran recitations the person downloaded into Assets\Recitations\ (which
-# git ignores): <reciter>\<SSSAAA>.mp3 only, with plain names, up to
-# 30 MB each. Anything else is left out, and a link anywhere refuses the lot,
-# since place.ps1 reads these as administrator. The same two functions are in
-# place.ps1, so both sides list and hash the set identically.
-function Get-RecitationFiles([string]$dir) {
-    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { return }
-    if ((Get-Item -LiteralPath $dir -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Assets\Recitations contains a folder or file link; remove it and run the install again.' }
-    foreach ($reciter in @(Get-ChildItem -LiteralPath $dir -Force -Directory)) {
-        if ($reciter.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Assets\Recitations contains a folder or file link; remove it and run the install again.' }
-        if ($reciter.Name -cnotmatch '^[A-Za-z0-9_.-]{1,64}$') { continue }
-        foreach ($f in @(Get-ChildItem -LiteralPath $reciter.FullName -Force -File)) {
-            if ($f.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Assets\Recitations contains a folder or file link; remove it and run the install again.' }
-            if ($f.Name -cnotmatch '^[0-9]{6}\.mp3$' -or $f.Length -le 0 -or $f.Length -gt 30MB) { continue }
-            [pscustomobject]@{ Rel = $reciter.Name + '\' + $f.Name; Path = $f.FullName; Length = $f.Length }
-        }
-    }
-}
-
-# One SHA-256 over the whole set: its "<reciter>\<file>=<SHA-256>" lines,
-# sorted ordinally and joined. Thousands of files would not fit on the
-# administrator command line one by one; this single value does.
-function Get-RecitationDigest($items) {
-    $lines = [string[]]@($items | ForEach-Object { $_.Rel + '=' + (Get-FileHash -LiteralPath $_.Path -Algorithm SHA256).Hash })
-    [Array]::Sort($lines, [StringComparer]::Ordinal)
-    $sha = [Security.Cryptography.SHA256]::Create()
-    [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($lines -join "`n"))) -replace '-', ''
-}
-
 function Get-UninstallEntryScript([string]$hive, [string]$version, [long]$bytes) {
     $key = "${hive}:\$uninstallKey"
     $strings = [ordered]@{
@@ -532,6 +503,14 @@ if ($installed) {
     }
 }
 
+# Quran recitations: each Assets\Recitations\<reciter>\ folder of SSSAAA.mp3
+# files (git-ignored, downloaded by the person) becomes one code-free,
+# signed pack in publish\Recitations\ - see pack-recitations.ps1. From here
+# on it is just another built file: hashed, copied and checked like the rest.
+$packArgs = @{ Root = $root; OutDir = $publishDir; DotnetExe = $dotnetExe }
+if ($CertThumbprint) { $packArgs.Thumbprint = $CertThumbprint }
+& (Join-Path $root 'scripts\pack-recitations.ps1') @packArgs | Out-Null
+
 Stop-RunningWidget   # again, in case one was started while building
 # Everything that gets installed is gathered in publish\ first: the build,
 # the uninstaller (so Settings > Apps can remove CloClo without this project
@@ -550,29 +529,23 @@ if (Test-Path -LiteralPath $gpuPublish) {
         $files += $f
     }
 }
+# The recitation packs live in Recitations\.
+$recitationsPublish = Join-Path $publishDir 'Recitations'
+if (Test-Path -LiteralPath $recitationsPublish) {
+    foreach ($f in @(Get-ChildItem -LiteralPath $recitationsPublish -File -Filter 'CloClo.Recitations.*.dll')) {
+        $f | Add-Member -NotePropertyName Rel -NotePropertyValue ('Recitations\' + $f.Name)
+        $files += $f
+    }
+}
 # Every file and the gpu\ folder, as paths relative to an install folder.
 function Get-InstalledEntries([string]$dir) {
     @(Get-ChildItem -LiteralPath $dir -Force -Recurse | ForEach-Object {
         $rel = $_.FullName.Substring($dir.TrimEnd('\').Length + 1)
-        if ($_.PSIsContainer) { if ($rel -ne 'gpu') { "$rel\" } } else { $rel }
+        if ($_.PSIsContainer) { if ($rel -notin 'gpu', 'Recitations') { "$rel\" } } else { $rel }
     })
 }
 $version = (Get-Item -LiteralPath $builtExe).VersionInfo.ProductVersion -replace '\+.*$', ''
 $totalBytes = ($files | Measure-Object Length -Sum).Sum
-# Recitations go to Program Files only, where only administrators can change
-# them - the point of copying them at all (see Get-RecitationFiles).
-$recitationsDir = Join-Path $root 'Assets\Recitations'
-$recitations = @()
-if ($ProgramFiles) {
-    $recitations = @(Get-RecitationFiles $recitationsDir)
-    if ($recitations.Count) {
-        $recitationBytes = ($recitations | Measure-Object Length -Sum).Sum
-        $totalBytes += $recitationBytes
-        Write-Host ("Including {0} Quran recitation files ({1:N0} MB) from Assets\Recitations, for Program Files\CloClo\Recitations." -f $recitations.Count, ($recitationBytes / 1MB))
-    }
-} elseif (@(Get-RecitationFiles $recitationsDir).Count) {
-    Write-Host "Assets\Recitations is copied only by a Program Files install (-ProgramFiles); this per-user install leaves it out."
-}
 if ($ProgramFiles) {
     # The SHA-256 of every file as built, taken here as the user who built
     # them. place.ps1 copies them into a staging folder in Program Files,
@@ -593,9 +566,6 @@ if ($ProgramFiles) {
         "`$Source = $(Quote $publishDir)"
         "`$Expected = $(Quote $expected)"
         "`$AcceptThumbprint = $(Quote $acceptThumbprint)"
-        "`$RecitationsSource = $(Quote $recitationsDir)"
-        "`$RecitationsCount = '$($recitations.Count)'"
-        "`$RecitationsDigest = '$(if ($recitations.Count) { Get-RecitationDigest $recitations })'"
         '. ([scriptblock]::Create([Text.Encoding]::UTF8.GetString($bytes).TrimStart([char]0xFEFF)))'
     ) -join "`n"
     Write-Host "Copying to $machineDir (Windows asks for administrator rights; 'Show more details' shows the code file, its SHA-256 and every file to copy)..."
@@ -637,6 +607,7 @@ if ($ProgramFiles) {
     Reset-SafeOutputDirectory $stageDir $installParent
     try {
         if (@($files | Where-Object { $_.Rel -like 'gpu\*' }).Count) { New-Item -ItemType Directory -Path (Join-Path $stageDir 'gpu') | Out-Null }
+        if (@($files | Where-Object { $_.Rel -like 'Recitations\*' }).Count) { New-Item -ItemType Directory -Path (Join-Path $stageDir 'Recitations') | Out-Null }
         foreach ($f in $files) { Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $stageDir $f.Rel) }
         $stagedEntries = Get-InstalledEntries $stageDir
         if ($stagedEntries.Count -ne $files.Count -or @($stagedEntries | Where-Object { $files.Rel -notcontains $_ }).Count) {

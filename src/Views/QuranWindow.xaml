@@ -144,6 +144,7 @@
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
@@ -151,11 +152,14 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <Button Content="Reciter folder…" Style="{StaticResource QuietButton}" Click="ChooseFolder_Click" Padding="10,4" FontWeight="Normal" />
-                <TextBlock x:Name="FolderText" Grid.Column="1" Style="{StaticResource Label}" Margin="8,0,8,0" TextTrimming="CharacterEllipsis" />
-                <TextBlock Grid.Column="2" Text="Pause" Style="{StaticResource Label}" Margin="0,0,6,0" />
-                <ComboBox x:Name="GapBox" Grid.Column="3" Width="64" SelectionChanged="GapBox_SelectionChanged" AutomationProperties.Name="Pause between repeats" />
-                <TextBlock Grid.Column="4" Text="Remind" Style="{StaticResource Label}" Margin="12,0,6,0" />
-                <ComboBox x:Name="ReminderBox" Grid.Column="5" Width="110" SelectionChanged="ReminderBox_SelectionChanged" AutomationProperties.Name="Avatar reminder" />
+                <Button x:Name="UseInstalledButton" Grid.Column="1" Content="Use installed" Style="{StaticResource QuietButton}" Click="UseInstalled_Click"
+                        Padding="10,4" FontWeight="Normal" Margin="6,0,0,0" Visibility="Collapsed"
+                        ToolTip="Play the signed recitation pack installed with CloClo instead of the chosen folder" />
+                <TextBlock x:Name="FolderText" Grid.Column="2" Style="{StaticResource Label}" Margin="8,0,8,0" TextTrimming="CharacterEllipsis" />
+                <TextBlock Grid.Column="3" Text="Pause" Style="{StaticResource Label}" Margin="0,0,6,0" />
+                <ComboBox x:Name="GapBox" Grid.Column="4" Width="64" SelectionChanged="GapBox_SelectionChanged" AutomationProperties.Name="Pause between repeats" />
+                <TextBlock Grid.Column="5" Text="Remind" Style="{StaticResource Label}" Margin="12,0,6,0" />
+                <ComboBox x:Name="ReminderBox" Grid.Column="6" Width="110" SelectionChanged="ReminderBox_SelectionChanged" AutomationProperties.Name="Avatar reminder" />
             </Grid>
             <Grid Margin="0,10,0,0">
                 <Grid.ColumnDefinitions>
