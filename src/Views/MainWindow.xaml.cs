@@ -2345,40 +2345,40 @@ public partial class MainWindow : Window
     {
         var menu = new ContextMenu();
         if (includeShowHide)
-            menu.Items.Add(Item(Visibility == Visibility.Visible ? "Hide widget" : "Show widget", ToggleVisible));
+            menu.Items.Add(Item(Visibility == Visibility.Visible ? "Hide widget" : "Show widget", ToggleVisible, icon: Glyph("\uE890")));
         if (_activityState == "prayer")
         {
-            menu.Items.Add(Item("I've prayed", MarkPrayed));
+            menu.Items.Add(Item("I've prayed", MarkPrayed, icon: Glyph("\uE73E")));
             menu.Items.Add(new Separator());
         }
-        menu.Items.Add(Item("Set location…", OpenLocationDialog));
-        menu.Items.Add(BuildAvatarMenu());
-        menu.Items.Add(BuildSkyMenu());
-        menu.Items.Add(BuildIconsMenu());
-        menu.Items.Add(BuildMotionMenu());
-        menu.Items.Add(BuildSleepMenu());
-        menu.Items.Add(BuildWorkoutMenu());
-        menu.Items.Add(Item("Custom reminders…", OpenCustomReminders));
-        menu.Items.Add(Item("Prayer times and azan…", OpenPrayerTimes));
-        menu.Items.Add(Item("Windows status…", ShowWindowsStatus));
-        menu.Items.Add(Item("File summary and search…", ShowFileInsights));
-        menu.Items.Add(Item("Scientific calculator…", ShowScientificCalculator));
-        menu.Items.Add(SubMenu("Voice converters", new object[]
+        menu.Items.Add(Item("Set location…", OpenLocationDialog, icon: Glyph("\uE707")));
+        menu.Items.Add(WithGlyph(BuildAvatarMenu(), "\uE77B"));
+        menu.Items.Add(WithGlyph(BuildSkyMenu(), "\uE753"));
+        menu.Items.Add(WithGlyph(BuildIconsMenu(), "\uECA5"));
+        menu.Items.Add(WithGlyph(BuildMotionMenu(), "\uE768"));
+        menu.Items.Add(WithGlyph(BuildSleepMenu(), "\uE708"));
+        menu.Items.Add(WithGlyph(BuildWorkoutMenu(), "\uE916"));
+        menu.Items.Add(Item("Custom reminders…", OpenCustomReminders, icon: Glyph("\uEA8F")));
+        menu.Items.Add(Item("Prayer times and azan…", OpenPrayerTimes, icon: MosqueIcon()));
+        menu.Items.Add(Item("Windows status…", ShowWindowsStatus, icon: Glyph("\uE7F4")));
+        menu.Items.Add(Item("File summary and search…", ShowFileInsights, icon: Glyph("\uE721")));
+        menu.Items.Add(Item("Scientific calculator…", ShowScientificCalculator, icon: Glyph("\uE8EF")));
+        menu.Items.Add(WithGlyph(SubMenu("Voice converters", new object[]
         {
-            Item("Sound pattern test…", ShowSoundPatternTest),
-            Item("Voice signals…", ShowVoiceSignals),
-            Item("Find it in David's words…", ShowDavidMatch),
-            Item("Voice converter…", ShowVoiceConverter),
-            Item("Letter signals…", ShowLetterSignals),
-        }));
-        menu.Items.Add(SubMenu("Dictation", new object[]
+            Item("Sound pattern test…", ShowSoundPatternTest, icon: Glyph("\uE9D9")),
+            Item("Voice signals…", ShowVoiceSignals, icon: Glyph("\uE9D2")),
+            Item("Find it in David's words…", ShowDavidMatch, icon: Glyph("\uEFA9")),
+            Item("Voice converter…", ShowVoiceConverter, icon: Glyph("\uE8AB")),
+            Item("Letter signals…", ShowLetterSignals, icon: Glyph("\uE8D2")),
+        }), "\uE8D6"));
+        menu.Items.Add(WithGlyph(SubMenu("Dictation", new object[]
         {
-            Item("Start new dictation file", StartNewDictationFile),
-            Item("Open dictation folder", OpenDictationFolder),
-        }));
-        menu.Items.Add(BuildPrivacyMenu());
+            Item("Start new dictation file", StartNewDictationFile, icon: Glyph("\uE710")),
+            Item("Open dictation folder", OpenDictationFolder, icon: Glyph("\uE8B7")),
+        }), "\uE720"));
+        menu.Items.Add(WithGlyph(BuildPrivacyMenu(), "\uE72E"));
         menu.Items.Add(new Separator());
-        menu.Items.Add(Item("Exit", () => System.Windows.Application.Current.Shutdown()));
+        menu.Items.Add(Item("Exit", () => System.Windows.Application.Current.Shutdown(), icon: Glyph("\uE7E8")));
         return menu;
     }
 
@@ -2407,6 +2407,51 @@ public partial class MainWindow : Window
         return item;
     }
 
+    // A Segoe icon for a menu entry, so each one is easy to spot. Windows 11
+    // has Segoe Fluent Icons; Windows 10 has the same code points in Segoe
+    // MDL2 Assets. Toggles stay without one: WPF shows their tick in the
+    // same place.
+    private static UIElement Glyph(string glyph) => new TextBlock
+    {
+        Text = glyph,
+        FontFamily = new System.Windows.Media.FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),
+        FontSize = 14,
+        HorizontalAlignment = HorizontalAlignment.Center,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+
+    // The Segoe icon fonts have no mosque, so this one is drawn: a dome with
+    // a crescent finial, the prayer hall with an arched door, and a minaret,
+    // in the same thin line style as the font icons. It takes the menu's
+    // text colour, as they do.
+    private static UIElement MosqueIcon()
+    {
+        var path = new System.Windows.Shapes.Path
+        {
+            Data = System.Windows.Media.Geometry.Parse(
+                "M3.5,9.5 C3.5,6.5 5.5,5 8,4 C10.5,5 12.5,6.5 12.5,9.5 " +
+                "M8,4 V2.5 M7.2,1.6 A0.9,0.9 0 1 0 8.8,1.6 " +
+                "M2.5,9.5 H13.5 V15 H2.5 Z " +
+                "M6.8,15 V12.6 A1.2,1.2 0 0 1 9.2,12.6 V15 " +
+                "M14.8,15 V6.5 M14.2,6.5 H15.4 M14.8,6.5 V4.8"),
+            StrokeThickness = 1,
+            Width = 16, Height = 16,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        path.SetBinding(System.Windows.Shapes.Shape.StrokeProperty, new System.Windows.Data.Binding("Foreground")
+        {
+            RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.FindAncestor, typeof(MenuItem), 1),
+        });
+        return path;
+    }
+
+    private static MenuItem WithGlyph(MenuItem item, string glyph)
+    {
+        item.Icon = Glyph(glyph);
+        return item;
+    }
+
     private static MenuItem SubMenu(string header, IEnumerable<object> items)
     {
         var menu = new MenuItem { Header = header };
@@ -2417,7 +2462,7 @@ public partial class MainWindow : Window
     private MenuItem BuildSkyMenu() =>
         SubMenu("Weather", SkyOptions.Select(opt => (object)Item(opt.Label, () => SetSky(opt.Value), isChecked: _settings.Sky == opt.Value))
             .Append(new Separator())
-            .Append(Item("Refresh weather", () => _ = RefreshWeatherAsync())));
+            .Append(Item("Refresh weather", () => _ = RefreshWeatherAsync(), icon: Glyph("\uE72C"))));
 
     private static readonly (string Value, string Label)[] MotionOptions =
     {
