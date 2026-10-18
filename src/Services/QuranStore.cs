@@ -6,7 +6,7 @@ using System.Text.Json;
 
 namespace CloCloWidget;
 
-// Quran memorization progress: the ayah being learnt, the ayat marked as
+// Quran memorization progress: the ayah or run of ayat being learnt, the ayat marked as
 // memorized, the reciter folder and the repeat and reminder choices. Kept in
 // its own file beside settings.json and written the same way (a fresh
 // temporary file, then swapped in). Everything read back is checked, since
@@ -17,9 +17,13 @@ public sealed class QuranStore
     private static readonly JsonSerializerOptions LoadOptions = new() { MaxDepth = 8 };
     public static readonly int[] GapChoices = { 1, 2, 3, 5 };
     public static readonly int[] ReminderChoices = { 0, 30, 60, 120 };
+    // The longest run of ayat learnt together.
+    public const int MaxRange = 20;
 
     public int Surah { get; set; } = 1;
+    // The ayat being learnt: from Ayah to AyahEnd (the same for one ayah).
     public int Ayah { get; set; } = 1;
+    public int AyahEnd { get; set; } = 1;
     // A folder of per-ayah recitations named like everyayah.com's
     // (001001.mp3 = Al-Fatiha 1; .wav works too). Chosen by the person;
     // never downloaded.
@@ -114,6 +118,7 @@ public sealed class QuranStore
     private QuranStore Checked()
     {
         if (!QuranText.IsValid(Surah, Ayah)) { Surah = 1; Ayah = 1; }
+        if (!QuranText.IsValid(Surah, AyahEnd) || AyahEnd < Ayah || AyahEnd - Ayah >= MaxRange) AyahEnd = Ayah;
         if (!IsAllowedFolder(AudioFolder)) AudioFolder = null;
         if (!GapChoices.Contains(GapSeconds)) GapSeconds = 2;
         if (!ReminderChoices.Contains(ReminderMinutes)) ReminderMinutes = 0;

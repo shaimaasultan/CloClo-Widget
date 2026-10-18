@@ -63,13 +63,19 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBlock Text="Surah" Style="{StaticResource Label}" Margin="0,0,8,0" />
             <ComboBox x:Name="SurahBox" Grid.Column="1" SelectionChanged="SurahBox_SelectionChanged"
                       AutomationProperties.Name="Surah" MaxDropDownHeight="360" />
             <TextBlock Grid.Column="2" Text="Ayah" Style="{StaticResource Label}" Margin="14,0,8,0" />
-            <ComboBox x:Name="AyahBox" Grid.Column="3" Width="90" SelectionChanged="AyahBox_SelectionChanged"
-                      AutomationProperties.Name="Ayah" MaxDropDownHeight="360" />
+            <ComboBox x:Name="AyahBox" Grid.Column="3" Width="72" SelectionChanged="AyahBox_SelectionChanged"
+                      AutomationProperties.Name="From ayah" MaxDropDownHeight="360" />
+            <TextBlock Grid.Column="4" Text="to" Style="{StaticResource Label}" Margin="8,0,8,0" />
+            <ComboBox x:Name="AyahEndBox" Grid.Column="5" Width="72" SelectionChanged="AyahEndBox_SelectionChanged"
+                      AutomationProperties.Name="To ayah" MaxDropDownHeight="360"
+                      ToolTip="Learn a run of up to 20 ayat together: they are recited one after another, then repeated." />
         </Grid>
 
         <!-- The ayah -->

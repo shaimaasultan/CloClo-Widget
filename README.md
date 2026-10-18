@@ -254,23 +254,28 @@ city. Compare calculated times with your local mosque.
 <img src="docs/screenshots/features/quran.png" alt="Quran memorization window showing Ayat al-Kursi (Al-Baqara 255) in large Uthmani script with its English meaning underneath, Show English ticked, Previous, +1 read and Memorized — next ayah buttons, the surah progress bar and the reciter folder, pause and reminder settings" width="460">
 
 Open **Quran memorization…** from the right-click menu, the search box (try
-"quran" or "حفظ") or its 📗 icon on the icon bar. It works one ayah at a
-time and is completely offline:
+"quran" or "حفظ") or its 📗 icon on the icon bar. It works one ayah, or a
+short run of ayat, at a time and is completely offline:
 
-1. Pick a surah and ayah at the top (it remembers where you are).
-2. The ayah is shown large in Uthmani script, with its number in ornate
-   brackets. On the first ayah of a surah the basmala is shown above it and
-   isn't part of what you memorize (Al-Fatiha and At-Tawba excepted).
-3. Press **▶ Repeat** to hear it on a loop, with a short pause between
-   repetitions (1, 2, 3 or 5 seconds). The counter shows how many times
-   you've heard it; **❚❚ Pause** stops it.
-4. When you know it, press **✓ Memorized — next ayah**. It's marked
-   memorized and the next ayah starts straight away, still looping; at the
-   end of a surah the next surah begins. **◀ Previous** goes back without
-   unmarking anything.
+1. Pick a surah at the top, then the ayat: **Ayah** is where to start and
+   **to** where to stop (up to 20 ayat; the same number for one ayah). It
+   remembers where you are.
+2. The ayat are shown large in Uthmani script, each with its number in
+   ornate brackets. On the first ayah of a surah the basmala is shown above
+   it and isn't part of what you memorize (Al-Fatiha and At-Tawba excepted).
+3. Press **▶ Repeat** to hear them on a loop. With a run, such as ayat 1 to
+   5, they're recited one after another with the ayah being recited lit up
+   in gold ("Ayah 3 of 1–5"); after the last one comes a short pause (1, 2, 3
+   or 5 seconds) and it starts again from the first. The counter shows how
+   many times you've heard the whole run; **❚❚ Pause** stops it.
+4. When you know them, press **✓ Memorized — next ayah** (or **next 5
+   ayat** for a run of five). They're all marked memorized and the next run
+   of the same length starts straight away, still looping, so 1–5 is
+   followed by 6–10; at the end of a surah the next surah begins.
+   **◀ Previous** goes back one run without unmarking anything.
 5. Tick **Show English** to see the meaning under the Arabic, in Saheeh
-   International's translation (the Arabic is set a little smaller so both
-   fit). It's off by default, so the Arabic stays the focus, and remembered
+   International's translation, one line per ayah for a run (the Arabic is
+   set a little smaller so both fit). It's off by default, so the Arabic stays the focus, and remembered
    once you turn it on.
 
 The progress bar shows how many ayat of the surah you've memorized, and the

@@ -1,19 +1,23 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
 
 namespace CloCloWidget;
 
-// Memorize the Quran one ayah at a time: the ayah is shown large and, with a
-// reciter folder chosen, played on a loop with a short pause between
-// repetitions, until it is marked memorized; then the next ayah begins.
-// Everything is offline: the text is compiled into the exe and the
-// recitations are the person's own local files.
+// Memorize the Quran an ayah - or a short run of ayat - at a time. The ayat
+// are shown large and, with a reciter folder chosen, recited one after the
+// other with the ayah being recited highlighted; after the last one comes a
+// short pause and the run starts again, until it is marked memorized. Then
+// the next run of the same length begins. Everything is offline: the text is
+// compiled into the exe and the recitations are the person's own local files.
 public partial class QuranWindow : Window
 {
     private sealed record Choice(int Value, string Name)
@@ -21,13 +25,21 @@ public partial class QuranWindow : Window
         public override string ToString() => Name;
     }
 
+    private static readonly Brush TextBrush = Frozen(Color.FromRgb(0xf3, 0xec, 0xdd));
+    private static readonly Brush MutedBrush = Frozen(Color.FromRgb(0xcb, 0xbf, 0xa8));
+    private static readonly Brush HighlightBrush = Frozen(Color.FromRgb(0xe6, 0xc4, 0x76));
+
     private readonly QuranStore _store;
     private readonly LocalAudioPlayer _player = new();
     private readonly DispatcherTimer _gapTimer = new();
+    private readonly List<Run> _ayahRuns = new();
+    private readonly List<Run> _englishRuns = new();
     private bool _reciting;
     private bool _ready;
     private int _repeats;
-    // A one-off message for the status line, cleared when the ayah changes.
+    // Which ayah of the range is being recited (0 = the first).
+    private int _playIndex;
+    // A one-off message for the status line, cleared when the range changes.
     private string? _notice;
 
     // Raised when the loop starts or stops, so the main window can keep hold
@@ -35,6 +47,10 @@ public partial class QuranWindow : Window
     public event Action<bool>? RecitingChanged;
 
     public bool IsReciting => _reciting;
+
+    private int Start => _store.Ayah;
+    private int End => _store.AyahEnd;
+    private int Length => End - Start + 1;
 
     public QuranWindow(QuranStore store)
     {
@@ -50,8 +66,8 @@ public partial class QuranWindow : Window
         GapBox.ItemsSource = QuranStore.GapChoices.Select(g => new Choice(g, $"{g} s")).ToList();
         ReminderBox.ItemsSource = QuranStore.ReminderChoices
             .Select(m => new Choice(m, m == 0 ? "Off" : m < 60 ? $"Every {m} min" : $"Every {m / 60} h")).ToList();
-        GapBox.SelectedItem = ((System.Collections.Generic.List<Choice>)GapBox.ItemsSource).First(c => c.Value == _store.GapSeconds);
-        ReminderBox.SelectedItem = ((System.Collections.Generic.List<Choice>)ReminderBox.ItemsSource).First(c => c.Value == _store.ReminderMinutes);
+        GapBox.SelectedItem = ((List<Choice>)GapBox.ItemsSource).First(c => c.Value == _store.GapSeconds);
+        ReminderBox.SelectedItem = ((List<Choice>)ReminderBox.ItemsSource).First(c => c.Value == _store.ReminderMinutes);
 
         _player.Finished += OnRecitationFinished;
         _gapTimer.Tick += (_, _) =>
@@ -66,51 +82,98 @@ public partial class QuranWindow : Window
         };
 
         EnglishBox.IsChecked = _store.ShowEnglish;
-        ShowAyah(_store.Surah, _store.Ayah);
+        ShowRange(_store.Surah, _store.Ayah, _store.AyahEnd);
         _ready = true;
     }
 
     // Stops the loop (for the azan, or when another sound needs the speakers).
     public void StopRecitation() => SetReciting(false);
 
-    private void ShowAyah(int surah, int ayah)
+    private void ShowRange(int surah, int start, int end)
     {
+        var info = QuranText.GetSurah(surah);
+        start = Math.Clamp(start, 1, info.AyahCount);
+        end = Math.Clamp(end, start, Math.Min(info.AyahCount, start + QuranStore.MaxRange - 1));
+
         var wasReciting = _reciting;
         SetReciting(false);
         _store.Surah = surah;
-        _store.Ayah = ayah;
+        _store.Ayah = start;
+        _store.AyahEnd = end;
         _store.Save();
         _repeats = 0;
         _notice = null;
 
-        var info = QuranText.GetSurah(surah);
         var oldReady = _ready;
         _ready = false;
         SurahBox.SelectedIndex = surah - 1;
         AyahBox.ItemsSource = Enumerable.Range(1, info.AyahCount).Select(n => new Choice(n, n.ToString(CultureInfo.CurrentCulture))).ToList();
-        AyahBox.SelectedIndex = ayah - 1;
+        AyahBox.SelectedIndex = start - 1;
+        AyahEndBox.ItemsSource = Enumerable.Range(start, Math.Min(info.AyahCount, start + QuranStore.MaxRange - 1) - start + 1)
+            .Select(n => new Choice(n, n.ToString(CultureInfo.CurrentCulture))).ToList();
+        AyahEndBox.SelectedIndex = end - start;
         _ready = oldReady;
 
         SurahSubtitle.Text = $"سورة {info.ArabicName} · {info.Name} ({info.Meaning}) · {info.AyahCount} ayat";
-        var (basmala, text) = QuranText.GetAyah(surah, ayah);
-        BasmalaText.Text = basmala ?? "";
-        BasmalaText.Visibility = basmala != null ? Visibility.Visible : Visibility.Collapsed;
-        AyahText.Text = text + " " + AyahMarker(ayah);
-        ShowEnglish();
-        System.Windows.Automation.AutomationProperties.SetHelpText(AyahText, $"{info.Name}, ayah {ayah}");
+        BuildText();
+        System.Windows.Automation.AutomationProperties.SetHelpText(AyahText,
+            Length == 1 ? $"{info.Name}, ayah {start}" : $"{info.Name}, ayat {start} to {end}");
 
         UpdateState();
         if (wasReciting) SetReciting(true);
     }
 
+    // The range as runs, one per ayah, so the one being recited can be lit up.
+    private void BuildText()
+    {
+        _ayahRuns.Clear();
+        AyahText.Inlines.Clear();
+        string? basmala = null;
+        for (var ayah = Start; ayah <= End; ayah++)
+        {
+            var (b, text) = QuranText.GetAyah(_store.Surah, ayah);
+            basmala ??= b;
+            var run = new Run(text + " " + AyahMarker(ayah)) { Foreground = TextBrush };
+            _ayahRuns.Add(run);
+            if (ayah > Start) AyahText.Inlines.Add(new Run(" "));
+            AyahText.Inlines.Add(run);
+        }
+        BasmalaText.Text = basmala ?? "";
+        BasmalaText.Visibility = basmala != null ? Visibility.Visible : Visibility.Collapsed;
+        ShowEnglish();
+    }
+
     private void ShowEnglish()
     {
+        _englishRuns.Clear();
+        EnglishText.Inlines.Clear();
         EnglishText.Visibility = _store.ShowEnglish ? Visibility.Visible : Visibility.Collapsed;
-        // A little smaller with the English, so a long ayah and its meaning
-        // usually fit without scrolling.
-        AyahText.FontSize = _store.ShowEnglish ? 29 : 34;
-        AyahText.LineHeight = _store.ShowEnglish ? 50 : 58;
-        EnglishText.Text = _store.ShowEnglish ? QuranText.GetEnglish(_store.Surah, _store.Ayah) : "";
+        // Smaller with the English, and smaller again for a run of ayat, so
+        // the text and its meaning usually fit without scrolling.
+        var size = (_store.ShowEnglish ? 29 : 34) - (Length > 1 ? 3 : 0);
+        AyahText.FontSize = size;
+        AyahText.LineHeight = size * 1.7;
+        if (!_store.ShowEnglish) return;
+        for (var ayah = Start; ayah <= End; ayah++)
+        {
+            if (ayah > Start) EnglishText.Inlines.Add(new LineBreak());
+            var prefix = Length > 1 ? $"({ayah}) " : "";
+            var run = new Run(prefix + QuranText.GetEnglish(_store.Surah, ayah)) { Foreground = MutedBrush };
+            _englishRuns.Add(run);
+            EnglishText.Inlines.Add(run);
+        }
+        Highlight();
+    }
+
+    // Lights up the ayah being recited (only while a run of ayat is playing).
+    private void Highlight()
+    {
+        var lit = _reciting && Length > 1 ? _playIndex : -1;
+        for (var i = 0; i < _ayahRuns.Count; i++)
+            _ayahRuns[i].Foreground = i == lit ? HighlightBrush : TextBrush;
+        for (var i = 0; i < _englishRuns.Count; i++)
+            _englishRuns[i].Foreground = i == lit ? TextBrush : MutedBrush;
+        if (lit >= 0 && lit < _ayahRuns.Count) _ayahRuns[lit].BringIntoView();
     }
 
     private void EnglishBox_Click(object sender, RoutedEventArgs e)
@@ -128,23 +191,40 @@ public partial class QuranWindow : Window
         return $"{(char)0xFD3F}{digits}{(char)0xFD3E}";
     }
 
+    // The first ayah of the range with no recitation file, or null if all have one.
+    private int? MissingAudio()
+    {
+        for (var ayah = Start; ayah <= End; ayah++)
+            if (_store.AudioFileFor(_store.Surah, ayah) == null) return ayah;
+        return null;
+    }
+
     private void UpdateState()
     {
         var surah = _store.Surah;
-        var ayah = _store.Ayah;
         var info = QuranText.GetSurah(surah);
-        var hasAudio = _store.AudioFileFor(surah, ayah) != null;
+        var missing = MissingAudio();
+        var hasAudio = missing == null;
+        var range = Length > 1;
 
         PlayButton.Content = hasAudio ? (_reciting ? "❚❚ Pause" : "▶ Repeat") : "+1 read";
-        RepeatText.Text = _repeats switch
+        var count = _repeats switch
         {
-            0 => hasAudio ? "Press Repeat to hear it on a loop" : "Read it aloud, then press +1 read",
-            1 => hasAudio ? "Heard once" : "Read once",
-            _ => hasAudio ? $"Heard {_repeats} times" : $"Read {_repeats} times",
+            0 => "",
+            1 => hasAudio ? "heard once" : "read once",
+            _ => hasAudio ? $"heard {_repeats} times" : $"read {_repeats} times",
         };
-        var memorized = _store.IsMemorized(surah, ayah);
+        RepeatText.Text = _reciting && range
+            ? $"Ayah {Start + _playIndex} of {Start}–{End}" + (count.Length > 0 ? $" · {count}" : "")
+            : count.Length > 0
+                ? char.ToUpper(count[0], CultureInfo.CurrentCulture) + count[1..]
+                : hasAudio ? "Press Repeat to hear it on a loop" : "Read it aloud, then press +1 read";
+
+        var memorized = Enumerable.Range(Start, Length).All(a => _store.IsMemorized(surah, a));
         MemorizedBadge.Visibility = memorized ? Visibility.Visible : Visibility.Collapsed;
-        MemorizedButton.Content = memorized ? "Next ayah ▶" : "✓ Memorized — next ayah";
+        MemorizedButton.Content = memorized
+            ? (range ? "Next ayat ▶" : "Next ayah ▶")
+            : (range ? $"✓ Memorized — next {Length} ayat" : "✓ Memorized — next ayah");
 
         var done = _store.MemorizedIn(surah);
         SurahProgress.Maximum = info.AyahCount;
@@ -152,14 +232,14 @@ public partial class QuranWindow : Window
         ProgressText.Text = $"{done} of {info.AyahCount} ayat memorized in {info.Name} · {_store.Memorized.Count} in all";
 
         FolderText.Text = _store.AudioFolder ?? "No reciter folder: text only";
-        StatusText.Text = _notice ?? (_store.AudioFolder != null && !hasAudio
-            ? $"The reciter folder has no {surah:000}{ayah:000}.mp3, so this ayah is text only."
+        StatusText.Text = _notice ?? (_store.AudioFolder != null && missing is { } m
+            ? $"The reciter folder has no {surah:000}{m:000}.mp3, so {(range ? "these ayat are" : "this ayah is")} text only."
             : "");
     }
 
     private void SetReciting(bool on)
     {
-        if (on && _store.AudioFileFor(_store.Surah, _store.Ayah) == null) on = false;
+        if (on && MissingAudio() != null) on = false;
         if (on == _reciting)
         {
             if (on) return;
@@ -168,35 +248,50 @@ public partial class QuranWindow : Window
             return;
         }
         _reciting = on;
+        _playIndex = 0;
         _gapTimer.Stop();
         if (on) PlayCurrent();
         else _player.Stop();
+        Highlight();
         RecitingChanged?.Invoke(on);
         if (IsLoaded) UpdateState();
     }
 
     private void PlayCurrent()
     {
-        var path = _store.AudioFileFor(_store.Surah, _store.Ayah);
+        var path = _store.AudioFileFor(_store.Surah, Start + _playIndex);
         if (path == null || !_player.TryPlay(path))
         {
             _notice = "Couldn't play the recitation file. Check the reciter folder.";
             SetReciting(false);
+            return;
         }
+        Highlight();
+        UpdateState();
     }
 
+    // The next ayah of the range follows straight on; after the last one
+    // comes the pause, then the range starts again.
     private void OnRecitationFinished()
     {
-        _repeats++;
-        UpdateState();
         if (!_reciting) return;
+        if (_playIndex < Length - 1)
+        {
+            _playIndex++;
+            PlayCurrent();
+            return;
+        }
+        _repeats++;
+        _playIndex = 0;
+        Highlight();
+        UpdateState();
         _gapTimer.Interval = TimeSpan.FromSeconds(_store.GapSeconds);
         _gapTimer.Start();
     }
 
     private void Play_Click(object sender, RoutedEventArgs e)
     {
-        if (_store.AudioFileFor(_store.Surah, _store.Ayah) == null)
+        if (MissingAudio() != null)
         {
             _repeats++;
             UpdateState();
@@ -207,20 +302,22 @@ public partial class QuranWindow : Window
 
     private void Memorized_Click(object sender, RoutedEventArgs e)
     {
-        var index = QuranText.GlobalIndex(_store.Surah, _store.Ayah);
-        if (!_store.Memorized.Contains(index))
+        for (var ayah = Start; ayah <= End; ayah++)
         {
-            _store.Memorized.Add(index);
-            _store.Memorized.Sort();
+            var index = QuranText.GlobalIndex(_store.Surah, ayah);
+            if (!_store.Memorized.Contains(index)) _store.Memorized.Add(index);
         }
-        var (surah, ayah) = (_store.Surah, _store.Ayah);
-        if (ayah < QuranText.GetSurah(surah).AyahCount)
+        _store.Memorized.Sort();
+
+        var (surah, length) = (_store.Surah, Length);
+        var count = QuranText.GetSurah(surah).AyahCount;
+        if (End < count)
         {
-            ShowAyah(surah, ayah + 1);
+            ShowRange(surah, End + 1, End + length);
         }
         else if (surah < 114)
         {
-            ShowAyah(surah + 1, 1);
+            ShowRange(surah + 1, 1, length);
             _notice = $"{QuranText.GetSurah(surah).Name} is done. Starting {QuranText.GetSurah(surah + 1).Name}.";
             UpdateState();
         }
@@ -232,23 +329,38 @@ public partial class QuranWindow : Window
         }
     }
 
+    // Back by one range of the same length, without unmarking anything.
     private void Previous_Click(object sender, RoutedEventArgs e)
     {
-        var (surah, ayah) = (_store.Surah, _store.Ayah);
-        if (ayah > 1) ShowAyah(surah, ayah - 1);
-        else if (surah > 1) ShowAyah(surah - 1, QuranText.GetSurah(surah - 1).AyahCount);
+        var (surah, length) = (_store.Surah, Length);
+        if (Start > 1)
+        {
+            ShowRange(surah, Math.Max(1, Start - length), Start - 1);
+        }
+        else if (surah > 1)
+        {
+            var count = QuranText.GetSurah(surah - 1).AyahCount;
+            ShowRange(surah - 1, Math.Max(1, count - length + 1), count);
+        }
     }
 
     private void SurahBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!_ready || SurahBox.SelectedItem is not Choice choice || choice.Value == _store.Surah) return;
-        ShowAyah(choice.Value, 1);
+        ShowRange(choice.Value, 1, Length);
     }
 
+    // Moving the start keeps the length of the range where it can.
     private void AyahBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!_ready || AyahBox.SelectedItem is not Choice choice || choice.Value == _store.Ayah) return;
-        ShowAyah(_store.Surah, choice.Value);
+        if (!_ready || AyahBox.SelectedItem is not Choice choice || choice.Value == Start) return;
+        ShowRange(_store.Surah, choice.Value, choice.Value + Length - 1);
+    }
+
+    private void AyahEndBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_ready || AyahEndBox.SelectedItem is not Choice choice || choice.Value == End) return;
+        ShowRange(_store.Surah, Start, choice.Value);
     }
 
     private void GapBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -278,11 +390,18 @@ public partial class QuranWindow : Window
         SetReciting(false);
         _store.AudioFolder = picker.FolderName;
         _store.Save();
-        _notice = _store.AudioFileFor(1, 1) != null || _store.AudioFileFor(_store.Surah, _store.Ayah) != null
+        _notice = _store.AudioFileFor(1, 1) != null || _store.AudioFileFor(_store.Surah, Start) != null
             ? null
             : "No files named like 001001.mp3 were found in that folder.";
         UpdateState();
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
+
+    private static Brush Frozen(Color color)
+    {
+        var brush = new SolidColorBrush(color);
+        brush.Freeze();
+        return brush;
+    }
 }
