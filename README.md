@@ -75,7 +75,20 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   `install.ps1` only runs `dotnet` from there.
 - **To sign:** additionally the Windows SDK, which provides `signtool.exe`.
 
-## Using it
+## Features
+
+<img src="docs/screenshots/features/widget.png" alt="CloClo widget with Lady Keeper, the time and date, battery, connection and uptime, 19° Clear in Cairo, the icon bar and the search box" width="244" align="right">
+
+CloClo shows the time, battery, connection and weather around a small Keeper
+or Lady Keeper avatar, with an icon bar of quick tools and a search box
+underneath. Everything below is reached from the icon bar, the search box or
+the right-click menu.
+
+The screenshots were taken with **Privacy → Hide from screen sharing** turned
+off. With it on (the default), screenshots and recordings leave CloClo out —
+see [Privacy](#privacy-and-data).
+
+### The widget
 
 - **Drag** anywhere on the widget to move it. It remembers where you leave it.
 - **One at a time.** Only one CloClo runs per Windows sign-in. Starting it
@@ -86,6 +99,42 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   day/month order), e.g. "9:41 PM · Tue, Oct 6". The sky in words sits with
   the temperature: "12° Clear". The battery shows its charge and, when Windows
   provides it, an estimate of time remaining.
+- **Location:** see [Setting your location](#setting-your-location) below.
+- **Weather** refreshes every 20 minutes from
+  [Open-Meteo](https://open-meteo.com) (no API key, no account).
+- A **tray icon** (near the clock, in the hidden-icons area) has the same
+  menu. Double-click it to show or hide the widget. If the widget is hidden,
+  right-click the tray icon and choose **Show widget**, or launch CloClo again.
+
+<br clear="right">
+
+### Setting your location
+
+| Before: Cairo | Right-click → **Set location…** | After: London |
+|---|---|---|
+| <img src="docs/screenshots/features/location-before.png" alt="Widget showing 19° Clear in Cairo" width="200"> | <img src="docs/screenshots/features/location-dialog.png" alt="Set location dialog with London typed in the City name box, a Use my location button, and Cancel and Save" width="320"> | <img src="docs/screenshots/features/location-after.png" alt="Widget now showing 9° Clear in London" width="200"> |
+
+**Use my location** finds where the PC is now, through Windows' location
+service:
+
+| Before: Cairo | Choose **Use my location** | After: the PC's current city |
+|---|---|---|
+| <img src="docs/screenshots/features/location-gps-before.png" alt="Widget showing 19° Clear in Cairo" width="200"> | <img src="docs/screenshots/features/location-gps-dialog.png" alt="Set location dialog with the pointer on the Use my location button" width="320"> | <img src="docs/screenshots/features/location-gps-after.png" alt="Widget now showing 5° Clear in Mississauga, found from the PC's location" width="200"> |
+
+Open **Set location…** from the right-click menu or the search box. Type a
+city and choose **Save**, or choose **Use my location** and grant Windows'
+location permission to use where the PC is now. The dialog closes by itself
+once the city is found. The weather, the city under
+the temperature and the [prayer times](#prayer-times-and-azan) switch to the
+new place straight away. The stored and requested coordinates are rounded to
+two decimal places.
+
+### Power, connection and devices
+
+| Hover the battery | Hover the connection icon |
+|---|---|
+| <img src="docs/screenshots/features/power-card.png" alt="Power card: Battery 100%, plugged in, not charging; power mode Balanced; battery saver off; battery health 48% (40.1 Wh of 84.3 Wh design)" width="420"> | <img src="docs/screenshots/features/net-card.png" alt="Connection card: Wi-Fi 4 of 4 bars; internet access; private network; not metered" width="420"> |
+
 - **Power details:** hover the battery for a card with what Windows reports:
   charge and whether it's charging, plugged in or on battery, time left (or
   about how long to full while charging), the charge rate in watts, the
@@ -121,243 +170,331 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
 - **Where they sit:** these icons go beside the battery percentage when they
   fit before the sun or moon, or on a row of their own in the top-left
   column otherwise. On a PC without a battery they come first in the column.
-- **Location:** type a city under **Set location…**, or choose **Use my
-  location** and grant Windows' location permission. The stored and requested
-  coordinates are rounded to two decimal places.
-- **Avatar:** choose Keeper or Lady Keeper and a separate everyday outfit colour
-  for each. Weather changes the sky and clothing; **Weather** can follow the
-  live forecast or use a sky you pick. The avatar sleeps after your chosen idle
-  interval and wears workout clothes during a stretch-break reminder. With the
-  prayer look on (see **Prayer times and azan**), it wears prayer clothes at
-  prayer time. The **Motion** menu offers full, gentle and still modes. Time
-  of day adds small visual details; the clock and weather text adapt to the desktop background.
-- **Reminders:** **Workout reminder** offers a fixed activity interval;
-  when the stretch-break pose starts, CloClo says "Time for a short stretch
-  break" (in Arabic with Hoda when Arabic voice commands are on).
-  **Custom reminders…** lets you keep up to five messages, each with a
+
+### Avatar and weather
+
+| Keeper | Rain | Lady Keeper, snow | Storm | Stretch break |
+|---|---|---|---|---|
+| <img src="docs/screenshots/features/avatar-keeper.png" alt="Keeper in his everyday red sweater on a clear night" width="150"> | <img src="docs/screenshots/features/avatar-keeper-rain.png" alt="Keeper in a yellow raincoat holding an umbrella" width="150"> | <img src="docs/screenshots/features/avatar-lady-snow.png" alt="Lady Keeper in a red winter hat and scarf" width="150"> | <img src="docs/screenshots/features/avatar-lady-storm.png" alt="Lady Keeper wrapped in a storm cape" width="150"> | <img src="docs/screenshots/features/avatar-lady-workout.png" alt="Lady Keeper in workout clothes with a BREAK headband and a countdown" width="150"> |
+
+Choose Keeper or Lady Keeper and a separate everyday outfit colour for each.
+Weather changes the sky and clothing; **Weather** can follow the live forecast
+or use a sky you pick. The avatar sleeps after your chosen idle interval and
+wears workout clothes during a stretch-break reminder. With the prayer look on
+(see [Prayer times and azan](#prayer-times-and-azan)), it wears prayer clothes
+at prayer time. The **Motion** menu offers full, gentle and still modes. Time
+of day adds small visual details; the clock and weather text adapt to the
+desktop background.
+
+### Reminders
+
+<img src="docs/screenshots/features/custom-reminders.png" alt="Custom reminders window listing 'Drink a glass of water' and 'Look away from the screen for 20 seconds', with Add, Edit, Disable and Remove buttons" width="400">
+
+- **Workout reminder** offers a fixed activity interval; when the
+  stretch-break pose starts, CloClo says "Time for a short stretch break" (in
+  Arabic with Hoda when Arabic voice commands are on).
+- **Custom reminders…** lets you keep up to five messages, each with a
   choice of 15, 30, 45, 60, 90 or 120 minutes, active hours, an on/off switch
   and optional speech or a chosen local MP3/WAV sound. Audio plays before
-  speech when both are enabled. They use your PC's local time and show while the avatar
-  is awake; the reminder outfit returns to normal after the message. The
-  optional startup greeting speaks the local account name and briefly
+  speech when both are enabled. They use your PC's local time and show while
+  the avatar is awake; the reminder outfit returns to normal after the
+  message.
+- The optional startup greeting speaks the local account name and briefly
   salutes; turn it off under **Privacy**.
-- **Prayer times and azan:** open **Prayer times and azan…** from the menu or
-  search. CloClo calculates Fajr, Dhuhr, Asr, Maghrib and Isha locally from
-  your saved location. ISNA is the default; Muslim World League and Egyptian
-  methods, plus Standard or Hanafi Asr, are selectable. Times are displayed in
-  the saved location's time zone when available. Changing **Set location…**
-  recalculates the schedule for that city. Automatic azan is off until you
-  choose a local MP3 or WAV recording and enable it. CloClo plays the
-  recording at the five prayer times while it is running; it does not replay
-  prayers missed while the PC is
-  asleep or CloClo is closed. Compare calculated times with your local mosque.
-  **Show the avatar in prayer clothes at prayer times** is a separate opt-in
-  that works with or without the azan. At each prayer time Keeper changes
-  into a white thobe and kufi, and Lady Keeper into a long prayer dress and a
-  hijab that covers her hair. Both stand barefoot on a prayer mat with eyes
-  closed and hands folded on the chest, and the "Fajr prayer time"-style
-  label shows. The look stays until you mark the prayer done: click the
-  green check beside the head, click the head itself, or choose **I've
-  prayed** at the top of the right-click menu. Keeper gives a small nod and
-  goes back to the everyday look. If you haven't marked it by the next
-  prayer time, the look simply carries on. It isn't kept if CloClo restarts.
-  It comes before sleep, the stretch break and custom reminders. A stretch
-  break in progress ends and counts as done, and custom reminders wait until
-  you've marked the prayer. It keeps the calm
-  breathing in full and gentle motion, stays completely still in still mode,
-  and doesn't sway in the wind. Turning the option off ends a look in
-  progress. It uses the same local calculation, location and method as the
-  azan.
-  Hold to talk doesn't listen while the azan plays. Everything CloClo plays (the azan, reminder sounds, spoken
-  reminders and replies, read-aloud text and previews) uses one audio
-  session, so Windows shows a single CloClo entry and volume in the volume
-  mixer instead of adding a new entry each time.
-- **File summary and search:** open **File summary and search…** from the
-  right-click menu or the search box (try "files", "folder" or "find text").
-  Choose a folder (**Include subfolders** is on by default; untick it for that
-  folder only) or pick one or more files. The **Summary** tab shows the number
-  of files, total size, a breakdown by file type with each type's share of the
-  size, the ten largest and ten newest files, and line and word counts for the
-  text files. The **Search** tab finds a word or sentence in those files,
-  ignoring case: the whole phrase must appear on one line (any spacing between
-  its words matches), and **Whole words** stops "cat" matching "category". Each
-  match shows the file, line number, the text around it with the phrase
-  highlighted, and the folder; results are listed by file and line when the
-  search finishes. **Filter results** narrows the matches already found,
-  without searching again: pick a file type (the list shows each type's
-  match count), and/or type text that the file name, folder or matching line
-  must contain. The status line then says how many matches are shown, and
-  **Clear filters** shows them all again. A chosen type stays chosen for the
-  next search. Double-click a match or use **Open file**: text files open
-  in Notepad (Ctrl+G goes to the line) and Word documents in your usual app.
-  **Show in folder** (or double-clicking a largest/newest file) opens File
-  Explorer with the file selected. Listing, counting and searching run in the
-  background with a progress bar and **Cancel**.
-  - *What is read:* plain-text and source-code files by extension (`.txt`,
-    `.md`, `.csv`, `.log`, `.json`, `.xml`, `.yaml`, `.ini`, `.html`, `.css`,
-    `.js`/`.ts`, `.cs`, `.py`, `.java`, `.c`/`.cpp`, `.go`, `.rs`, `.sql`,
-    `.ps1`, `.bat`, `.sh`, `.srt` and similar), in UTF-8 or with a UTF-16 byte
-    order mark, plus the body text of Word `.docx` documents, where the line
-    number is the paragraph number (shown as ¶). A "text" file that turns out
-    to be binary is skipped. PDFs and other formats are counted in the summary
-    but not read: reading PDF text needs a third-party parser, which CloClo
-    doesn't ship.
-  - *Limits:* hidden and system files, and folder links (junctions and
-    symbolic links), are skipped; listing stops at 200,000 files; text files
-    over 32 MB and `.docx` files over 64 MB are listed but not read; a search
-    stops after 5,000 matches. Network shares are refused.
-  - *Privacy:* everything is read locally, nothing is saved or sent, and the
-    chosen folder isn't remembered; closing the window cancels the work and
-    forgets the list and results. Files are only opened for reading, and
-    **Open file** only opens the text and Word types above, so a match can't
-    start a program or script: scripts open as text in Notepad. The window
-    follows the screen-capture privacy setting, since it shows file names and
-    contents.
-- **Scientific calculator:** open it from the search box or right-click menu.
-  It supports typed expressions, a keypad, degree/radian mode, trigonometry,
-  logarithms, roots, powers, factorials and `Ans`. Calculations use a bounded
-  local arithmetic parser, not a scripting engine or network service.
-- **Voice signal tools:** the search box and right-click menu open Sound pattern
-  test, Voice signals, Find it in David's words, Voice converter, and Letter
-  signals. These local experiments compare microphone samples with synthesized
-  Windows voices. Recordings stay in memory and stop when their windows close.
-  Sound pattern test can save measured sound pieces to
-  `%AppData%\CloCloWidget\sound-pieces.json` only when you choose to teach or
-  save them; the file contains measurements and your letter, word, and speaker
-  labels, but no recorded audio.
-- **Hold right-click to talk (open an app by voice):** turn it on under
-  right-click → **Privacy** → **Hold right-click to talk**. Then, anywhere
-  on the screen (you don't need to find CloClo), hold the right mouse button
-  for about a second until CloClo says "Listening.", say an app name and let
-  go. CloClo says "Opening Word now." and opens it, with no confirmation:
 
-  | Say | Opens |
-  |---|---|
-  | Notepad | Notepad |
-  | Paint, Paintbrush | Paint |
-  | OneDrive | OneDrive |
-  | Snipping Tool | Snipping Tool |
-  | Settings | Windows Settings |
-  | YouTube | YouTube in Microsoft Edge |
-  | Spotify | Spotify (Microsoft Store version) |
-  | Word | Microsoft Word |
+### Prayer times and azan
 
-  Close pronunciations work too ("ward" opens Word, "not bad" Notepad). Every
-  step is spoken, including "I didn't hear a command." and "That is not an
-  approved command.", so it can be used without seeing the screen. With
-  **Voice commands in Arabic** on, say the Arabic names (المفكرة، الرسام،
-  وورد…) and CloClo answers in Arabic. A normal short right-click still opens
-  the menu of whatever is under the cursor. Details are under **Security**.
-- **Icon bar** under the temperature — up to 7 of these at a time, picked in
-  right-click → **Icons**:
+| Prayer times window | Prayer look: Keeper | Prayer look: Lady Keeper |
+|---|---|---|
+| <img src="docs/screenshots/features/prayer-times.png" alt="Prayer times window for Cairo with the five prayer times, calculation and Asr options, prayer-look and azan check boxes" width="380"> | <img src="docs/screenshots/features/avatar-prayer-keeper.png" alt="Keeper in a white thobe and kufi on a prayer mat, with the green 'I've prayed' check" width="170"> | <img src="docs/screenshots/features/avatar-prayer-lady.png" alt="Lady Keeper in a prayer dress and hijab on a prayer mat, with the green 'I've prayed' check" width="170"> |
 
-  | Icon | What it does |
-  |---|---|
-  | YouTube / Spotify | Shows what's playing there, and keeps it updated |
-  | Notifications | Shows your latest notification; the list button opens Windows' notification panel |
-  | Search other apps | Lists current media sessions; selecting one watches its metadata without activating its app |
-  | Windows status | Opens the Windows status window: uptime, sleep, shutdown and sign-in times, CPU, memory, storage, network, power, displays, graphics and security |
-  | Read selection aloud | Opens the shared speech editor, adds highlighted text, and reads it from the editor (up to 5,000 characters per reading) |
-  | Selection details | Shows word, character and line counts and a short preview of highlighted text; nothing is saved (the fallback briefly copies selected text) |
-  | Dictate | Opens the shared speech editor. **Dictate** uses the default microphone and bundled local Whisper model; **Read aloud** speaks the editor's text; **Transcribe playing audio** captures the web browser playing sound (or, with **Browser audio only** turned off, everything on the default speaker output) with the same local model. Load a text file (up to 256 KiB), explicitly save text to the private dictation file, or open that folder from the window. Capture continues until its toggle is turned off or the window closes |
-  | Convert units | Converts a highlighted "5 km", "98 F"… (km/mi/m/ft, kg/lb, °C/°F/K) |
-  | Color picker | Pick any color on screen; its hex code is copied (Esc cancels) |
-  | QR code from selection | Makes a QR code of the highlighted text or link |
-  | Volume/mute toggle | Mutes or unmutes the system sound |
-  | Clipboard history | Lists Windows' clipboard history (Win+V); click one to copy it again |
-  | Stopwatch | One click starts it, the next pauses it, the next stops and resets it; the time shows top-left, under the battery |
-  | Daily quote, word, joke & fact | A speech bubble with today's quote, an English → Arabic word (with an example), a joke and a "did you know" fact; click it for the next one, × or Esc to close. All built in - nothing is fetched |
-  | Layer Sudoku (daily game) | Opens the Layer Sudoku game - today's daily puzzle (the same one the HTML version gives, with a streak), or 6×6 to 16×16 at four levels; layer view, method-following hints, notes, undo, timer and pause. Progress is saved |
+Open **Prayer times and azan…** from the menu or search. CloClo calculates
+Fajr, Dhuhr, Asr, Maghrib and Isha locally from your saved location. ISNA is
+the default; Muslim World League and Egyptian methods, plus Standard or Hanafi
+Asr, are selectable. Times are displayed in the saved location's time zone
+when available. Changing **Set location…** recalculates the schedule for that
+city. Compare calculated times with your local mosque.
 
-  Turn on **Selection details** under right-click → **Icons**; the icon bar
-  holds up to seven choices at once.
+- **Azan:** automatic azan is off until you choose a local MP3 or WAV
+  recording and enable it. CloClo plays the recording at the five prayer
+  times while it is running; it does not replay prayers missed while the PC
+  is asleep or CloClo is closed.
+- **Prayer look:** **Show the avatar in prayer clothes at prayer times** is a
+  separate opt-in that works with or without the azan. At each prayer time
+  Keeper changes into a white thobe and kufi, and Lady Keeper into a long
+  prayer dress and a hijab that covers her hair. Both stand barefoot on a
+  prayer mat with eyes closed and hands folded on the chest, and the "Fajr
+  prayer time"-style label shows. The look stays until you mark the prayer
+  done: click the green check beside the head, click the head itself, or
+  choose **I've prayed** at the top of the right-click menu. Keeper gives a
+  small nod and goes back to the everyday look. If you haven't marked it by
+  the next prayer time, the look simply carries on. It isn't kept if CloClo
+  restarts. It comes before sleep, the stretch break and custom reminders. A
+  stretch break in progress ends and counts as done, and custom reminders
+  wait until you've marked the prayer. It keeps the calm breathing in full
+  and gentle motion, stays completely still in still mode, and doesn't sway
+  in the wind. Turning the option off ends a look in progress. It uses the
+  same local calculation, location and method as the azan.
+- **Audio:** hold to talk doesn't listen while the azan plays. Everything
+  CloClo plays (the azan, reminder sounds, spoken reminders and replies,
+  read-aloud text and previews) uses one audio session, so Windows shows a
+  single CloClo entry and volume in the volume mixer instead of adding a new
+  entry each time.
 
-  The search box below the widget finds right-click menu actions, including
-  **Windows status**, **File summary and search**, **Scientific calculator**, **Custom reminders**,
-  **Prayer times and azan**,
-  **Open dictation folder**, and avatar, weather and privacy settings.
-  Suggestions open below or beside the box; choose with the mouse or arrow
-  keys and Enter. Esc closes them. Coloured badges distinguish windows,
-  menus, watchers, file actions and settings; toggles show their current state.
-  Icon-bar actions such as **Read selection aloud**, **Convert units**,
+### Icon bar
+
+The row under the temperature holds up to 7 of these at a time, picked in
+right-click → **Icons** (or search for **icon** plus the tool name, for
+example **icon stopwatch**):
+
+| Icon | What it does |
+|---|---|
+| YouTube / Spotify | Shows what's playing there, and keeps it updated |
+| Notifications | Shows your latest notification; the list button opens Windows' notification panel |
+| Search other apps | Lists current media sessions; selecting one watches its metadata without activating its app |
+| Windows status | Opens the [Windows status](#windows-status) window: uptime, sleep, shutdown and sign-in times, CPU, memory, storage, network, power, displays, graphics and security |
+| Read selection aloud | Opens the shared speech editor, adds highlighted text, and reads it from the editor (up to 5,000 characters per reading) |
+| Selection details | Shows word, character and line counts and a short preview of highlighted text; nothing is saved (the fallback briefly copies selected text) |
+| Dictate | Opens the shared speech editor. **Dictate** uses the default microphone and bundled local Whisper model; **Read aloud** speaks the editor's text; **Transcribe playing audio** captures the web browser playing sound (or, with **Browser audio only** turned off, everything on the default speaker output) with the same local model. Load a text file (up to 256 KiB), explicitly save text to the private dictation file, or open that folder from the window. Capture continues until its toggle is turned off or the window closes |
+| Convert units | Converts a highlighted "5 km", "98 F"… (km/mi/m/ft, kg/lb, °C/°F/K) |
+| Color picker | Pick any color on screen; its hex code is copied (Esc cancels) |
+| QR code from selection | Makes a QR code of the highlighted text or link |
+| Volume/mute toggle | Mutes or unmutes the system sound |
+| Clipboard history | Lists Windows' clipboard history (Win+V); click one to copy it again |
+| Stopwatch | One click starts it, the next pauses it, the next stops and resets it; the time shows top-left, under the battery |
+| Daily quote, word, joke & fact | A speech bubble with today's quote, an English → Arabic word (with an example), a joke and a "did you know" fact; click it for the next one, × or Esc to close. All built in - nothing is fetched |
+| Layer Sudoku (daily game) | Opens the Layer Sudoku game - today's daily puzzle (the same one the HTML version gives, with a streak), or 6×6 to 16×16 at four levels; layer view, method-following hints, notes, undo, timer and pause. Progress is saved |
+
+| Daily bubble | Stopwatch |
+|---|---|
+| <img src="docs/screenshots/features/daily.png" alt="Speech bubble showing the Arabic word of the day: language, لغة (lugha), with an example sentence in English and Arabic" width="460"> | <img src="docs/screenshots/features/stopwatch.png" alt="Widget with the stopwatch at 0:03 under the battery" width="200"> |
+
+| Speech editor (Dictate / Read aloud) | Selection details |
+|---|---|
+| <img src="docs/screenshots/features/speech-editor.png" alt="Speech and dictation window with Dictate, Read aloud and Transcribe playing audio toggles, EN/AR language, options and a text area" width="420"> | <img src="docs/screenshots/features/selection-details.png" alt="Selection details window: 22 words, 119 characters, 1 line, with a preview of the text" width="320"> |
+
+| Convert units | QR code from selection | Layer Sudoku |
+|---|---|---|
+| <img src="docs/screenshots/features/convert.png" alt="Convert window: 5 km to mi gives 3.11" width="240"> | <img src="docs/screenshots/features/qr.png" alt="QR code window for https://open-meteo.com with Copy text and Close" width="230"> | <img src="docs/screenshots/features/sudoku.png" alt="Layer Sudoku window with today's daily 9×9 puzzle, coloured digits, Undo, Erase, Notes, Hint and Layer buttons" width="300"> |
+
+The label under the icons only displays metadata; its pause button stops
+monitoring. The app picker also only selects a media session to watch and
+never activates the source app. Notification watching also gives the avatar a
+brief camera, newspaper, maintenance, ChatGPT or Claude pose when the sender
+and title match those categories and motion is enabled. It does not read
+notifications until you choose **Notifications** from the icon bar or search.
+
+### Search box
+
+<img src="docs/screenshots/features/search.png" alt="Search box with 'st' typed and suggestions such as Windows status, Show PC uptime, Custom reminders, Refresh weather and Start new dictation file, each with a coloured badge" width="400" align="right">
+
+The search box below the widget finds right-click menu actions, including
+**Windows status**, **File summary and search**, **Scientific calculator**,
+**Custom reminders**, **Prayer times and azan**, **Open dictation folder**,
+and avatar, weather and privacy settings.
+
+- Suggestions open below or beside the box; choose with the mouse or arrow
+  keys and Enter. Esc closes them.
+- Coloured badges distinguish windows, menus, watchers, file actions and
+  settings; toggles show their current state.
+- Icon-bar actions such as **Read selection aloud**, **Convert units**,
   **Clipboard history** and **Layer Sudoku** remain searchable when their
-  icons are hidden. To change which icons appear, search for **icon** plus
-  the tool name (for example, **icon stopwatch**). A plain **stopwatch**
-  search runs the stopwatch; its badge shows the next action: green **Start**,
-  amber **Pause** or red **Stop**.
-  The right-click menu remains available. Notification watching also gives the
-  avatar a brief camera, newspaper, maintenance, ChatGPT or Claude pose when
-  the sender and title match those categories and motion is enabled. It does
-  not read notifications until you choose **Notifications** from the icon bar
-  or search.
+  icons are hidden.
+- A plain **stopwatch** search runs the stopwatch; its badge shows the next
+  action: green **Start**, amber **Pause** or red **Stop**.
 
-  The label under the icons only displays metadata; its pause button stops
-  monitoring. The app picker also only selects a media session to watch and
-  never activates the source app.
-- **Right-click** (or double-click) for the menu: **Set location…**, **Avatar**,
-  **Weather**, **Icons**, **Motion**, **Sleep after**, **Workout reminder**,
-  **Custom reminders…**, **Prayer times and azan…**, **Windows status** (a dashboard of the
-  PC's current state, below), **File summary and search…**, **Scientific calculator…**, **Refresh weather**, **Start new
-  dictation file**, **Open dictation folder**, **Privacy**, **Always on top**,
-  **Start with Windows** and **Exit**.
-  With **Hold right-click to talk** on, holding the button for a second
-  talks to CloClo instead of opening the menu.
-- **Windows status** (menu, search or its icon) is a dashboard of the PC's
-  current state in tabs. Everything is read locally without administrator
-  rights; nothing is sent, tested online or changed.
-  - **Overview:** processor and memory use, system drive space, power and
-    connection at a glance; Windows edition, version and build, system type,
-    PC name, uptime, last start (after a shut down, a restart or an
-    unexpected shutdown) and install date. Below them, yesterday and today
-    as cards: whether Fast Startup is on (a check box, shown only), then
-    Sleep, Hibernate (Fast Startup shutdowns too, since Windows logs them as
-    hibernations), Shutdown and restart, Sign-out, Sign-in and Charger
-    (plug-in and unplug times; a connection cutting out for seconds at a
-    time is grouped into one row with its times), each row showing what
-    you did (e.g. signed out, then clicked Shut down on the sign-in screen)
-    next to what Windows logged in its own words, and the day totals,
-    including time on battery. Hovering the avatar's uptime shows the latest one.
-  - **CPU and memory:** usage bars, processor model and cores, process,
-    thread and handle counts, memory in use, available, installed, modules
-    and speed, committed and cached, and the eight apps using the most
-    memory (grouped by process name).
-  - **Storage:** every fixed drive with a usage bar, free, used, capacity and
-    file system. Removable and network drives are skipped so a missing device
-    can't stall the window.
-  - **Network:** Windows' own connectivity and metered status, and for each
-    connected adapter its type, hardware, link speed, live activity, local
-    IPv4 address, DHCP and whether it has a gateway.
-  - **Power:** power source, battery charge and time left, battery saver,
-    power plan and power mode.
-  - **Display:** each monitor's name, resolution, refresh rate, scaling,
-    orientation, connection (built-in, HDMI, DisplayPort…), HDR and the GPU
-    driving it.
-  - **Graphics:** each GPU's video memory, driver version and date, and how
-    many displays it drives.
-  - **Security and updates:** antivirus, real-time and tamper protection,
-    definition and scan dates, Windows Firewall, Secure Boot, memory
-    integrity, User Account Control, Smart App Control, the latest installed
-    update and whether a restart is pending. It can't tell whether newer
-    updates exist, since that would mean contacting Windows Update.
+<br clear="right">
 
-  Processor and memory refresh every 2 seconds, and the open tab's live
-  values with them; drives, network, power and displays every 15 seconds;
-  the rest when the window opens or on **Refresh**. Timers run only while the
-  window is open, and each source is read separately in the background, so a
-  slow one doesn't hold up the others. Left out on purpose: the account name,
-  MAC addresses, serial numbers, the Wi-Fi network name, IPv6 addresses and
-  the public IP, and process paths, command lines and window titles.
-- A **tray icon** (near the clock, in the hidden-icons area) has the same
-  menu. Double-click it to show or hide the widget. If the widget is hidden,
-  right-click the tray icon and choose **Show widget**, or launch CloClo again.
+### Right-click menu
+
+<img src="docs/screenshots/features/menu.png" alt="CloClo's right-click menu: Set location, Avatar, Weather, Icons, Motion, Sleep after, Workout reminder, Custom reminders, Prayer times and azan, Windows status, toggles, tools, Privacy, Always on top, Start with Windows and Exit" width="300" align="right">
+
+**Right-click** (or double-click) for the menu: **Set location…**,
+**Avatar**, **Weather**, **Icons**, **Motion**, **Sleep after**, **Workout
+reminder**, **Custom reminders…**, **Prayer times and azan…**, **Windows
+status** (a dashboard of the PC's current state), **Show PC uptime**, **Show
+internet connection**, **Show Bluetooth and headphones**, **File summary and
+search…**, **Scientific calculator…**, the voice signal tools, **Refresh
+weather**, **Start new dictation file**, **Open dictation folder**,
+**Privacy**, **Always on top**, **Start with Windows** and **Exit**.
+
+With **Hold right-click to talk** on, holding the button for a second talks
+to CloClo instead of opening the menu.
+
+<br clear="right">
+
+### Windows status
+
+<img src="docs/screenshots/features/windows-status.png" alt="Windows status window on the Display tab, listing each monitor's resolution, refresh rate, scaling, orientation, connection, HDR and GPU" width="460">
+
+**Windows status** (menu, search or its icon) is a dashboard of the PC's
+current state in tabs. Everything is read locally without administrator
+rights; nothing is sent, tested online or changed.
+
+- **Overview:** processor and memory use, system drive space, power and
+  connection at a glance; Windows edition, version and build, system type,
+  PC name, uptime, last start (after a shut down, a restart or an
+  unexpected shutdown) and install date. Below them, yesterday and today
+  as cards: whether Fast Startup is on (a check box, shown only), then
+  Sleep, Hibernate (Fast Startup shutdowns too, since Windows logs them as
+  hibernations), Shutdown and restart, Sign-out, Sign-in and Charger
+  (plug-in and unplug times; a connection cutting out for seconds at a
+  time is grouped into one row with its times), each row showing what
+  you did (e.g. signed out, then clicked Shut down on the sign-in screen)
+  next to what Windows logged in its own words, and the day totals,
+  including time on battery. Hovering the avatar's uptime shows the latest one.
+- **CPU and memory:** usage bars, processor model and cores, process,
+  thread and handle counts, memory in use, available, installed, modules
+  and speed, committed and cached, and the eight apps using the most
+  memory (grouped by process name).
+- **Storage:** every fixed drive with a usage bar, free, used, capacity and
+  file system. Removable and network drives are skipped so a missing device
+  can't stall the window.
+- **Network:** Windows' own connectivity and metered status, and for each
+  connected adapter its type, hardware, link speed, live activity, local
+  IPv4 address, DHCP and whether it has a gateway.
+- **Power:** power source, battery charge and time left, battery saver,
+  power plan and power mode.
+- **Display:** each monitor's name, resolution, refresh rate, scaling,
+  orientation, connection (built-in, HDMI, DisplayPort…), HDR and the GPU
+  driving it.
+- **Graphics:** each GPU's video memory, driver version and date, and how
+  many displays it drives.
+- **Security and updates:** antivirus, real-time and tamper protection,
+  definition and scan dates, Windows Firewall, Secure Boot, memory
+  integrity, User Account Control, Smart App Control, the latest installed
+  update and whether a restart is pending. It can't tell whether newer
+  updates exist, since that would mean contacting Windows Update.
+
+Processor and memory refresh every 2 seconds, and the open tab's live
+values with them; drives, network, power and displays every 15 seconds;
+the rest when the window opens or on **Refresh**. Timers run only while the
+window is open, and each source is read separately in the background, so a
+slow one doesn't hold up the others. Left out on purpose: the account name,
+MAC addresses, serial numbers, the Wi-Fi network name, IPv6 addresses and
+the public IP, and process paths, command lines and window titles.
+
+### File summary and search
+
+| Summary tab | Search tab |
+|---|---|
+| <img src="docs/screenshots/features/file-summary.png" alt="File summary tab for a src folder: 108 files, 1.1 MB, 24,548 lines, 117,264 words, with file types, largest and newest files" width="420"> | <img src="docs/screenshots/features/file-search.png" alt="Search tab showing 24 matches for 'prayer time' in 7 files, with the phrase highlighted in each line" width="420"> |
+
+Open **File summary and search…** from the right-click menu or the search box
+(try "files", "folder" or "find text"). Choose a folder (**Include
+subfolders** is on by default; untick it for that folder only) or pick one or
+more files.
+
+- **Summary** shows the number of files, total size, a breakdown by file type
+  with each type's share of the size, the ten largest and ten newest files,
+  and line and word counts for the text files.
+- **Search** finds a word or sentence in those files, ignoring case: the
+  whole phrase must appear on one line (any spacing between its words
+  matches), and **Whole words** stops "cat" matching "category". Each match
+  shows the file, line number, the text around it with the phrase
+  highlighted, and the folder; results are listed by file and line when the
+  search finishes.
+- **Filter results** narrows the matches already found, without searching
+  again: pick a file type (the list shows each type's match count), and/or
+  type text that the file name, folder or matching line must contain. The
+  status line then says how many matches are shown, and **Clear filters**
+  shows them all again. A chosen type stays chosen for the next search.
+- Double-click a match or use **Open file**: text files open in Notepad
+  (Ctrl+G goes to the line) and Word documents in your usual app. **Show in
+  folder** (or double-clicking a largest/newest file) opens File Explorer
+  with the file selected. Listing, counting and searching run in the
+  background with a progress bar and **Cancel**.
+- *What is read:* plain-text and source-code files by extension (`.txt`,
+  `.md`, `.csv`, `.log`, `.json`, `.xml`, `.yaml`, `.ini`, `.html`, `.css`,
+  `.js`/`.ts`, `.cs`, `.py`, `.java`, `.c`/`.cpp`, `.go`, `.rs`, `.sql`,
+  `.ps1`, `.bat`, `.sh`, `.srt` and similar), in UTF-8 or with a UTF-16 byte
+  order mark, plus the body text of Word `.docx` documents, where the line
+  number is the paragraph number (shown as ¶). A "text" file that turns out
+  to be binary is skipped. PDFs and other formats are counted in the summary
+  but not read: reading PDF text needs a third-party parser, which CloClo
+  doesn't ship.
+- *Limits:* hidden and system files, and folder links (junctions and
+  symbolic links), are skipped; listing stops at 200,000 files; text files
+  over 32 MB and `.docx` files over 64 MB are listed but not read; a search
+  stops after 5,000 matches. Network shares are refused.
+- *Privacy:* everything is read locally, nothing is saved or sent, and the
+  chosen folder isn't remembered; closing the window cancels the work and
+  forgets the list and results. Files are only opened for reading, and
+  **Open file** only opens the text and Word types above, so a match can't
+  start a program or script: scripts open as text in Notepad. The window
+  follows the screen-capture privacy setting, since it shows file names and
+  contents.
+
+### Scientific calculator
+
+<img src="docs/screenshots/features/calculator.png" alt="Scientific calculator with sqrt(2)*sin(45)+3^2 typed and the result 10, above a keypad with trigonometry, logarithms, powers and Ans" width="300" align="right">
+
+Open it from the search box or right-click menu. It supports typed
+expressions, a keypad, degree/radian mode, trigonometry, logarithms, roots,
+powers, factorials and `Ans`. The result updates as you type. Calculations use
+a bounded local arithmetic parser, not a scripting engine or network service.
+
+<br clear="right">
+
+### Voice signal tools
+
+<img src="docs/screenshots/features/voice-converter.png" alt="Voice converter window comparing the synthesized David voice saying 'cloclo' and 'youtube' as waveforms, with Record me and pitch controls" width="560">
+
+The search box and right-click menu open Sound pattern test, Voice signals,
+Find it in David's words, Voice converter, and Letter signals. These local
+experiments compare microphone samples with synthesized Windows voices.
+Recordings stay in memory and stop when their windows close. Sound pattern
+test can save measured sound pieces to
+`%AppData%\CloCloWidget\sound-pieces.json` only when you choose to teach or
+save them; the file contains measurements and your letter, word, and speaker
+labels, but no recorded audio.
+
+### Hold right-click to talk (open an app by voice)
+
+Turn it on under right-click → **Privacy** → **Hold right-click to talk**.
+Then, anywhere on the screen (you don't need to find CloClo), hold the right
+mouse button for about a second until CloClo says "Listening.", say an app
+name and let go. CloClo says "Opening Word now." and opens it, with no
+confirmation:
+
+| 1. Hold right-click for about a second | 2. "Listening." — say the app name | 3. Let go: "Opening Word now." | 4. Word opens |
+|---|---|---|---|
+| <img src="docs/screenshots/features/voice-1-hold.png" alt="Right mouse button held on the desktop beside CloClo; an orange badge on the avatar shows the microphone starting" width="200"> | <img src="docs/screenshots/features/voice-2-listening.png" alt="Still holding right-click; a blue microphone badge on the avatar and the label 'Listening — Say an app name, like Notepad, then release'" width="200"> | <img src="docs/screenshots/features/voice-3-opening.png" alt="Button released; the label reads 'Opening Word'" width="200"> | <img src="docs/screenshots/features/voice-4-opened.png" alt="The label reads 'Opened Word'" width="200"> |
+
+The badge on the avatar's chest follows each step: orange dots while the
+microphone starts or the command is being worked out, a blue microphone
+while CloClo is listening, and an orange "!" if nothing usable was heard.
+The mouse in the first two pictures is drawn in, since screenshots leave out
+the pointer.
+
+| Say | Opens |
+|---|---|
+| Notepad | Notepad |
+| Paint, Paintbrush | Paint |
+| OneDrive | OneDrive |
+| Snipping Tool | Snipping Tool |
+| Settings | Windows Settings |
+| YouTube | YouTube in Microsoft Edge |
+| Spotify | Spotify (Microsoft Store version) |
+| Word | Microsoft Word |
+
+Close pronunciations work too ("ward" opens Word, "not bad" Notepad). Every
+step is spoken, including "I didn't hear a command." and "That is not an
+approved command.", so it can be used without seeing the screen. With
+**Voice commands in Arabic** on, say the Arabic names (المفكرة، الرسام،
+وورد…) and CloClo answers in Arabic. A normal short right-click still opens
+the menu of whatever is under the cursor. Details are under
+[Security](#security).
+
+### Privacy and data
+
 - **Privacy:** by default, CloClo requests Windows capture exclusion for the
   widget and several tool windows that show private content, including
   clipboard history, QR codes, selection details, Windows status, file
-  summary and search, and the calculator. This helps with supported Windows capture paths; it is not a
-  guarantee against every recorder or a camera pointed at the screen.
-  Notification text can be switched off so only the sending app's name shows.
-- **Weather** refreshes every 20 minutes from
-  [Open-Meteo](https://open-meteo.com) (no API key, no account).
+  summary and search, and the calculator. This helps with supported Windows
+  capture paths; it is not a guarantee against every recorder or a camera
+  pointed at the screen. Notification text can be switched off so only the
+  sending app's name shows.
 - **Where things are kept:**
   - Settings: `%AppData%\CloCloWidget\settings.json`
   - Sudoku progress: `%AppData%\CloCloWidget\sudoku.json`
