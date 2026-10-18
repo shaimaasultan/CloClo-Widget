@@ -256,7 +256,7 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   | YouTube / Spotify | Shows what's playing there, and keeps it updated |
   | Notifications | Shows your latest notification; the list button opens Windows' notification panel |
   | Search other apps | Lists current media sessions; selecting one watches its metadata without activating its app |
-  | Windows status | Opens the Windows status window: uptime, sleep and sign-in times, CPU, memory, storage, network, power, displays, graphics and security |
+  | Windows status | Opens the Windows status window: uptime, sleep, shutdown and sign-in times, CPU, memory, storage, network, power, displays, graphics and security |
   | Read selection aloud | Opens the shared speech editor, adds highlighted text, and reads it from the editor (up to 5,000 characters per reading) |
   | Selection details | Shows word, character and line counts and a short preview of highlighted text; nothing is saved (the fallback briefly copies selected text) |
   | Dictate | Opens the shared speech editor. **Dictate** uses the default microphone and bundled local Whisper model; **Read aloud** speaks the editor's text; **Transcribe playing audio** captures the web browser playing sound (or, with **Browser audio only** turned off, everything on the default speaker output) with the same local model. Load a text file (up to 256 KiB), explicitly save text to the private dictation file, or open that folder from the window. Capture continues until its toggle is turned off or the window closes |
@@ -307,7 +307,16 @@ empties and rebuilds `publish\`, and a copy running from there gets in the way.
   rights; nothing is sent, tested online or changed.
   - **Overview:** processor and memory use, system drive space, power and
     connection at a glance; Windows edition, version and build, system type,
-    PC name, uptime, last start and install date.
+    PC name, uptime, last start (after a shut down, a restart or an
+    unexpected shutdown) and install date. Below them, yesterday and today
+    as cards: whether Fast Startup is on (a check box, shown only), then
+    Sleep, Hibernate (Fast Startup shutdowns too, since Windows logs them as
+    hibernations), Shutdown and restart, Sign-out, Sign-in and Charger
+    (plug-in and unplug times; a connection cutting out for seconds at a
+    time is grouped into one row with its times), each row showing what
+    you did (e.g. signed out, then clicked Shut down on the sign-in screen)
+    next to what Windows logged in its own words, and the day totals,
+    including time on battery. Hovering the avatar's uptime shows the latest one.
   - **CPU and memory:** usage bars, processor model and cores, process,
     thread and handle counts, memory in use, available, installed, modules
     and speed, committed and cached, and the eight apps using the most

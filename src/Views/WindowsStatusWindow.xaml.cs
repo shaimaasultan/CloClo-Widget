@@ -38,7 +38,9 @@ public partial class WindowsStatusWindow : Window
     private WindowsStatus.NetworkState? _network;
     private WindowsStatus.PowerState? _power;
     private WindowsStatus.UpdateState? _updates;
-    private List<WindowsStatus.SleepPeriod>? _sleeps;
+    private WindowsStatus.PowerHistory? _history;
+    private bool? _fastStartup;
+    private WindowsStatus.StartKind? _start;
     private List<WindowsStatus.SignInSession>? _signIns;
 
     public WindowsStatusWindow()
@@ -109,9 +111,10 @@ public partial class WindowsStatusWindow : Window
 
     // The PC can sleep while this window is open, so these are read again
     // on the slow timer; each is one filtered event-log query.
-    private Task ReadSleeps() => Read("sleeps", () => (WindowsStatus.ReadSleepPeriods(), WindowsStatus.ReadSignIns()), read =>
+    private Task ReadSleeps() => Read("sleeps", () => (WindowsStatus.ReadPowerHistory(DateTime.Today.AddDays(-1)),
+        WindowsStatus.ReadFastStartup(), WindowsStatus.ReadSignIns(), WindowsStatus.ReadLastStart()), read =>
     {
-        (_sleeps, _signIns) = read;
+        (_history, _fastStartup, _signIns, _start) = read;
         ShowOverview();
     });
 
@@ -204,7 +207,7 @@ public partial class WindowsStatusWindow : Window
         if (uptime != null)
         {
             pc.Add(("Up for", Duration(uptime.Value)));
-            pc.Add(("Started", When(DateTime.Now - uptime.Value)));
+            pc.Add(("Started", When(DateTime.Now - uptime.Value) + (_start is { } how ? $" · {StartLabel(how)}" : "")));
         }
         if (_os?.SignedIn is { } signedIn) pc.Add(("Signed in", WithDate(signedIn)));
         // The most recent sign-out since Windows started, and how long it
@@ -218,9 +221,9 @@ public partial class WindowsStatusWindow : Window
                 : $"{Duration(DateTime.Now - signedOut)} (since {When(signedOut)})"));
         }
         // Without the wake events there's no per-day split, only totals.
-        if (_sleeps == null && _live?.Asleep is { } asleep && uptime != null)
+        if (_history == null && _live?.Asleep is { } asleep && uptime != null)
         {
-            pc.Add(("Asleep for", Duration(asleep)));
+            pc.Add(("Asleep or shut down for", Duration(asleep)));
             pc.Add(("Awake for", Duration(uptime.Value - asleep)));
         }
         if (_os?.Installed is { } installed) pc.Add(("Windows installed", installed.ToString("d")));
@@ -228,7 +231,7 @@ public partial class WindowsStatusWindow : Window
         var cards = new List<Card>();
         if (glance.Count > 0) cards.Add(new Card("At a glance", glance));
         if (pc.Count > 0) cards.Add(new Card("This PC", pc));
-        if (_sleeps != null && uptime != null) cards.AddRange(DayCards(DateTime.Now - uptime.Value, DateTime.Now, _sleeps, _signIns));
+        if (_history != null) cards.AddRange(PowerHistoryCards(_history, _fastStartup, DateTime.Now));
         Show(OverviewCards, cards.Count > 0 ? cards : [Card.Message("Reading…")]);
     }
 
@@ -470,57 +473,286 @@ public partial class WindowsStatusWindow : Window
         _ => $"{bitsPerSecond:0} bps",
     };
 
-    private const int MaxDayCards = 7;
-
-    // One card per calendar day since Windows started, newest first: the
-    // part of the day it was on, split into awake and asleep. Sleeps that
-    // cross midnight count toward each day for the hours in it.
-    private static IEnumerable<Card> DayCards(DateTime started, DateTime now,
-        List<WindowsStatus.SleepPeriod> sleeps, List<WindowsStatus.SignInSession>? signIns)
+    // Yesterday's and today's power history as cards: whether Fast Startup
+    // is on, then one card per kind of action (sleep, hibernate, shutdown
+    // and restart, sign-out, sign-in), each row showing what the user did
+    // next to what Windows logged, in its own words, then the day totals.
+    private static IEnumerable<Card> PowerHistoryCards(WindowsStatus.PowerHistory history, bool? fastStartup, DateTime now)
     {
-        for (var day = now.Date; day >= started.Date && day > now.Date.AddDays(-MaxDayCards); day = day.AddDays(-1))
+        var since = now.Date.AddDays(-1);
+        var periods = history.Periods;
+        const string none = "None yesterday or today";
+
+        yield return fastStartup is { } on
+            ? new Card("Fast Startup", [
+                ("What it does", on
+                    ? "Shut down saves the Windows core to disk and starts from it, so Windows logs each shutdown as a hibernation (S4). Restart always starts Windows in full."
+                    : "Shut down turns Windows off in full, so Windows doesn't log it as a hibernation."),
+                ("Change it", "Control Panel → Power Options → Choose what the power buttons do (needs an administrator)"),
+            ], Check: (on ? "Fast Startup is on" : "Fast Startup is off", on))
+            : new Card("Fast Startup", [("", "Couldn't read the Fast Startup setting")]);
+
+        IReadOnlyList<(string, string)> Rows(IEnumerable<(string, string)> rows, string empty) =>
+            rows.ToList() is { Count: > 0 } list ? list : [("", empty)];
+        IEnumerable<(string, string)> PeriodRows(params WindowsStatus.SleepKind[] kinds) =>
+            periods.Where(p => kinds.Contains(p.Kind)).Select(p => (Period(p),
+                $"{KindName(p)} · {Duration(p.End - p.Start)}\nWhat you did: {Action(p)}\nWindows logged: {WindowsWords(p)}"));
+
+        yield return new Card("Sleep", Rows(PeriodRows(WindowsStatus.SleepKind.Sleep), none));
+        var hibernations = PeriodRows(WindowsStatus.SleepKind.Hibernate, WindowsStatus.SleepKind.FastStartupShutdown,
+            WindowsStatus.SleepKind.FastStartupRestart).ToList();
+        if (periods.Any(p => p.Kind is WindowsStatus.SleepKind.FastStartupShutdown or WindowsStatus.SleepKind.FastStartupRestart))
+            hibernations.Insert(0, ("", "Windows logs a Fast Startup shutdown as a hibernation, so both are here."));
+        yield return new Card("Hibernate", Rows(hibernations, none));
+        var fullStops = PeriodRows(WindowsStatus.SleepKind.Shutdown, WindowsStatus.SleepKind.Restart,
+            WindowsStatus.SleepKind.Unexpected).ToList();
+        if (fullStops.Count > 0) yield return new Card("Shutdown and restart", fullStops);
+
+        // A period starting or ending within half an hour of a sign-out or
+        // sign-in is what came next or before.
+        var near = TimeSpan.FromMinutes(30);
+        var signOuts = new List<(DateTime At, string Row, string Value)>();
+        foreach (var s in history.SignIns)
         {
-            var from = day > started ? day : started;
-            var to = day.AddDays(1) < now ? day.AddDays(1) : now;
-            var asleep = AsleepWithin(sleeps, from, to);
-            var rows = new List<(string, string)>
+            if (s.SignedOut is { } signedOut && signedOut >= since)
             {
-                ("Counted", Span(from, to, now)),
-                ("Awake for", Duration(to - from - asleep)),
-                ("Asleep for", asleep > TimeSpan.Zero ? Duration(asleep) : "Not asleep"),
-            };
-
-            // The day as a timeline: awake stretches between its sleeps.
-            var cursor = from;
-            foreach (var p in sleeps.Where(p => p.End > from && p.Start < to))
-            {
-                var sleepFrom = p.Start > from ? p.Start : from;
-                if (sleepFrom > cursor) rows.Add(("Awake", $"{Span(cursor, sleepFrom, now)} · {Duration(sleepFrom - cursor)}"));
-                rows.Add((p.Hibernated ? "Hibernated" : "Asleep", $"{Period(p)} · {Duration(p.End - p.Start)}"));
-                cursor = p.End < to ? p.End : to;
+                var next = periods.FirstOrDefault(p => p.Start >= signedOut.AddSeconds(-5) && p.Start - signedOut < near);
+                var then = next == null ? null
+                    : next.SignedOutBefore == signedOut
+                        ? $"Then, at {next.Start:T}: {KindName(next)} — {Lower(Action(next, withSignOut: false))}"
+                        : $"Signed out as part of the {Noun(next)} — {Lower(Action(next))}";
+                signOuts.Add((signedOut, When(signedOut),
+                    "Signed out" + (then != null ? $"\n{then}" : "") +
+                    $"\nWindows logged: {Quote(s.SignOutMessage)} (Winlogon 7002)"));
             }
-            if (to > cursor) rows.Add(("Awake", $"{Span(cursor, to, now)} · {Duration(to - cursor)}"));
-
-            // From the last sign-in that reaches into this day, until its
-            // sign-out, midnight or now; counted within the day only.
-            if (signIns?.LastOrDefault(s => s.SignedIn < to && (s.SignedOut ?? now) > from) is { } session)
+            // A session the PC's stop ended, without a sign-out.
+            else if (s.SignedOut == null && periods.FirstOrDefault(p => p.Start > s.SignedIn
+                && p.Kind is WindowsStatus.SleepKind.Shutdown or WindowsStatus.SleepKind.Restart or WindowsStatus.SleepKind.Unexpected) is { } stop
+                && !history.SignIns.Any(o => o.SignedIn > s.SignedIn && o.SignedIn < stop.Start))
             {
-                var since = session.SignedIn > from ? session.SignedIn : from;
-                var until = session.SignedOut is { } signedOut && signedOut < to ? signedOut : to;
-                var end = until == now ? $"{until:t} (now)"
-                    : until == session.SignedOut ? $"{until:t} (signed out)"
-                    : $"{until:t}";
-                var signedIn = session.SignedIn.Date == day ? $"{session.SignedIn:t}" : When(session.SignedIn);
-                rows.Add(("Since sign-in", $"{signedIn} → {end} · " +
-                    $"{Duration(until - since - AsleepWithin(sleeps, since, until))} awake"));
+                signOuts.Add((stop.Start, When(stop.Start),
+                    $"No sign-out logged: the session ended with the {Noun(stop)}\nWindows logged no Winlogon 7002"));
             }
-
-            var title = day == now.Date ? "Today" : day == now.Date.AddDays(-1) ? "Yesterday" : day.ToString("dddd");
-            yield return new Card($"{title}, {day.ToString(MonthDay)}", rows);
         }
+        yield return new Card("Sign-out", Rows(signOuts.OrderBy(o => o.At).Select(o => (o.Row, o.Value)), none));
+
+        yield return new Card("Sign-in", Rows(history.SignIns.Where(s => s.SignedIn >= since).Select(s =>
+        {
+            var before = periods.LastOrDefault(p => p.End <= s.SignedIn.AddSeconds(5) && s.SignedIn - p.End < near);
+            var after = before == null ? "" : $"\nAfter the {Noun(before)} ({Period(before)})";
+            var still = s.SignedOut == null && s == history.SignIns[^1] ? " · still signed in" : "";
+            return (When(s.SignedIn), $"Signed in{still}{after}\nWindows logged: {Quote(s.SignInMessage)} (Winlogon 7001)");
+        }), none));
+
+        // The charger's changes, with changes less than a minute apart
+        // grouped: a burst of them is the connection cutting out, not the
+        // user plugging and unplugging.
+        var bursts = new List<List<WindowsStatus.ChargerChange>>();
+        foreach (var change in history.Charger)
+        {
+            if (bursts.Count > 0 && change.Time - bursts[^1][^1].Time < TimeSpan.FromMinutes(1)) bursts[^1].Add(change);
+            else bursts.Add([change]);
+        }
+        var charger = new List<(string, string)>();
+        // Cut-outs less than half an hour apart make one row listing their
+        // times; an unplugging or plugging in on its own gets its own row.
+        var stretches = new List<List<List<WindowsStatus.ChargerChange>>>();
+        foreach (var burst in bursts.Where(b => b[^1].Time >= since))
+        {
+            if (burst.Count > 1 && stretches.Count > 0 && stretches[^1][^1].Count > 1
+                && burst[0].Time - stretches[^1][^1][^1].Time < TimeSpan.FromMinutes(30))
+                stretches[^1].Add(burst);
+            else stretches.Add([burst]);
+        }
+        foreach (var stretch in stretches)
+        {
+            var (first, last) = (stretch[0][0], stretch[^1][^1]);
+            if (stretch is [[var change]])
+            {
+                // How long it was unplugged, for a plug-in after an unplugging.
+                var before = history.Charger.LastOrDefault(c => c.Time < change.Time);
+                var battery = change.PluggedIn && before is { PluggedIn: false } ? $" after {Duration(change.Time - before.Time)} on battery" : "";
+                charger.Add((When(change.Time), $"{(change.PluggedIn ? "Plugged in" : "Unplugged")}{battery}{Charge(change)}" +
+                    $"\nWindows logged: {Quote(change.Message)} (Kernel-Power 105, AcOnline={(change.PluggedIn ? "true" : "false")})"));
+                continue;
+            }
+            var changes = stretch.SelectMany(b => b).ToList();
+            var cuts = changes.Count(c => !c.PluggedIn);
+            var times = string.Join(", ", stretch.Select(b => b.Count(c => !c.PluggedIn) is var n && n > 1 ? $"{b[0].Time:t} (×{n})" : $"{b[0].Time:t}"));
+            charger.Add(($"{When(first.Time)} → {When(last.Time)}",
+                $"Charger cut out {cuts} {(cuts == 1 ? "time" : "times")}, each for a few seconds; ended {(last.PluggedIn ? "plugged in" : "unplugged")}{Charge(last)}" +
+                $"\nAt {times}" +
+                "\nWhat you did: probably nothing; a loose plug, cable or charger cuts out like this" +
+                $"\nWindows logged: {Quote(first.Message)} ×{changes.Count} (Kernel-Power 105, AcOnline switching between false and true)"));
+        }
+        yield return new Card("Charger", Rows(charger, "No changes yesterday or today"));
+
+        // Each day from midnight (or until now): awake, each kind of time off
+        // and the time signed in, counted within the day only.
+        var totals = new List<(string, string)>();
+        for (var day = since; day <= now.Date; day = day.AddDays(1))
+        {
+            var to = day.AddDays(1) < now ? day.AddDays(1) : now;
+            var lines = new List<string> { to == day.AddDays(1) ? "Counted the whole day" : $"Counted {Span(day, to, now)}", $"Awake {Duration(to - day - AsleepWithin(periods, day, to))}" };
+            foreach (var off in OffKinds)
+            {
+                var kinds = periods.Where(p => off.Kinds.Contains(p.Kind) && p.End > day && p.Start < to).ToList();
+                if (kinds.Count > 0)
+                    lines.Add($"{off.Label} {Duration(AsleepWithin(kinds, day, to))} ({kinds.Count}×)");
+            }
+            // A session without a sign-out ended at the next full stop or the
+            // next sign-in, whichever came first; the last one is still on.
+            var signedIn = TimeSpan.FromTicks(history.SignIns.Sum(s =>
+            {
+                var stop = periods.FirstOrDefault(p => p.Start > s.SignedIn
+                    && p.Kind is WindowsStatus.SleepKind.Shutdown or WindowsStatus.SleepKind.Restart or WindowsStatus.SleepKind.Unexpected)?.Start;
+                var next = history.SignIns.FirstOrDefault(o => o.SignedIn > s.SignedIn)?.SignedIn;
+                var end = s.SignedOut ?? (stop < next || next == null ? stop : next) ?? now;
+                var from = s.SignedIn > day ? s.SignedIn : day;
+                var until = end < to ? end : to;
+                return until > from ? (until - from - AsleepWithin(periods, from, until)).Ticks : 0;
+            }));
+            lines.Add($"Signed in and awake {Duration(signedIn)}");
+            // Unplugged stretches clipped to the day, and how many were the
+            // charger cutting out (plugged back in within a minute).
+            var onBattery = TimeSpan.Zero;
+            var dropouts = 0;
+            for (var i = 0; i < history.Charger.Count; i++)
+            {
+                if (history.Charger[i].PluggedIn) continue;
+                var off = history.Charger[i].Time;
+                var back = i + 1 < history.Charger.Count ? history.Charger[i + 1].Time : now;
+                if (back - off < TimeSpan.FromMinutes(1) && off >= day && off < to) dropouts++;
+                var from = off > day ? off : day;
+                var until = back < to ? back : to;
+                if (until > from) onBattery += until - from;
+            }
+            if (onBattery > TimeSpan.Zero || dropouts > 0)
+                lines.Add($"On battery {(onBattery < TimeSpan.FromMinutes(1) ? $"{onBattery.TotalSeconds:0} s" : Duration(onBattery))}" +
+                    (dropouts > 0 ? $" · charger cut out {dropouts} {(dropouts == 1 ? "time" : "times")}" : ""));
+            var title = day == now.Date ? "Today" : "Yesterday";
+            totals.Add(($"{title}, {day.ToString(MonthDay)}", string.Join("\n", lines)));
+        }
+        yield return new Card("Totals", totals);
     }
 
-    private static TimeSpan AsleepWithin(List<WindowsStatus.SleepPeriod> sleeps, DateTime from, DateTime to) =>
+    private static string KindName(WindowsStatus.SleepPeriod p) => p.Kind switch
+    {
+        WindowsStatus.SleepKind.Sleep => "Asleep",
+        WindowsStatus.SleepKind.Hibernate => "Hibernated",
+        WindowsStatus.SleepKind.FastStartupShutdown => "Fast Startup shutdown",
+        WindowsStatus.SleepKind.FastStartupRestart => "Fast Startup restart → shutdown",
+        WindowsStatus.SleepKind.Shutdown => "Full shutdown",
+        WindowsStatus.SleepKind.Restart => "Restart",
+        _ => "Unexpected shutdown",
+    };
+
+    // What the user did, as far as the log tells: who asked for a
+    // shutdown, the reason Windows gives for a hibernation, and a sign-out
+    // just before.
+    private static string Action(WindowsStatus.SleepPeriod p, bool withSignOut = true)
+    {
+        var did = p.Kind switch
+        {
+            WindowsStatus.SleepKind.FastStartupShutdown or WindowsStatus.SleepKind.Shutdown => p.RequestedBy switch
+            {
+                "Start" => "clicked Shut down on Start",
+                "sign-in screen" => "clicked Shut down on the sign-in screen",
+                null when p.SignedOutBefore != null => "clicked Shut down on the sign-in screen",
+                null => "shut down",
+                var by => $"shut down by {by}",
+            },
+            WindowsStatus.SleepKind.FastStartupRestart or WindowsStatus.SleepKind.Restart => p.RequestedBy switch
+            {
+                "Start" => "clicked Restart on Start",
+                "sign-in screen" => "clicked Restart on the sign-in screen",
+                "Windows Update" => "Windows Update restarted the PC",
+                null => "restarted",
+                var by => $"restarted by {by}",
+            },
+            WindowsStatus.SleepKind.Unexpected =>
+                $"nothing logged: the PC stopped without shutting down (a crash, power loss or holding the power button) at about {p.Start:t}, the last thing Windows logged",
+            _ => p.Cause switch
+            {
+                "power button or lid" => "pressed the power button or closed the lid",
+                "Start menu or an app" => p.Kind == WindowsStatus.SleepKind.Hibernate
+                    ? "chose Hibernate on Start, or an app hibernated the PC"
+                    : "chose Sleep on Start, or an app put the PC to sleep",
+                null => p.Kind == WindowsStatus.SleepKind.Hibernate ? "hibernated" : "slept",
+                var cause => $"Windows gives the reason as {cause}",
+            },
+        };
+        if (withSignOut && p.SignedOutBefore is { } signedOut) did = $"signed out at {signedOut:T}, then {did}";
+        return char.ToUpper(did[0]) + did[1..];
+    }
+
+    // What Windows logged going down and starting up, quoted, with the
+    // power states and boot type it gives explained.
+    private static string WindowsWords(WindowsStatus.SleepPeriod p)
+    {
+        var parts = new List<string>();
+        if (p.DownMessage != null) parts.Add(Quote(p.DownMessage));
+        if (p.TargetState != null && p.EffectiveState != null)
+            parts.Add($"asked for {PowerState(p.TargetState)}, entered {PowerState(p.EffectiveState)}");
+        if (p.UpMessage != null)
+            parts.Add($"on start: {Quote(p.UpMessage)}" + (p.BootType switch
+            {
+                "0" or "0x0" => " (a full start)",
+                "1" or "0x1" => " (a Fast Startup boot)",
+                "2" or "0x2" => " (a resume from hibernation)",
+                _ => "",
+            }));
+        return parts.Count > 0 ? string.Join(" · ", parts) : "nothing for this";
+    }
+
+    // Kernel-Power's system power states: 6 is S5, 5 is S4, 2 to 4 are S1 to S3.
+    private static string PowerState(string state) => state switch
+    {
+        "6" => "S5 (shut down)",
+        "5" => "S4 (hibernate)",
+        "2" or "3" or "4" => $"S{int.Parse(state) - 1} (sleep)",
+        _ => $"state {state}",
+    };
+
+    // " · 99% charged", from the charge Windows logged with the change.
+    private static string Charge(WindowsStatus.ChargerChange change) =>
+        change is { Charge: { } charge, FullCharge: { } full } ? $" · {Math.Min(100, 100.0 * charge / full):0}% charged" : "";
+
+    // For "after the …": "hibernation", "Fast Startup shutdown".
+    private static string Noun(WindowsStatus.SleepPeriod p) => p.Kind switch
+    {
+        WindowsStatus.SleepKind.Sleep => "sleep",
+        WindowsStatus.SleepKind.Hibernate => "hibernation",
+        _ => Lower(KindName(p)),
+    };
+
+    // "Hibernated" → "hibernated", keeping "Fast Startup" a name.
+    private static string Lower(string text) =>
+        text.StartsWith("Fast Startup", StringComparison.Ordinal) ? text : char.ToLower(text[0]) + text[1..];
+
+    private static string Quote(string? message) => message == null ? "(no message)" : $"“{message}”";
+
+    // How Windows came to start, shown after its start time:
+    // "10:41 PM · restart".
+    internal static string StartLabel(WindowsStatus.StartKind kind) => kind switch
+    {
+        WindowsStatus.StartKind.Restart => "restart",
+        WindowsStatus.StartKind.Shutdown => "shut down",
+        _ => "unexpected shutdown",
+    };
+
+    // The kinds of time off, each with its label in the totals ("Hibernated
+    // for") and its word in the uptime card ("12 h 41 min hibernated").
+    internal static readonly (string Label, string Word, WindowsStatus.SleepKind[] Kinds)[] OffKinds =
+    [
+        ("Asleep for", "asleep", [WindowsStatus.SleepKind.Sleep]),
+        ("Hibernated for", "hibernated", [WindowsStatus.SleepKind.Hibernate]),
+        ("Fast Startup shutdown for", "shut down", [WindowsStatus.SleepKind.FastStartupShutdown, WindowsStatus.SleepKind.FastStartupRestart]),
+        ("Off (full shutdown, restart or crash) for", "off",
+            [WindowsStatus.SleepKind.Shutdown, WindowsStatus.SleepKind.Restart, WindowsStatus.SleepKind.Unexpected]),
+    ];
+
+    internal static TimeSpan AsleepWithin(IEnumerable<WindowsStatus.SleepPeriod> sleeps, DateTime from, DateTime to) =>
         TimeSpan.FromTicks(sleeps.Where(p => p.End > from && p.Start < to)
             .Sum(p => ((p.End < to ? p.End : to) - (p.Start > from ? p.Start : from)).Ticks));
 
@@ -560,7 +792,7 @@ public partial class WindowsStatusWindow : Window
     // ---- Cards ----
 
     private sealed record Card(string Title, IReadOnlyList<(string Label, string Value)> Rows,
-        double? Percent = null, string? PercentText = null)
+        double? Percent = null, string? PercentText = null, (string Text, bool Checked)? Check = null)
     {
         public static Card Message(string text) => new("", [("", text)]);
     }
@@ -574,10 +806,11 @@ public partial class WindowsStatusWindow : Window
         public required TextBlock Title { get; init; }
         public ProgressBar? Bar { get; init; }
         public TextBlock? BarText { get; init; }
+        public CheckBox? Check { get; init; }
         public required List<(TextBlock Label, TextBlock Value)> Cells { get; init; }
 
         public bool Fits(Card card) =>
-            (Bar != null) == (card.Percent != null) && Cells.Count == card.Rows.Count;
+            (Bar != null) == (card.Percent != null) && (Check != null) == (card.Check != null) && Cells.Count == card.Rows.Count;
 
         public void Update(Card card)
         {
@@ -589,6 +822,11 @@ public partial class WindowsStatusWindow : Window
                 Bar.Foreground = percent >= 90 ? Brushes.IndianRed : SystemColors.HighlightBrush;
                 AutomationProperties.SetName(Bar, $"{card.Title}: {card.PercentText}");
                 SetText(BarText!, card.PercentText ?? "");
+            }
+            if (Check != null && card.Check is { } check)
+            {
+                if (!Equals(Check.Content, check.Text)) Check.Content = check.Text;
+                Check.IsChecked = check.Checked;
             }
             for (var i = 0; i < Cells.Count; i++)
             {
@@ -616,6 +854,14 @@ public partial class WindowsStatusWindow : Window
                 barText = new TextBlock { FontSize = 11, Margin = new Thickness(0, 0, 0, 6) };
                 panel.Children.Add(bar);
                 panel.Children.Add(barText);
+            }
+
+            // Shows a setting; it isn't changed here (that needs an administrator).
+            CheckBox? check = null;
+            if (card.Check != null)
+            {
+                check = new CheckBox { IsHitTestVisible = false, Focusable = false, Margin = new Thickness(0, 0, 0, 6) };
+                panel.Children.Add(check);
             }
 
             var grid = new Grid();
@@ -649,7 +895,7 @@ public partial class WindowsStatusWindow : Window
                 Margin = new Thickness(0, 0, 0, 8),
                 Child = panel,
             };
-            var view = new CardView { Root = root, Title = title, Bar = bar, BarText = barText, Cells = cells };
+            var view = new CardView { Root = root, Title = title, Bar = bar, BarText = barText, Check = check, Cells = cells };
             root.Tag = view;
             view.Update(card);
             return view;

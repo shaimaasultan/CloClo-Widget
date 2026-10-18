@@ -1354,29 +1354,65 @@ public partial class MainWindow : Window
             $"Awake {WindowsStatusWindow.Duration(up - asleep)} of {WindowsStatusWindow.Duration(up)}",
             $"Windows started {WindowsStatusWindow.When(now - up)}",
         };
-        const string hint = "Only a restart resets uptime. Windows status shows each day.";
+        const string hint = "Only a restart or a full shutdown resets uptime. Windows status shows each day.";
         tip.Child = UptimeCard(heading, lines, hint);
 
-        _ = Task.Run(() => (WindowsStatus.ReadSleepPeriods(), WindowsStatus.ReadSignIns())).ContinueWith(read =>
+        _ = Task.Run(() => (WindowsStatus.ReadSleepPeriods(), WindowsStatus.ReadSignIns(), WindowsStatus.ReadLastStart())).ContinueWith(read =>
         {
             if (version != _uptimeTipVersion || read.IsFaulted) return;
-            var (sleeps, signIns) = read.Result;
+            var (sleeps, signIns, start) = read.Result;
             var details = new List<string>(lines);
+            var summary = heading;
+            // "Includes 12 h 41 min hibernated and 1 h 1 min shut down", so a
+            // Fast Startup shutdown isn't counted as sleep.
+            if (sleeps != null)
+            {
+                var off = WindowsStatusWindow.OffKinds
+                    .Select(k => (k.Word, Time: WindowsStatusWindow.AsleepWithin(sleeps.Where(p => k.Kinds.Contains(p.Kind)), now - up, now)))
+                    .Where(k => k.Time > TimeSpan.Zero)
+                    .Select(k => $"{WindowsStatusWindow.Duration(k.Time)} {k.Word}").ToList();
+                if (off.Count > 0) summary = $"Includes {JoinAnd(off)}";
+            }
+            if (start is { } how) details[1] += $" · {WindowsStatusWindow.StartLabel(how)}";
             if (sleeps is { Count: > 0 })
             {
                 var last = sleeps[^1];
-                var what = last.Hibernated ? "hibernated" : "asleep";
+                var what = last.Kind switch
+                {
+                    WindowsStatus.SleepKind.FastStartupShutdown => "Fast Startup shutdown",
+                    WindowsStatus.SleepKind.FastStartupRestart => "Fast Startup restart → shutdown",
+                    WindowsStatus.SleepKind.Hibernate => last.Cause is { } cause ? $"hibernated ({cause})" : "hibernated",
+                    _ => "asleep",
+                };
                 details.Insert(0, $"{(sleeps.Count > 1 ? "Last " + what : char.ToUpper(what[0]) + what[1..])} " +
                     $"{WindowsStatusWindow.When(last.Start)} → {WindowsStatusWindow.When(last.End)} " +
                     $"({WindowsStatusWindow.Duration(last.End - last.Start)})");
-                if (sleeps.Count > 1) details.Insert(1, $"{sleeps.Count} sleeps since Windows started");
+                // "1 hibernation and 1 shutdown since Windows started": Fast
+                // Startup shutdowns don't reset uptime, so they're counted too.
+                if (sleeps.Count > 1)
+                {
+                    var counts = new (string Noun, WindowsStatus.SleepKind[] Kinds)[]
+                        {
+                            ("sleep", [WindowsStatus.SleepKind.Sleep]),
+                            ("hibernation", [WindowsStatus.SleepKind.Hibernate]),
+                            ("shutdown", [WindowsStatus.SleepKind.FastStartupShutdown, WindowsStatus.SleepKind.FastStartupRestart]),
+                        }
+                        .Select(k => (k.Noun, Count: sleeps.Count(p => k.Kinds.Contains(p.Kind))))
+                        .Where(k => k.Count > 0)
+                        .Select(k => $"{k.Count} {k.Noun}{(k.Count == 1 ? "" : "s")}").ToList();
+                    details.Insert(1, $"{JoinAnd(counts)} since Windows started");
+                }
             }
             if (signIns?.LastOrDefault(s => s.SignedOut == null) is { } session)
                 details.Add($"Signed in {WindowsStatusWindow.WithDate(session.SignedIn)}");
-            tip.Child = UptimeCard(heading, details, hint);
+            tip.Child = UptimeCard(summary, details, hint);
             if (tip.IsOpen) RaiseAboveWidget(tip.Child);
         }, TaskScheduler.FromCurrentSynchronizationContext());
     }
+
+    // "a", "a and b", "a, b and c".
+    private static string JoinAnd(List<string> parts) =>
+        parts.Count < 2 ? string.Concat(parts) : $"{string.Join(", ", parts[..^1])} and {parts[^1]}";
 
     // The daily bubble's card: dark, gold-edged and rounded, a gold heading,
     // cream lines and a muted note. The margin leaves room for the shadow.

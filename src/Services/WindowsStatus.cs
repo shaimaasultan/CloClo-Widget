@@ -71,17 +71,60 @@ internal static class WindowsStatus
         return uptime > awake ? uptime - awake : TimeSpan.Zero;
     }
 
-    public record SleepPeriod(DateTime Start, DateTime End, bool Hibernated);
+    // The kinds of time the PC was asleep or off. A shutdown with Fast
+    // Startup hibernates the kernel session, so Windows logs it like a
+    // hibernation; to the user it was a shutdown. Windows always restarts in
+    // full, so FastStartupRestart only covers a restart that still came back
+    // through Fast Startup. Shutdown, Restart and Unexpected end Windows'
+    // session and reset uptime, so only the power history has them.
+    public enum SleepKind { Sleep, Hibernate, FastStartupShutdown, FastStartupRestart, Shutdown, Restart, Unexpected }
 
-    // Each sleep or hibernation since Windows started, oldest first, from
-    // the event Windows itself logs on every wake (Power-Troubleshooter 1,
-    // readable without administrator rights). CloClo can't time these
-    // itself: it isn't running while the PC sleeps after a sign-out. Null
-    // when the log can't be read.
-    public static List<SleepPeriod>? ReadSleepPeriods()
+    // Cause is what Windows gives as the reason for a sleep or hibernation
+    // ("power button or lid"); null for the other kinds or when it isn't
+    // logged. The rest is what Windows logged, to show next to what the user
+    // did: its messages going down and starting up (in Windows' own words),
+    // the power state asked for and the one entered, who asked for a
+    // shutdown ("Start", "sign-in screen" or an app's file name) and a
+    // sign-out just before it.
+    public record SleepPeriod(DateTime Start, DateTime End, SleepKind Kind, string? Cause = null)
     {
-        var events = ReadSystemEvents("Microsoft-Windows-Power-Troubleshooter", "EventID=1");
+        public string? DownMessage { get; init; }
+        public string? UpMessage { get; init; }
+        public string? TargetState { get; init; }
+        public string? EffectiveState { get; init; }
+        public string? BootType { get; init; }
+        public string? RequestedBy { get; init; }
+        public DateTime? SignedOutBefore { get; init; }
+    }
+
+    // Each sleep, hibernation or Fast Startup shutdown since Windows started,
+    // oldest first. Null when the log can't be read.
+    public static List<SleepPeriod>? ReadSleepPeriods() => ReadSleepPeriods(null);
+
+    // Each sleep, hibernation or Fast Startup shutdown woken from since a UTC
+    // time (or since Windows started), oldest first, from the event Windows
+    // itself logs on every wake (Power-Troubleshooter 1, readable without
+    // administrator rights). CloClo can't time these itself: it isn't
+    // running while the PC sleeps after a sign-out. Null when the log can't
+    // be read.
+    private static List<SleepPeriod>? ReadSleepPeriods(DateTime? since)
+    {
+        var from = since ?? DateTime.UtcNow - Uptime();
+        var events = ReadSystemEvents("Microsoft-Windows-Power-Troubleshooter", "EventID=1", from);
         if (events == null) return null;
+        // A sleep woken from today may have started days ago.
+        var back = from.AddDays(-7);
+        // Kernel-Power 42 is logged as the PC goes down and says what was
+        // asked for: TargetState 6 (S5) is a shutdown that Fast Startup turned
+        // into a hibernation, 5 a real hibernation, with its reason.
+        var entries = Times(ReadSystemEvents("Microsoft-Windows-Kernel-Power", "EventID=42", back, withMessage: true));
+        // Kernel-Boot 27, logged as Windows starts, gives the boot type: 1
+        // after a Fast Startup shutdown, 2 on a resume from hibernation. It
+        // decides when there's no Kernel-Power 42. Not sign-outs: a user may
+        // sign out before a real hibernate too.
+        var boots = Times(ReadSystemEvents("Microsoft-Windows-Kernel-Boot", "EventID=27", from, withMessage: true));
+        var requests = ReadShutdownRequests(back) ?? [];
+        var sessions = ReadSignIns(back) ?? [];
         var periods = new List<SleepPeriod>();
         foreach (var (_, data) in events)
         {
@@ -90,24 +133,201 @@ internal static class WindowsStatus
                 || !DateTime.TryParse(wake, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var end)
                 || end <= start)
                 continue;
-            // EffectiveState 5 is hibernation (S4); lower states are sleep.
-            var hibernated = data.TryGetValue("EffectiveState", out var state) && state == "5";
-            periods.Add(new SleepPeriod(DateTime.SpecifyKind(start, DateTimeKind.Utc).ToLocalTime(),
-                DateTime.SpecifyKind(end, DateTimeKind.Utc).ToLocalTime(), hibernated));
+            // EffectiveState 5 is hibernation (S4); lower states are sleep. Its
+            // Kernel-Power 42 is the one logged nearest the sleep time, a few
+            // seconds after it, and its boot the one nearest the wake. A
+            // restart asked for just before makes a shutdown a restart.
+            var entry = Nearest(entries, start, TimeSpan.FromMinutes(2));
+            var boot = Nearest(boots, end, TimeSpan.FromMinutes(1));
+            var shutdown = entry != null && entry.TryGetValue("TargetState", out var target)
+                ? target == "6"
+                : boot != null && boot.TryGetValue("BootType", out var type) && type is "1" or "0x1";
+            var request = shutdown ? requests.LastOrDefault(r => r.Time <= start && start - r.Time < TimeSpan.FromMinutes(2)) : null;
+            data.TryGetValue("EffectiveState", out var state);
+            var kind = state != "5" ? SleepKind.Sleep
+                : !shutdown ? SleepKind.Hibernate
+                : request?.Restart == true ? SleepKind.FastStartupRestart
+                : SleepKind.FastStartupShutdown;
+            periods.Add(new SleepPeriod(Local(start), Local(end), kind,
+                kind is SleepKind.Hibernate or SleepKind.Sleep && entry != null ? SleepCause(entry) : null)
+            {
+                DownMessage = Flatten(entry?.GetValueOrDefault(MessageKey)),
+                UpMessage = Flatten(boot?.GetValueOrDefault(MessageKey)),
+                TargetState = entry?.GetValueOrDefault("TargetState"),
+                EffectiveState = state,
+                BootType = boot?.GetValueOrDefault("BootType"),
+                RequestedBy = request?.By,
+                SignedOutBefore = SignedOutBefore(sessions, request?.Time ?? start),
+            });
         }
         return periods.OrderBy(p => p.Start).ToList();
     }
 
-    // SignedOut is null while that session is still signed in.
-    public record SignInSession(DateTime SignedIn, DateTime? SignedOut);
-
-    // This account's sign-ins since Windows started, oldest first, from
-    // Winlogon's sign-in (7001) and sign-out (7002) events, paired by their
-    // session number. The account SID only filters out other accounts'
-    // sessions; it isn't kept or shown. Null when the log can't be read.
-    public static List<SignInSession>? ReadSignIns()
+    // Kernel-Power 42's reason, in Windows' own words from its message
+    // ("Sleep Reason: Button or Lid"), so other languages read right too.
+    // The common ones are reworded for the card.
+    private static string? SleepCause(Dictionary<string, string> entry)
     {
-        var events = ReadSystemEvents("Microsoft-Windows-Winlogon", "(EventID=7001 or EventID=7002)");
+        if (entry.TryGetValue("Reason", out var reason))
+        {
+            if (reason == "0") return "power button or lid";
+            if (reason == "4") return "Start menu or an app";
+        }
+        var line = entry.GetValueOrDefault(MessageKey)?.Split('\n')
+            .Select(l => l.Trim()).LastOrDefault(l => l.Length > 0);
+        var colon = line?.IndexOf(':') ?? -1;
+        return colon > 0 && colon < line!.Length - 1 ? line[(colon + 1)..].Trim() : null;
+    }
+
+    // Windows' full starts since a UTC time, oldest first, each as the time
+    // the PC was off before it: after the shutdown or restart asked for
+    // (User32 1074) since the boot before, or, with none, from the last
+    // event Windows logged until it started again. Kernel-Power 41 marks a
+    // stop without a clean shutdown. Null when the log can't be read.
+    private static List<SleepPeriod>? ReadFullStarts(DateTime since)
+    {
+        var back = since.AddDays(-31);
+        var boots = ReadSystemEvents("Microsoft-Windows-Kernel-Boot", "EventID=27", back, withMessage: true);
+        if (boots == null) return null;
+        var ordered = Times(boots).OrderBy(b => b.Time).ToList();
+        var requests = ReadShutdownRequests(back) ?? [];
+        var unclean = Times(ReadSystemEvents("Microsoft-Windows-Kernel-Power", "EventID=41", since, withMessage: true));
+        var starts = new List<SleepPeriod>();
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            var (boot, data) = ordered[i];
+            if (boot < since || !(data.TryGetValue("BootType", out var type) && type is "0" or "0x0")) continue;
+            var previous = i > 0 ? ordered[i - 1].Time : back;
+            var request = requests.LastOrDefault(r => r.Time > previous && r.Time < boot);
+            var crash = Nearest(unclean, boot, TimeSpan.FromMinutes(5));
+            var kind = request != null ? (request.Restart ? SleepKind.Restart : SleepKind.Shutdown)
+                : crash != null ? SleepKind.Unexpected
+                : SleepKind.Shutdown;
+            var off = request?.Time ?? LastEventBefore(boot.AddSeconds(-5)) ?? previous;
+            starts.Add(new SleepPeriod(Local(off), Local(boot), kind)
+            {
+                DownMessage = Flatten(request?.Message ?? crash?.GetValueOrDefault(MessageKey)),
+                UpMessage = Flatten(data.GetValueOrDefault(MessageKey)),
+                BootType = type,
+                RequestedBy = request?.By,
+            });
+        }
+        return starts;
+    }
+
+    // How the running Windows was started: after a full shutdown, a
+    // restart, or without shutting down cleanly (a crash, power loss or a
+    // held power button).
+    public enum StartKind { Shutdown, Restart, Unexpected }
+
+    // From the full start that began this Windows session. Null when unknown.
+    public static StartKind? ReadLastStart() =>
+        ReadFullStarts(DateTime.UtcNow - Uptime() - TimeSpan.FromMinutes(2))?.LastOrDefault()?.Kind switch
+        {
+            SleepKind.Restart => StartKind.Restart,
+            SleepKind.Shutdown => StartKind.Shutdown,
+            SleepKind.Unexpected => StartKind.Unexpected,
+            _ => null,
+        };
+
+    // A shutdown or restart asked for (User32 1074): when, in UTC, who asked
+    // ("Start", "sign-in screen", "Windows Update" or an app's file name) and
+    // Windows' message for it.
+    private sealed record ShutdownRequest(DateTime Time, bool Restart, string? By, string? Message);
+
+    // Shutdowns and restarts asked for from Start, the sign-in screen, an
+    // update or shutdown.exe since a UTC time, oldest first.
+    private static List<ShutdownRequest>? ReadShutdownRequests(DateTime since) =>
+        ReadSystemEvents("User32", "EventID=1074", since, withMessage: true)?
+            .Select(e => new ShutdownRequest(e.Record.Time.ToUniversalTime(),
+                e.Data.TryGetValue("param5", out var action) && action.Contains("restart", StringComparison.OrdinalIgnoreCase),
+                RequestedBy(e.Data.GetValueOrDefault("param1")), e.Data.GetValueOrDefault(MessageKey)))
+            .OrderBy(r => r.Time).ToList();
+
+    // "C:\Windows\system32\winlogon.exe (PC)" → "sign-in screen".
+    private static string? RequestedBy(string? process)
+    {
+        if (string.IsNullOrEmpty(process)) return null;
+        var paren = process.LastIndexOf(" (", StringComparison.Ordinal);
+        var file = Path.GetFileName(paren > 0 ? process[..paren] : process);
+        return file.ToLowerInvariant() switch
+        {
+            "startmenuexperiencehost.exe" => "Start",
+            "winlogon.exe" => "sign-in screen",
+            "trustedinstaller.exe" or "monotificationux.exe" or "musnotification.exe" => "Windows Update",
+            _ => file,
+        };
+    }
+
+    // Fast Startup is on when its setting is (HiberbootEnabled) and
+    // hibernation, which it needs, isn't turned off. Null when unreadable.
+    public static bool? ReadFastStartup()
+    {
+        try
+        {
+            using var session = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Session Manager\Power");
+            using var power = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Power");
+            if (session?.GetValue("HiberbootEnabled") is not int hiberboot) return null;
+            return hiberboot == 1 && power?.GetValue("HibernateEnabled") is not 0;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public record PowerHistory(List<SleepPeriod> Periods, List<SignInSession> SignIns, List<ChargerChange> Charger);
+
+    // Everything since a local time (midnight yesterday, for Windows
+    // status): each sleep, hibernation, shutdown and restart, oldest first,
+    // across restarts, and this account's sign-ins and charger changes,
+    // including ones from the week before (a sign-in or unplugging that
+    // reaches into it). Null when the log can't be read.
+    public static PowerHistory? ReadPowerHistory(DateTime since)
+    {
+        var utc = since.ToUniversalTime();
+        var periods = ReadSleepPeriods(utc);
+        var signIns = ReadSignIns(utc.AddDays(-7));
+        if (periods == null || signIns == null) return null;
+        return new PowerHistory([.. periods.Concat(ReadFullStarts(utc) ?? []).OrderBy(p => p.Start)], signIns,
+            ReadChargerChanges(utc.AddDays(-7)) ?? []);
+    }
+
+    // The charger plugged in or out (Kernel-Power 105), with the battery's
+    // charge then (in mWh) and Windows' message. Windows logs it while it's
+    // running only, so a change while the PC is off shows on the next start.
+    public record ChargerChange(DateTime Time, bool PluggedIn, int? Charge, int? FullCharge, string? Message);
+
+    // Charger changes since a UTC time, oldest first. Null when the log
+    // can't be read.
+    private static List<ChargerChange>? ReadChargerChanges(DateTime since) =>
+        ReadSystemEvents("Microsoft-Windows-Kernel-Power", "EventID=105", since, withMessage: true)?
+            .Where(e => e.Data.ContainsKey("AcOnline"))
+            .Select(e => new ChargerChange(e.Record.Time, e.Data["AcOnline"] == "true",
+                int.TryParse(e.Data.GetValueOrDefault("RemainingCapacity"), out var charge) ? charge : null,
+                int.TryParse(e.Data.GetValueOrDefault("FullChargeCapacity"), out var full) && full > 0 ? full : null,
+                Flatten(e.Data.GetValueOrDefault(MessageKey))))
+            .OrderBy(c => c.Time).ToList();
+
+    // SignedOut is null while that session is still signed in, or when it
+    // ended without a sign-out (the PC stopped). The messages are Windows'
+    // own words for the two events.
+    public record SignInSession(DateTime SignedIn, DateTime? SignedOut)
+    {
+        public string? SignInMessage { get; init; }
+        public string? SignOutMessage { get; init; }
+    }
+
+    // This account's sign-ins since Windows started (or a UTC time), oldest
+    // first, from Winlogon's sign-in (7001) and sign-out (7002) events,
+    // paired by their session number. The account SID only filters out
+    // other accounts' sessions; it isn't kept or shown. Null when the log
+    // can't be read.
+    public static List<SignInSession>? ReadSignIns() => ReadSignIns(null);
+
+    private static List<SignInSession>? ReadSignIns(DateTime? since)
+    {
+        var events = ReadSystemEvents("Microsoft-Windows-Winlogon", "(EventID=7001 or EventID=7002)", since, withMessage: true);
         if (events == null) return null;
         var me = System.Security.Principal.WindowsIdentity.GetCurrent().User?.Value;
         var sessions = new List<SignInSession>();
@@ -117,27 +337,78 @@ internal static class WindowsStatus
             if (me == null || !data.TryGetValue("UserSid", out var sid) || sid != me
                 || !data.TryGetValue("TSId", out var session))
                 continue;
+            var message = Flatten(data.GetValueOrDefault(MessageKey));
             if (record.Id == 7001)
             {
                 open[session] = sessions.Count;
-                sessions.Add(new SignInSession(record.Time, null));
+                sessions.Add(new SignInSession(record.Time, null) { SignInMessage = message });
             }
             else if (open.Remove(session, out var index))
             {
-                sessions[index] = sessions[index] with { SignedOut = record.Time };
+                sessions[index] = sessions[index] with { SignedOut = record.Time, SignOutMessage = message };
             }
         }
         return sessions;
     }
 
-    // Events of one System-log provider since Windows started, with their
-    // named data values. Null when the log can't be read.
-    private static List<((int Id, DateTime Time) Record, Dictionary<string, string> Data)>? ReadSystemEvents(
-        string provider, string idFilter)
+    // A sign-out in the half hour before a UTC time with no sign-in after
+    // it: the user signed out first, then shut down or hibernated.
+    private static DateTime? SignedOutBefore(List<SignInSession> sessions, DateTime utc)
+    {
+        var at = Local(utc);
+        var last = sessions.Select(s => s.SignedOut)
+            .Where(o => o is { } t && t < at.AddSeconds(-1) && at - t < TimeSpan.FromMinutes(30)).Max();
+        return last is { } signedOut && !sessions.Any(s => s.SignedIn > signedOut && s.SignedIn < at) ? signedOut : null;
+    }
+
+    // The time of the last event Windows logged before a UTC time: about
+    // when a PC that stopped without shutting down went off.
+    private static DateTime? LastEventBefore(DateTime utc)
     {
         try
         {
-            var started = DateTime.UtcNow - Uptime();
+            var query = new System.Diagnostics.Eventing.Reader.EventLogQuery("System",
+                System.Diagnostics.Eventing.Reader.PathType.LogName,
+                $"*[System[TimeCreated[@SystemTime<='{utc:yyyy-MM-ddTHH:mm:ss}Z']]]") { ReverseDirection = true };
+            using var reader = new System.Diagnostics.Eventing.Reader.EventLogReader(query);
+            using var record = reader.ReadEvent();
+            return record?.TimeCreated?.ToUniversalTime();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static List<(DateTime Time, Dictionary<string, string> Data)> Times(
+        List<((int Id, DateTime Time) Record, Dictionary<string, string> Data)>? events) =>
+        events?.Select(e => (e.Record.Time.ToUniversalTime(), e.Data)).ToList() ?? [];
+
+    // The event logged nearest a UTC time, within a margin.
+    private static Dictionary<string, string>? Nearest(
+        List<(DateTime Time, Dictionary<string, string> Data)> events, DateTime utc, TimeSpan within) =>
+        events.Where(e => (e.Time - utc).Duration() < within)
+            .OrderBy(e => (e.Time - utc).Duration()).Select(e => e.Data).FirstOrDefault();
+
+    // A message on one line: "The system is entering sleep. Sleep Reason: Button or Lid".
+    private static string? Flatten(string? message) =>
+        message == null ? null : string.Join(" ", message.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0));
+
+    private static DateTime Local(DateTime utc) => DateTime.SpecifyKind(utc, DateTimeKind.Utc).ToLocalTime();
+
+    // Where ReadSystemEvents puts an event's rendered message when asked;
+    // not a name Windows uses for event data.
+    private const string MessageKey = "@Message";
+
+    // Events of one System-log provider since Windows started (or since a
+    // given UTC time), with their named data values and, if asked, the
+    // message. Null when the log can't be read.
+    private static List<((int Id, DateTime Time) Record, Dictionary<string, string> Data)>? ReadSystemEvents(
+        string provider, string idFilter, DateTime? since = null, bool withMessage = false)
+    {
+        try
+        {
+            var started = since ?? DateTime.UtcNow - Uptime();
             var query = new System.Diagnostics.Eventing.Reader.EventLogQuery("System",
                 System.Diagnostics.Eventing.Reader.PathType.LogName,
                 $"*[System[Provider[@Name='{provider}'] and {idFilter} and " +
@@ -153,6 +424,11 @@ internal static class WindowsStatus
                         .Where(e => e.Name.LocalName == "Data" && e.Attribute("Name") != null)
                         .GroupBy(e => e.Attribute("Name")!.Value)
                         .ToDictionary(g => g.Key, g => g.First().Value);
+                    if (withMessage)
+                    {
+                        try { if (record.FormatDescription() is { } message) data[MessageKey] = message; }
+                        catch { /* A missing message resource just leaves the reason out. */ }
+                    }
                     events.Add(((record.Id, time), data));
                 }
             }
