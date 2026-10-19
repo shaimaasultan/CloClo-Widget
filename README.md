@@ -219,10 +219,25 @@ city. Compare calculated times with your local mosque.
   the direction of the Kaaba from your saved location on two compasses: the
   shortest route on the globe (the heading most mosques and Qibla apps use)
   and the straight line on a flat map, with a short explanation of why they
-  differ. North is at the top. On a PC with a compass sensor the compasses
-  turn with the PC, and **Read aloud** speaks the directions.
+  differ. On a PC with a compass sensor the compasses turn with the PC.
+  Most laptops and desktops have none, so North stays at the top unless you
+  turn on either of these options, which CloClo remembers:
+  - **Turn the compasses to match the way my screen faces:** sit facing the
+    screen, hold your phone flat pointing the same way, and set the degrees
+    its compass shows with the slider (arrow keys move it by 1°, Page Up and
+    Page Down by 15°). The top of each compass is then the way you face, and
+    CloClo says how far to turn left or right. Set it again if you move the
+    PC.
+  - **Show the sun as a guide:** a small sun on both compasses shows where
+    the sun is now, worked out from your location and the time, with "face
+    the sun, then turn N degrees to your left or right". It updates every
+    minute, is hidden after sunset, and says so when the sun is too close to
+    overhead to be useful.
 
-  <img src="docs/screenshots/features/qibla.png" alt="Qibla direction window for Cairo: Qibla 136° SE on the globe compass and 138° SE on the flat-map compass, with Read aloud and Close" width="460">
+  **Read aloud** speaks the directions, in Arabic when Arabic voice commands
+  are on, and screen readers read each compass as its direction.
+
+  <img src="docs/screenshots/features/qibla.png" alt="Qibla direction window for New York: Qibla 58° NE on the globe compass and 101° E on the flat-map compass, both turned so the top is east, the way the screen faces; a small sun shown to the south-west with 'Face the sun, then turn 159 degrees to your left'; the screen-direction slider at 90° E and the sun guide ticked" width="460">
 - **Azan:** automatic azan is off until you choose a local MP3 or WAV
   recording and enable it. CloClo plays the recording at the five prayer
   times while it is running; it does not replay prayers missed while the PC
