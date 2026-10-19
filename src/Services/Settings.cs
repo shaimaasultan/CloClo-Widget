@@ -65,6 +65,12 @@ public class WidgetSettings
     // Opt-in, independent of the azan sound: Keeper and Lady Keeper change
     // into prayer clothes on a prayer mat for a while at each prayer time.
     public bool PrayerLookEnabled { get; set; }
+    // Qibla window: which way the top of the screen faces (degrees from true
+    // north, read once from a phone compass), so the compasses can match the
+    // room; and a sun marker to line up with in daylight.
+    public bool QiblaMatchScreen { get; set; }
+    public double QiblaScreenHeading { get; set; }
+    public bool QiblaSunGuide { get; set; }
     // Keeps the widget (and the clipboard/QR windows it opens) out of
     // screenshots, recordings and screen sharing — see ScreenCapture.cs.
     // On by default: it changes nothing on the local display.
@@ -164,6 +170,7 @@ public class WidgetSettings
         City = IsSafeText(City, 100) ? City.Trim() : "Cairo";
         Latitude = IsValidCoordinate(Latitude, -90, 90) ? RoundCoordinate(Latitude) : 30.04;
         Longitude = IsValidCoordinate(Longitude, -180, 180) ? RoundCoordinate(Longitude) : 31.24;
+        QiblaScreenHeading = double.IsFinite(QiblaScreenHeading) ? QiblaDirection.Normalize(Math.Round(QiblaScreenHeading)) % 360 : 0;
         LocationTimeZoneId = PrayerTimeZone.IsValidId(LocationTimeZoneId) ? LocationTimeZoneId : null;
         WindowLeft = IsValidWindowCoordinate(WindowLeft) ? WindowLeft : null;
         WindowTop = IsValidWindowCoordinate(WindowTop) ? WindowTop : null;

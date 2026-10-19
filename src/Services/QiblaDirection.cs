@@ -54,6 +54,8 @@ public static class QiblaDirection
         return d < 0 ? d + 360.0 : d;
     }
 
+    public static string CardinalOf(double bearing) => Cardinals[CardinalIndex(bearing)];
+
     private static int CardinalIndex(double bearing) => (int)Math.Round(Normalize(bearing) / 45.0) % 8;
 
     // "Qibla 136° SE"

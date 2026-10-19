@@ -95,6 +95,22 @@ public static class PrayerTimesCalculator
         return utcDay.AddMinutes(minute);
     }
 
+    // Where the sun is in the sky right now: azimuth clockwise from true
+    // north and altitude above the horizon, both in degrees (no refraction).
+    public static (double Azimuth, double Altitude) SunPosition(DateTime utc, double latitude, double longitude)
+    {
+        var (declination, equationOfTime) = SolarPosition(utc);
+        var solarMinutes = utc.TimeOfDay.TotalMinutes + equationOfTime + 4.0 * longitude;
+        var hourAngle = DegreesToRadians(solarMinutes / 4.0 - 180.0);
+        var lat = DegreesToRadians(latitude);
+        var dec = DegreesToRadians(declination);
+        var altitude = RadiansToDegrees(Math.Asin(Math.Clamp(
+            Math.Sin(lat) * Math.Sin(dec) + Math.Cos(lat) * Math.Cos(dec) * Math.Cos(hourAngle), -1, 1)));
+        var azimuth = Normalize(RadiansToDegrees(Math.Atan2(Math.Sin(hourAngle),
+            Math.Cos(hourAngle) * Math.Sin(lat) - Math.Tan(dec) * Math.Cos(lat))) + 180.0);
+        return (azimuth, altitude);
+    }
+
     private static (double Declination, double EquationOfTime) SolarPosition(DateTime utc)
     {
         var julianDay = utc.ToOADate() + 2415018.5;
