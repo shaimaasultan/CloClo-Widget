@@ -471,7 +471,15 @@ rights; nothing is sent, tested online or changed.
   time is grouped into one row with its times), each row showing what
   you did (e.g. signed out, then clicked Shut down on the sign-in screen)
   next to what Windows logged in its own words, and the day totals,
-  including time on battery. Hovering the avatar's uptime shows the latest one.
+  including time on battery. Each shutdown or restart row has a coloured
+  tag for how it was asked for: green **voice** (CloClo by voice), grey
+  **manual** (Start, the sign-in screen, the power button…) or red
+  **crash** (stopped without shutting down).
+
+Beside the avatar's **Up 3h 12m** sits a small icon: a moon once that time
+includes sleep or hibernation, or a power symbol right after a restart or
+full shutdown. Hovering it shows the details, starting with the last
+shutdown; the same coloured tag follows the icon on the widget.
 - **CPU and memory:** usage bars, processor model and cores, process,
   thread and handle counts, memory in use, available, installed, modules
   and speed, committed and cached, and the eight apps using the most
@@ -660,6 +668,44 @@ approved command.", so it can be used without seeing the screen. With
 وورد…) and CloClo answers in Arabic. A normal short right-click still opens
 the menu of whatever is under the cursor. Details are under
 [Security](#security).
+
+**Shut down by voice.** Hold right-click and say "shut down" (or "turn off
+the PC", "اقفل الجهاز"). This is always a full shutdown: Windows signs out
+and powers off without saving its session for Fast Startup, so the next
+start is fresh, as after a restart, but the PC stays off. Your Fast Startup
+setting isn't changed, and the Start menu's Shut down keeps working as
+before.
+
+1. If apps are open, CloClo names them, for example "2 apps are open:
+   Microsoft Word, Microsoft Edge", and waits for your answer. Hold
+   right-click and say **close** (or "yes", "اقفلهم") to close them and shut
+   down, or **cancel**.
+2. CloClo asks each app to close, as its ✕ button does, so an app with
+   unsaved work asks you to save as usual. When none is left, CloClo says
+   "All apps are closed. Shutting down now."
+3. If an app is still open after ten seconds (usually waiting for you to
+   save), CloClo names it again. Save and say **close** to try again, say
+   **force close** to close it without saving, or say **cancel**.
+4. With no apps open, CloClo says it will shut down in ten seconds, and
+   **cancel** stops it.
+
+A **Shut down** window opens in the middle of the screen alongside the
+voice. It shows the same step, the list of open apps, and buttons that answer
+like your voice does: **Close apps and shut down**, **Try again** and
+**Force close** when an app stays open, **Shut down now** during the
+countdown, and **Cancel** (or Escape, or closing the window). Screen readers
+announce each new step.
+
+Saying nothing for a minute, turning hold to talk off or closing CloClo also
+cancels. Only these exact phrases shut down; a word that merely sounds close
+is not enough.
+
+Windows records each voice shutdown in its System log: in Event Viewer,
+**Windows Logs → System**, event **1074** (source User32) names
+`CloCloWidget.exe` with the comment **CloClo voice command**. CloClo also
+adds a line to `%LOCALAPPDATA%\CloCloWidget\power-requests.log` in case
+Windows doesn't log it. Windows status and the uptime tag use these to show
+the shutdown as **voice**.
 
 ### Privacy and data
 
@@ -1171,6 +1217,20 @@ records the SHA-256 of every native runtime DLL it ships
   transcript is never a path, argument, URI, or shell command, and is never
   spoken back. Capture uses the Windows communications mode, whose echo
   cancellation removes CloClo's own voice and other speaker audio.
+  **Shutting down by voice** needs one of a fixed list of shutdown phrases,
+  matched exactly (never by sound). CloClo lists the apps that have a
+  taskbar window, naming each by its program's file description rather than
+  its window title, which can name private documents. They are closed only
+  after the spoken "close": each window gets the same close request as its
+  ✕ button, so apps can still ask to save. "Force close" ends a process
+  without saving; it is offered only for apps still open after that, and
+  never ends Explorer. The shutdown is Windows' InitiateShutdown power-off
+  without the hybrid (Fast Startup) flag and without forcing other apps; it
+  needs only the shutdown privilege every signed-in user has, which CloClo
+  enables for that call. No setting is read or changed. The request carries
+  the comment "CloClo voice command", which Windows logs (User32 1074), and
+  CloClo writes one line (the time and "voice") to `power-requests.log` in
+  its local folder; neither is sent anywhere.
   The model is tracked with Git LFS; clone the project with Git LFS enabled
   before building an installer. The installed package is about 142 MiB larger.
   Text that cannot be selected and copied is unavailable to the selection reader.
@@ -1207,7 +1267,7 @@ records the SHA-256 of every native runtime DLL it ships
   or history. “Open dictation folder” opens Explorer after an explicit click.
   The media picker and its label do not activate other apps; saved dictation
   and Sudoku data cannot trigger program launches. Hold to talk can open one
-  of eight fixed destinations only.
+  of eight fixed destinations, or shut down after the steps above.
 
 **What CloClo checks before it runs** (in `NativeLibraryCheck`, before WPF
 loads anything)

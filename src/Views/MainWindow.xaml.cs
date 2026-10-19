@@ -244,6 +244,7 @@ public partial class MainWindow : Window
         Closing += (_, _) =>
         {
             _voiceActivationClosing = true;
+            CancelShutdownCountdown();
             UpdatePushToTalkHook(); // closing: removes the mouse watcher
             Keeper.SetVoiceStatus("off");
             // SystemEvents holds its handlers in a static list, so leaving this
@@ -1264,6 +1265,11 @@ public partial class MainWindow : Window
         (_uptimeHover, _uptimeTip) = CreateStatusHover(hitSurface, FillUptimeTip);
         Keeper.UptimeIconMoved += PlaceUptimeHover;
         PlaceUptimeHover();
+        // The last shutdown can only change across a sign-in, which starts
+        // CloClo again, so reading it once here keeps the tag right.
+        _ = Task.Run(() => WindowsStatus.ReadPowerHistory(DateTime.Today.AddDays(-LastShutdownDays)))
+            .ContinueWith(read => ShowLastShutdownTag(read.IsFaulted ? null : read.Result),
+                TaskScheduler.FromCurrentSynchronizationContext());
     }
 
     // The same kind of hover card for the battery and each connection icon
@@ -1327,6 +1333,22 @@ public partial class MainWindow : Window
 
     private void PlaceUptimeHover() => PlaceStatusHover(_uptimeHover, Keeper.UptimeSleepIconBounds(this));
 
+    // How far back the uptime tag and card look for the last shutdown.
+    private const int LastShutdownDays = 7;
+
+    // Tags the uptime line with how the last shutdown was asked for, and
+    // returns that shutdown (null when none was found).
+    private WindowsStatus.SleepPeriod? ShowLastShutdownTag(WindowsStatus.PowerHistory? history)
+    {
+        var last = history == null ? null : WindowsStatusWindow.LastShutdown(history);
+        if (last != null && WindowsStatusWindow.ShutdownTag(last) is { } tag)
+            Keeper.SetLastShutdownTag(tag.Text, tag.Color,
+                $"Last shutdown: {tag.Text}, {WindowsStatusWindow.KindName(last).ToLowerInvariant()} {WindowsStatusWindow.When(last.Start)}");
+        else
+            Keeper.SetLastShutdownTag(null, default, "");
+        return last;
+    }
+
     private static void PlaceStatusHover(Border? hover, Rect? bounds)
     {
         if (hover == null) return;
@@ -1361,7 +1383,9 @@ public partial class MainWindow : Window
         var now = DateTime.Now;
         var up = WindowsStatus.Uptime();
         var asleep = WindowsStatus.Asleep(up) ?? TimeSpan.Zero;
-        var heading = $"Includes {WindowsStatusWindow.Duration(asleep)} of sleep";
+        var heading = asleep >= TimeSpan.FromMinutes(1)
+            ? $"Includes {WindowsStatusWindow.Duration(asleep)} of sleep"
+            : "No sleep since Windows started";
         var lines = new List<string>
         {
             $"Awake {WindowsStatusWindow.Duration(up - asleep)} of {WindowsStatusWindow.Duration(up)}",
@@ -1370,10 +1394,16 @@ public partial class MainWindow : Window
         const string hint = "Only a restart or a full shutdown resets uptime. Windows status shows each day.";
         tip.Child = UptimeCard(heading, lines, hint);
 
-        _ = Task.Run(() => (WindowsStatus.ReadSleepPeriods(), WindowsStatus.ReadSignIns(), WindowsStatus.ReadLastStart())).ContinueWith(read =>
+        _ = Task.Run(() => (WindowsStatus.ReadSleepPeriods(), WindowsStatus.ReadSignIns(), WindowsStatus.ReadLastStart(),
+            WindowsStatus.ReadPowerHistory(DateTime.Today.AddDays(-LastShutdownDays)))).ContinueWith(read =>
         {
             if (version != _uptimeTipVersion || read.IsFaulted) return;
-            var (sleeps, signIns, start) = read.Result;
+            var (sleeps, signIns, start, history) = read.Result;
+            // "voice  Full shutdown 2:51 PM", tagged as on the uptime line.
+            var lastShutdown = ShowLastShutdownTag(history);
+            var shutdownTag = lastShutdown != null && WindowsStatusWindow.ShutdownTag(lastShutdown) is { } tag
+                ? (tag.Text, tag.Color, $"Last: {WindowsStatusWindow.KindName(lastShutdown)} {WindowsStatusWindow.When(lastShutdown.Start)}")
+                : ((string, System.Windows.Media.Color, string)?)null;
             var details = new List<string>(lines);
             var summary = heading;
             // "Includes 12 h 41 min hibernated and 1 h 1 min shut down", so a
@@ -1418,7 +1448,7 @@ public partial class MainWindow : Window
             }
             if (signIns?.LastOrDefault(s => s.SignedOut == null) is { } session)
                 details.Add($"Signed in {WindowsStatusWindow.WithDate(session.SignedIn)}");
-            tip.Child = UptimeCard(summary, details, hint);
+            tip.Child = UptimeCard(summary, details, hint, shutdownTag);
             if (tip.IsOpen) RaiseAboveWidget(tip.Child);
         }, TaskScheduler.FromCurrentSynchronizationContext());
     }
@@ -1429,7 +1459,9 @@ public partial class MainWindow : Window
 
     // The daily bubble's card: dark, gold-edged and rounded, a gold heading,
     // cream lines and a muted note. The margin leaves room for the shadow.
-    private static Border UptimeCard(string heading, IEnumerable<string> lines, string hint)
+    // The last shutdown, when given, comes first with its coloured tag.
+    private static Border UptimeCard(string heading, IEnumerable<string> lines, string hint,
+        (string Text, System.Windows.Media.Color Color, string Line)? shutdown = null)
     {
         var body = new StackPanel();
         body.Children.Add(new TextBlock
@@ -1437,6 +1469,17 @@ public partial class MainWindow : Window
             Text = heading, Foreground = TipAccent, FontSize = 12, FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 0, 0, 6),
         });
+        if (shutdown is { } last)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 1, 0, 3) };
+            row.Children.Add(WindowsStatusWindow.TagView((last.Text, last.Color), 11.5));
+            row.Children.Add(new TextBlock
+            {
+                Text = last.Line, Foreground = TipText, FontSize = 13, Margin = new Thickness(6, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            body.Children.Add(row);
+        }
         foreach (var line in lines)
             body.Children.Add(new TextBlock { Text = line, Foreground = TipText, FontSize = 13, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 1, 0, 1) });
         body.Children.Add(new TextBlock

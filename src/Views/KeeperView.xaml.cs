@@ -324,7 +324,7 @@ public partial class KeeperView : System.Windows.Controls.UserControl
     private void RaiseUptimeIconMoved() =>
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => UptimeIconMoved?.Invoke()));
 
-    // Where the moon is, in relativeTo's coordinates; null while hidden.
+    // Where the uptime icon is, in relativeTo's coordinates; null while hidden.
     public Rect? UptimeSleepIconBounds(Visual relativeTo)
     {
         if (!UptimeSleepIcon.IsVisible || UptimeSleepIcon.ActualWidth <= 0) return null;
@@ -460,11 +460,27 @@ public partial class KeeperView : System.Windows.Controls.UserControl
         var asleep = WindowsStatus.Asleep(up) ?? TimeSpan.Zero;
         var slept = asleep >= TimeSpan.FromMinutes(1);
         var text = FormatUptime(up);
-        if (UptimeLabel.Text == text && (UptimeSleepIcon.Visibility == Visibility.Visible) == slept) return;
+        if (UptimeLabel.Text == text && UptimeSleepIcon.Visibility == Visibility.Visible && (UptimeMoonGlyph.Visibility == Visibility.Visible) == slept) return;
         UptimeLabel.Text = text;
-        UptimeSleepIcon.Visibility = Show(slept);
+        // Always shown, so the details are a hover away even right after a
+        // restart or full shutdown: a moon once the time includes sleep.
+        UptimeSleepIcon.Visibility = Visibility.Visible;
+        UptimeMoonGlyph.Visibility = Show(slept);
+        UptimeStartGlyph.Visibility = Show(!slept);
         System.Windows.Automation.AutomationProperties.SetName(UptimeLabel, "PC uptime: " + SpokenUptime(up)
             + (slept ? ", including " + SpokenUptime(asleep) + " asleep" : ""));
+        RaiseUptimeIconMoved();
+    }
+
+    // The tag after the uptime icon: how the last shutdown was asked for
+    // ("voice" in green, "manual" in grey, "crash" in red), or none.
+    public void SetLastShutdownTag(string? text, Color color, string spoken)
+    {
+        LastShutdownTag.Visibility = Show(text != null);
+        if (text == null) return;
+        LastShutdownText.Text = text;
+        LastShutdownTag.Background = new SolidColorBrush(color);
+        System.Windows.Automation.AutomationProperties.SetName(LastShutdownTag, spoken);
         RaiseUptimeIconMoved();
     }
 

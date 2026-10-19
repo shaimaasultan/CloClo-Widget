@@ -182,8 +182,11 @@ internal static class WindowsStatus
     // Windows' full starts since a UTC time, oldest first, each as the time
     // the PC was off before it: after the shutdown or restart asked for
     // (User32 1074) since the boot before, or, with none, from the last
-    // event Windows logged until it started again. Kernel-Power 41 marks a
-    // stop without a clean shutdown. Null when the log can't be read.
+    // event Windows logged until it started again. A shutdown not asked for
+    // that way (the power button, say) still logs Kernel-Power 109 with its
+    // action: 5 a restart, 4 or 6 a shutdown; CloClo's own record names one
+    // it asked for (PowerRequests). Kernel-Power 41 marks a stop without a
+    // clean shutdown. Null when the log can't be read.
     private static List<SleepPeriod>? ReadFullStarts(DateTime since)
     {
         var back = since.AddDays(-31);
@@ -192,6 +195,9 @@ internal static class WindowsStatus
         var ordered = Times(boots).OrderBy(b => b.Time).ToList();
         var requests = ReadShutdownRequests(back) ?? [];
         var unclean = Times(ReadSystemEvents("Microsoft-Windows-Kernel-Power", "EventID=41", since, withMessage: true));
+        var transitions = Times(ReadSystemEvents("Microsoft-Windows-Kernel-Power", "EventID=109", back, withMessage: true));
+        var sessions = ReadSignIns(back) ?? [];
+        var cloclo = PowerRequests.Read(back);
         var starts = new List<SleepPeriod>();
         for (var i = 0; i < ordered.Count; i++)
         {
@@ -200,16 +206,24 @@ internal static class WindowsStatus
             var previous = i > 0 ? ordered[i - 1].Time : back;
             var request = requests.LastOrDefault(r => r.Time > previous && r.Time < boot);
             var crash = Nearest(unclean, boot, TimeSpan.FromMinutes(5));
+            var transition = transitions.LastOrDefault(t => t.Time > previous && t.Time < boot);
+            var asked = cloclo.Where(r => r.Time > previous && r.Time < boot).Select(r => ((DateTime Time, string By)?)r).LastOrDefault();
             var kind = request != null ? (request.Restart ? SleepKind.Restart : SleepKind.Shutdown)
+                : transition.Data != null ? (transition.Data.GetValueOrDefault("ShutdownActionType") == "5" ? SleepKind.Restart : SleepKind.Shutdown)
                 : crash != null ? SleepKind.Unexpected
                 : SleepKind.Shutdown;
-            var off = request?.Time ?? LastEventBefore(boot.AddSeconds(-5)) ?? previous;
+            var off = request?.Time ?? (transition.Data != null ? transition.Time : (DateTime?)null) ?? LastEventBefore(boot.AddSeconds(-5)) ?? previous;
             starts.Add(new SleepPeriod(Local(off), Local(boot), kind)
             {
-                DownMessage = Flatten(request?.Message ?? crash?.GetValueOrDefault(MessageKey)),
+                DownMessage = Flatten(request?.Message ?? transition.Data?.GetValueOrDefault(MessageKey) ?? crash?.GetValueOrDefault(MessageKey)),
+                // Windows signs out as part of any shutdown, so only a sign-out
+                // before the request counts (or, with only Kernel-Power 109,
+                // more than a few seconds before it).
+                SignedOutBefore = SignedOutBefore(sessions, request?.Time ?? asked?.Time
+                    ?? (transition.Data != null ? transition.Time.AddSeconds(-10) : off)),
                 UpMessage = Flatten(data.GetValueOrDefault(MessageKey)),
                 BootType = type,
-                RequestedBy = request?.By,
+                RequestedBy = request?.By ?? (asked?.By == "voice" ? VoiceCommand : asked?.By),
             });
         }
         return starts;
@@ -236,20 +250,28 @@ internal static class WindowsStatus
     private sealed record ShutdownRequest(DateTime Time, bool Restart, string? By, string? Message);
 
     // Shutdowns and restarts asked for from Start, the sign-in screen, an
-    // update or shutdown.exe since a UTC time, oldest first.
+    // update, shutdown.exe or CloClo since a UTC time, oldest first. Its data:
+    // param1 the process, param5 the action, param6 the comment.
     private static List<ShutdownRequest>? ReadShutdownRequests(DateTime since) =>
         ReadSystemEvents("User32", "EventID=1074", since, withMessage: true)?
             .Select(e => new ShutdownRequest(e.Record.Time.ToUniversalTime(),
                 e.Data.TryGetValue("param5", out var action) && action.Contains("restart", StringComparison.OrdinalIgnoreCase),
-                RequestedBy(e.Data.GetValueOrDefault("param1")), e.Data.GetValueOrDefault(MessageKey)))
+                RequestedBy(e.Data.GetValueOrDefault("param1"), e.Data.GetValueOrDefault("param6")),
+                e.Data.GetValueOrDefault(MessageKey)))
             .OrderBy(r => r.Time).ToList();
 
-    // "C:\Windows\system32\winlogon.exe (PC)" → "sign-in screen".
-    private static string? RequestedBy(string? process)
+    // RequestedBy for a shutdown CloClo asked for by voice, and the comment
+    // CloClo gives Windows with it (see FullShutdown).
+    public const string VoiceCommand = "CloClo voice command";
+
+    // "C:\Windows\system32\winlogon.exe (PC)" → "sign-in screen";
+    // CloCloWidget.exe with CloClo's comment → VoiceCommand.
+    private static string? RequestedBy(string? process, string? comment)
     {
         if (string.IsNullOrEmpty(process)) return null;
         var paren = process.LastIndexOf(" (", StringComparison.Ordinal);
         var file = Path.GetFileName(paren > 0 ? process[..paren] : process);
+        if (comment?.Contains(VoiceCommand, StringComparison.OrdinalIgnoreCase) == true) return VoiceCommand;
         return file.ToLowerInvariant() switch
         {
             "startmenuexperiencehost.exe" => "Start",

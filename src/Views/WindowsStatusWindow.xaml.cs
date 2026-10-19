@@ -494,19 +494,27 @@ public partial class WindowsStatusWindow : Window
 
         IReadOnlyList<(string, string)> Rows(IEnumerable<(string, string)> rows, string empty) =>
             rows.ToList() is { Count: > 0 } list ? list : [("", empty)];
-        IEnumerable<(string, string)> PeriodRows(params WindowsStatus.SleepKind[] kinds) =>
-            periods.Where(p => kinds.Contains(p.Kind)).Select(p => (Period(p),
-                $"{KindName(p)} · {Duration(p.End - p.Start)}\nWhat you did: {Action(p)}\nWindows logged: {WindowsWords(p)}"));
+        List<WindowsStatus.SleepPeriod> Of(params WindowsStatus.SleepKind[] kinds) =>
+            periods.Where(p => kinds.Contains(p.Kind)).ToList();
+        List<(string, string)> PeriodRows(List<WindowsStatus.SleepPeriod> of) =>
+            of.Select(p => (Period(p),
+                $"{KindName(p)} · {Brief(p.End - p.Start)}\nWhat you did: {Action(p)}\nWindows logged: {WindowsWords(p)}")).ToList();
 
-        yield return new Card("Sleep", Rows(PeriodRows(WindowsStatus.SleepKind.Sleep), none));
-        var hibernations = PeriodRows(WindowsStatus.SleepKind.Hibernate, WindowsStatus.SleepKind.FastStartupShutdown,
-            WindowsStatus.SleepKind.FastStartupRestart).ToList();
-        if (periods.Any(p => p.Kind is WindowsStatus.SleepKind.FastStartupShutdown or WindowsStatus.SleepKind.FastStartupRestart))
+        yield return new Card("Sleep", Rows(PeriodRows(Of(WindowsStatus.SleepKind.Sleep)), none));
+        // Each shutdown row is tagged voice, manual or crash (ShutdownTag).
+        var hibernated = Of(WindowsStatus.SleepKind.Hibernate, WindowsStatus.SleepKind.FastStartupShutdown,
+            WindowsStatus.SleepKind.FastStartupRestart);
+        var hibernations = PeriodRows(hibernated);
+        var hibernationTags = hibernated.Select(ShutdownTag).ToList();
+        if (hibernated.Any(p => p.Kind != WindowsStatus.SleepKind.Hibernate))
+        {
             hibernations.Insert(0, ("", "Windows logs a Fast Startup shutdown as a hibernation, so both are here."));
-        yield return new Card("Hibernate", Rows(hibernations, none));
-        var fullStops = PeriodRows(WindowsStatus.SleepKind.Shutdown, WindowsStatus.SleepKind.Restart,
-            WindowsStatus.SleepKind.Unexpected).ToList();
-        if (fullStops.Count > 0) yield return new Card("Shutdown and restart", fullStops);
+            hibernationTags.Insert(0, null);
+        }
+        yield return new Card("Hibernate", Rows(hibernations, none), Tags: hibernationTags);
+        var stopped = Of(WindowsStatus.SleepKind.Shutdown, WindowsStatus.SleepKind.Restart, WindowsStatus.SleepKind.Unexpected);
+        if (stopped.Count > 0)
+            yield return new Card("Shutdown and restart", PeriodRows(stopped), Tags: stopped.Select(ShutdownTag).ToList());
 
         // A period starting or ending within half an hour of a sign-out or
         // sign-in is what came next or before.
@@ -636,7 +644,37 @@ public partial class WindowsStatusWindow : Window
         yield return new Card("Totals", totals);
     }
 
-    private static string KindName(WindowsStatus.SleepPeriod p) => p.Kind switch
+    // How a shutdown or restart was asked for, as a coloured tag: "voice"
+    // (CloClo by voice, green), "manual" (Start, the sign-in screen, the
+    // power button…, grey) or "crash" (stopped without shutting down, red).
+    // Null for sleep and hibernation.
+    internal static (string Text, Color Color)? ShutdownTag(WindowsStatus.SleepPeriod p) => p.Kind switch
+    {
+        WindowsStatus.SleepKind.Sleep or WindowsStatus.SleepKind.Hibernate => null,
+        WindowsStatus.SleepKind.Unexpected => ("crash", Color.FromRgb(0xb2, 0x3b, 0x2e)),
+        _ when p.RequestedBy == WindowsStatus.VoiceCommand => ("voice", Color.FromRgb(0x2e, 0x8b, 0x57)),
+        _ => ("manual", Color.FromRgb(0x6b, 0x6b, 0x6b)),
+    };
+
+    // The last shutdown or restart in a power history; null when none.
+    internal static WindowsStatus.SleepPeriod? LastShutdown(WindowsStatus.PowerHistory history) =>
+        history.Periods.LastOrDefault(p => ShutdownTag(p) != null);
+
+    // The tag drawn small and rounded, white on its colour.
+    internal static Border TagView((string Text, Color Color) tag, double fontSize) => new()
+    {
+        Background = new SolidColorBrush(tag.Color),
+        CornerRadius = new CornerRadius(3),
+        Padding = new Thickness(3, 0, 3, 0.5),
+        VerticalAlignment = VerticalAlignment.Center,
+        Child = new TextBlock { Text = tag.Text, Foreground = Brushes.White, FontSize = fontSize, FontWeight = FontWeights.SemiBold },
+    };
+
+    // Duration, or seconds under a minute: "34 s".
+    private static string Brief(TimeSpan span) =>
+        span < TimeSpan.FromMinutes(1) ? $"{Math.Max(0, span.TotalSeconds):0} s" : Duration(span);
+
+    internal static string KindName(WindowsStatus.SleepPeriod p) => p.Kind switch
     {
         WindowsStatus.SleepKind.Sleep => "Asleep",
         WindowsStatus.SleepKind.Hibernate => "Hibernated",
@@ -658,6 +696,9 @@ public partial class WindowsStatusWindow : Window
             {
                 "Start" => "clicked Shut down on Start",
                 "sign-in screen" => "clicked Shut down on the sign-in screen",
+                WindowsStatus.VoiceCommand => "asked CloClo to shut down by voice (hold right-click and say it)",
+                null when p.Kind == WindowsStatus.SleepKind.Shutdown =>
+                    "shut down without a Start, sign-in screen or CloClo request logged: the power button, or an app",
                 null when p.SignedOutBefore != null => "clicked Shut down on the sign-in screen",
                 null => "shut down",
                 var by => $"shut down by {by}",
@@ -667,7 +708,7 @@ public partial class WindowsStatusWindow : Window
                 "Start" => "clicked Restart on Start",
                 "sign-in screen" => "clicked Restart on the sign-in screen",
                 "Windows Update" => "Windows Update restarted the PC",
-                null => "restarted",
+                null => "restarted without a Start or sign-in screen click logged",
                 var by => $"restarted by {by}",
             },
             WindowsStatus.SleepKind.Unexpected =>
@@ -792,7 +833,8 @@ public partial class WindowsStatusWindow : Window
     // ---- Cards ----
 
     private sealed record Card(string Title, IReadOnlyList<(string Label, string Value)> Rows,
-        double? Percent = null, string? PercentText = null, (string Text, bool Checked)? Check = null)
+        double? Percent = null, string? PercentText = null, (string Text, bool Checked)? Check = null,
+        IReadOnlyList<(string Text, Color Color)?>? Tags = null)
     {
         public static Card Message(string text) => new("", [("", text)]);
     }
@@ -807,10 +849,13 @@ public partial class WindowsStatusWindow : Window
         public ProgressBar? Bar { get; init; }
         public TextBlock? BarText { get; init; }
         public CheckBox? Check { get; init; }
+        public IReadOnlyList<(string Text, Color Color)?>? Tags { get; init; }
         public required List<(TextBlock Label, TextBlock Value)> Cells { get; init; }
 
+        // Tags are drawn once, so changed tags rebuild the card.
         public bool Fits(Card card) =>
-            (Bar != null) == (card.Percent != null) && (Check != null) == (card.Check != null) && Cells.Count == card.Rows.Count;
+            (Bar != null) == (card.Percent != null) && (Check != null) == (card.Check != null) && Cells.Count == card.Rows.Count
+            && (Tags ?? []).SequenceEqual(card.Tags ?? []);
 
         public void Update(Card card)
         {
@@ -877,10 +922,19 @@ public partial class WindowsStatusWindow : Window
                     Margin = new Thickness(0, 1, 12, 1),
                 };
                 var value = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 1, 0, 1) };
-                Grid.SetRow(label, i);
+                // A row's tag sits under its label ("voice" under the time).
+                FrameworkElement labelCell = label;
+                if (card.Tags is { } tags && i < tags.Count && tags[i] is { } tag)
+                {
+                    var tagView = TagView(tag, 11);
+                    tagView.HorizontalAlignment = HorizontalAlignment.Left;
+                    tagView.Margin = new Thickness(0, 2, 12, 0);
+                    labelCell = new StackPanel { Children = { label, tagView } };
+                }
+                Grid.SetRow(labelCell, i);
                 Grid.SetRow(value, i);
                 Grid.SetColumn(value, 1);
-                grid.Children.Add(label);
+                grid.Children.Add(labelCell);
                 grid.Children.Add(value);
                 cells.Add((label, value));
             }
@@ -895,7 +949,7 @@ public partial class WindowsStatusWindow : Window
                 Margin = new Thickness(0, 0, 0, 8),
                 Child = panel,
             };
-            var view = new CardView { Root = root, Title = title, Bar = bar, BarText = barText, Check = check, Cells = cells };
+            var view = new CardView { Root = root, Title = title, Bar = bar, BarText = barText, Check = check, Tags = card.Tags, Cells = cells };
             root.Tag = view;
             view.Update(card);
             return view;

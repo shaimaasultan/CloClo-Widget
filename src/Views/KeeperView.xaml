@@ -579,29 +579,44 @@
         </TextBlock>
         <!-- "Up 3d 4h 12m" since Windows last started, last in the same
              top-left column (see PlaceStatusColumn). Always left-to-right
-             with Latin digits, like the battery line beside it. The moon
-             shows when that time includes sleep or hibernation; hovering
+             with Latin digits, like the battery line beside it. The icon
+             beside it is a moon when that time includes sleep or
+             hibernation, and a power symbol after a fresh start; hovering
              it (through the avatar window, see UptimeSleepIconBounds)
              shows the details. -->
         <StackPanel x:Name="UptimeLine" Canvas.Left="9" Canvas.Top="15" Orientation="Horizontal"
                     FlowDirection="LeftToRight" Visibility="Collapsed">
             <TextBlock x:Name="UptimeLabel" Style="{StaticResource Label}" FontSize="8.5" FontWeight="SemiBold" Opacity="0.85" />
-            <!-- A glowing gold moon on a small night-sky disc, so it reads on
-                 light and dark wallpaper alike (no contrast switching). -->
+            <!-- A glowing gold moon (or power symbol) on a small night-sky
+                 disc, so it reads on light and dark wallpaper alike (no
+                 contrast switching). -->
             <Grid x:Name="UptimeSleepIcon" Width="11" Height="11" Margin="3,0,0,0" VerticalAlignment="Center" Visibility="Collapsed">
                 <Ellipse Fill="#2a2019" Stroke="#8a6a2f" StrokeThickness="0.6">
                     <Ellipse.Effect>
                         <DropShadowEffect Color="#ffd36a" ShadowDepth="0" BlurRadius="6" Opacity="0.9" />
                     </Ellipse.Effect>
                 </Ellipse>
-                <TextBlock Text="☾" FontFamily="Segoe UI Symbol" FontSize="8.5" FontWeight="Bold" Foreground="#ffd76e"
+                <TextBlock x:Name="UptimeMoonGlyph" Text="☾" FontFamily="Segoe UI Symbol" FontSize="8.5" FontWeight="Bold" Foreground="#ffd76e"
                            HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-1,0,0"
                            AutomationProperties.Name="Includes sleep time">
                     <TextBlock.Effect>
                         <DropShadowEffect Color="#ffe08a" ShadowDepth="0" BlurRadius="4" Opacity="1" />
                     </TextBlock.Effect>
                 </TextBlock>
+                <TextBlock x:Name="UptimeStartGlyph" Text="&#xE7E8;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="6.5"
+                           Foreground="#ffd76e" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"
+                           AutomationProperties.Name="Started fresh, no sleep yet">
+                    <TextBlock.Effect>
+                        <DropShadowEffect Color="#ffe08a" ShadowDepth="0" BlurRadius="4" Opacity="1" />
+                    </TextBlock.Effect>
+                </TextBlock>
             </Grid>
+            <!-- How the last shutdown was asked for: "voice", "manual" or
+                 "crash" in its colour (see SetLastShutdownTag). -->
+            <Border x:Name="LastShutdownTag" CornerRadius="2.5" Padding="2.5,0,2.5,0.5" Margin="3,0,0,0"
+                    VerticalAlignment="Center" Visibility="Collapsed">
+                <TextBlock x:Name="LastShutdownText" FontSize="7" FontWeight="SemiBold" Foreground="White" />
+            </Border>
         </StackPanel>
         <!-- "12° Clear": the sky in words sits with the temperature, like a weather app. -->
         <TextBlock x:Name="Temp" Style="{StaticResource Label}" Canvas.Left="0" Canvas.Top="171.9" Width="150"

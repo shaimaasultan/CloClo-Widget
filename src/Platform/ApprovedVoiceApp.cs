@@ -26,9 +26,66 @@ internal static class ApprovedVoiceAppLauncher
     // the wake name or a finish word is tolerated but not needed. The prompt
     // lists only the names, which steers Whisper toward their spelling.
     internal const string RecognitionPrompt =
-        "Notepad. Paint. Paintbrush. OneDrive. Snipping Tool. Settings. YouTube. Spotify. Word.";
+        "Notepad. Paint. Paintbrush. OneDrive. Snipping Tool. Settings. YouTube. Spotify. Word. Shut down. Close all. Force close. Cancel.";
     internal const string ArabicRecognitionPrompt =
-        "المفكرة. الرسام. ون درايف. أداة القص. الإعدادات. يوتيوب. سبوتيفاي. وورد.";
+        "المفكرة. الرسام. ون درايف. أداة القص. الإعدادات. يوتيوب. سبوتيفاي. وورد. اقفل الجهاز. اقفلهم. اقفلهم غصب. إلغاء.";
+
+    // Shutting down can't be undone like opening an app, so only these exact
+    // phrases count (after the same wake name and "now" tolerance); a sound-
+    // alike never shuts the PC down.
+    private static readonly string[] ShutdownPhrases =
+    [
+        "shut down", "shutdown", "shut it down", "power off", "turn off",
+        "shut down the computer", "shut down computer", "shut down the pc", "shut down pc",
+        "shut down the laptop", "shut down laptop", "shut down windows",
+        "turn off the computer", "turn off computer", "turn off the pc", "turn off pc",
+        "turn off the laptop", "turn off laptop",
+        "اقفل الجهاز", "قفل الجهاز", "اطفي الجهاز", "طفي الجهاز", "اغلق الجهاز",
+        "اقفل الكمبيوتر", "قفل الكمبيوتر", "اطفي الكمبيوتر", "طفي الكمبيوتر",
+        "اقفل اللابتوب", "اطفي اللابتوب", "ايقاف التشغيل",
+    ];
+    private static readonly string[] CancelPhrases =
+    [
+        "cancel", "cancel it", "cancel shutdown", "cancel the shutdown", "stop", "stop it", "don t", "no",
+        "الغاء", "الغي", "الغيه", "وقف", "لا", "بلاش",
+    ];
+
+    // Answers while a shutdown waits for open apps to be closed.
+    private static readonly string[] CloseAppsPhrases =
+    [
+        "close", "close all", "close them", "close them all", "close all apps", "close the apps", "close apps",
+        "yes", "yes close", "confirm", "ok", "okay",
+        "اقفل", "اقفلهم", "اقفلها", "اقفل الكل", "اقفل كله", "اقفل البرامج", "ايوه", "اه", "تمام", "موافق", "اكد",
+    ];
+    private static readonly string[] ForceClosePhrases =
+    [
+        "force close", "force close all", "force close them", "force", "close anyway", "close without saving",
+        "اقفلهم غصب", "اقفل غصب", "اقفلها غصب", "اقفل من غير حفظ", "اقفلهم من غير حفظ", "اقفل بالقوه",
+    ];
+
+    internal static bool IsCloseAppsCommand(string transcript) =>
+        Array.IndexOf(CloseAppsPhrases, CommandPhrase(transcript)) >= 0;
+
+    internal static bool IsForceCloseCommand(string transcript) =>
+        Array.IndexOf(ForceClosePhrases, CommandPhrase(transcript)) >= 0;
+
+    internal static bool IsShutdownCommand(string transcript) =>
+        Array.IndexOf(ShutdownPhrases, CommandPhrase(transcript)) >= 0;
+
+    internal static bool IsCancelCommand(string transcript) =>
+        Array.IndexOf(CancelPhrases, CommandPhrase(transcript)) >= 0;
+
+    private static string CommandPhrase(string transcript)
+    {
+        var phrase = Normalize(transcript);
+        if (TryStripWakeName(phrase, out var remainder)) phrase = remainder;
+        if (TryStripFinishWord(phrase, out var command)) phrase = command;
+        foreach (var word in new[] { "please ", "لو سمحت ", "من فضلك " })
+            if (phrase.StartsWith(word, StringComparison.Ordinal)) phrase = phrase[word.Length..];
+        foreach (var word in new[] { " please", " لو سمحت", " من فضلك" })
+            if (phrase.EndsWith(word, StringComparison.Ordinal)) phrase = phrase[..^word.Length];
+        return phrase;
+    }
 
     internal static bool TryMatchHeldCommand(string transcript, out ApprovedVoiceApp app)
     {
