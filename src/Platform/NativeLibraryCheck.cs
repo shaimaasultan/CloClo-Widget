@@ -384,6 +384,27 @@ public static partial class NativeLibraryCheck
         return result is Trusted or UntrustedRoot or Chaining && HasSameSignerAsExe(path);
     }
 
+    internal const int SignatureTrusted = 0;
+    internal const int SignatureBadDigest = unchecked((int)0x80096010);   // TRUST_E_BAD_DIGEST
+
+    // For the ask pipe's caller check (PipeCaller): WinVerifyTrust's answer
+    // for the file, and its signer certificate when it has one. Only
+    // SignatureTrusted means an intact signature Windows trusts.
+    internal static (int Result, X509Certificate2? Signer) ReadSignature(string path)
+    {
+        var result = WinVerifyTrustFile(path);
+        try
+        {
+#pragma warning disable SYSLIB0057 // signer only; WinVerifyTrust checked the file
+            return (result, new X509Certificate2(X509Certificate.CreateFromSignedFile(path)));
+#pragma warning restore SYSLIB0057
+        }
+        catch
+        {
+            return (result, null);
+        }
+    }
+
     // Hash matching is mandatory, including for self-signed CloClo builds.
     // A signed installation additionally requires each Whisper DLL to carry
     // the exact signer certificate of the executable. The hash was compiled

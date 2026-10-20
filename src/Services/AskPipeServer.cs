@@ -1,8 +1,6 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -30,6 +28,11 @@ namespace CloCloWidget;
 //   time, the next client waits for the pipe. A client that sends too much,
 //   too slowly, or doesn't read its reply is disconnected, so none can hold
 //   the pipe for long.
+// - Only programs you allowed may ask. Each caller is identified by its
+//   program file (PipeCaller: path plus signer, or path plus SHA-256 when
+//   unsigned); an unknown one is refused unless you allow it in CloClo's
+//   dialog, which then remembers it (Privacy -> Apps allowed to ask). A
+//   program you turned down isn't asked about again until CloClo restarts.
 // - The request is data. Its text and question go only into the model's
 //   prompt; the answer goes only back to the caller. Nothing in either is run,
 //   opened or typed anywhere, and CloClo says which program asked.
@@ -49,19 +52,24 @@ internal sealed class AskPipeServer : IDisposable
     private readonly Action<string, bool> _served;
     // Called once if the pipe can't be created (the name is taken).
     private readonly Action<string> _failed;
+    // Whether this caller may ask: true only for an allowed program (asking
+    // you first for a new one). Called on a background thread.
+    private readonly Func<PipeCaller, CancellationToken, Task<bool>> _authorize;
 
     // The callbacks are set before the loop starts, so none is missed.
-    private AskPipeServer(Action<string, bool> served, Action<string> failed)
+    private AskPipeServer(Func<PipeCaller, CancellationToken, Task<bool>> authorize, Action<string, bool> served, Action<string> failed)
     {
+        _authorize = authorize;
         _served = served;
         _failed = failed;
         _loop = Task.Run(RunAsync);
     }
 
-    public static AskPipeServer? Start(Action<string, bool> served, Action<string> failed)
+    public static AskPipeServer? Start(Func<PipeCaller, CancellationToken, Task<bool>> authorize,
+        Action<string, bool> served, Action<string> failed)
     {
         if (Program.Instance?.IsHeld != true) return null;
-        return new AskPipeServer(served, failed);
+        return new AskPipeServer(authorize, served, failed);
     }
 
     private async Task RunAsync()
@@ -89,22 +97,23 @@ internal sealed class AskPipeServer : IDisposable
                 catch (OperationCanceledException) { return; }
                 catch (IOException) { continue; }
 
-                var caller = ClientProcessName(pipe);
+                // Identified while it is still connected (see PipeCaller).
+                var caller = PipeCaller.Identify(pipe, out var refusal);
                 var answered = false;
                 try
                 {
-                    answered = await ServeAsync(pipe);
+                    answered = await ServeAsync(pipe, caller, refusal);
                 }
                 catch (Exception ex) when (ex is IOException or OperationCanceledException or ObjectDisposedException)
                 {
                     // The client left or CloClo is closing.
                 }
-                if (!_stop.IsCancellationRequested) _served(caller, answered);
+                if (!_stop.IsCancellationRequested) _served(caller?.FileName ?? "An unidentified program", answered);
             }
         }
     }
 
-    private async Task<bool> ServeAsync(NamedPipeServerStream pipe)
+    private async Task<bool> ServeAsync(NamedPipeServerStream pipe, PipeCaller? caller, string? refusal)
     {
         AskRequest? request;
         using (var readTimeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token))
@@ -126,6 +135,20 @@ internal sealed class AskPipeServer : IDisposable
         if (request == null)
         {
             await ReplyAsync(pipe, new AskReply(null, "The request must be JSON: {\"text\": \"...\", \"question\": \"...\"}."));
+            return false;
+        }
+
+        // The request was read first, so the caller isn't left blocked writing
+        // while you decide; then nothing is answered unless it is allowed.
+        if (caller == null)
+        {
+            await ReplyAsync(pipe, new AskReply(null, refusal ?? "CloClo couldn't tell which program is asking."));
+            return false;
+        }
+        if (!await _authorize(caller, _stop.Token))
+        {
+            await ReplyAsync(pipe, new AskReply(null,
+                "This program isn't allowed to ask CloClo. Allow it when CloClo asks, or from Privacy -> Apps allowed to ask."));
             return false;
         }
 
@@ -174,28 +197,6 @@ internal sealed class AskPipeServer : IDisposable
         await pipe.WriteAsync(bytes, writeTimeout.Token);
         await pipe.FlushAsync(writeTimeout.Token);
     }
-
-    // For the notice only: which program asked. A name, never trusted for
-    // anything else.
-    private static string ClientProcessName(NamedPipeServerStream pipe)
-    {
-        try
-        {
-            if (GetNamedPipeClientProcessId(pipe.SafePipeHandle, out var pid))
-            {
-                using var process = Process.GetProcessById((int)pid);
-                return process.ProcessName + ".exe";
-            }
-        }
-        catch
-        {
-            // The client may already have exited.
-        }
-        return "another app";
-    }
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool GetNamedPipeClientProcessId(Microsoft.Win32.SafeHandles.SafePipeHandle pipe, out uint clientProcessId);
 
     public void Dispose()
     {

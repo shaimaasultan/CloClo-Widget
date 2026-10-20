@@ -118,6 +118,10 @@ public class WidgetSettings
     // Other programs of this Windows user may ask the local language model
     // about a text through CloClo's pipe (AskPipeServer). Off by default.
     public bool AskPipeEnabled { get; set; } = false;
+    // The programs allowed to ask through that pipe, each added only after
+    // you allowed it in CloClo's dialog (see PipeCaller).
+    public List<AskCallerSettings> AskPipeCallers { get; set; } = new();
+    public const int MaxAskPipeCallers = 32;
 
     // Two decimals is ~1 km: plenty for weather and a city name, without
     // keeping or sending a precise position.
@@ -203,6 +207,11 @@ public class WidgetSettings
             (DictationFilePath.Length > 2048 || !SpeechToText.IsInDictationFolder(DictationFilePath)))
             DictationFilePath = null;
 
+        AskPipeCallers = (AskPipeCallers ?? new List<AskCallerSettings>())
+            .Where(caller => caller != null && caller.IsValid())
+            .Take(MaxAskPipeCallers)
+            .ToList();
+
         var enabled = EnabledIcons ?? new WidgetSettings().EnabledIcons;
         EnabledIcons = new HashSet<string>(
             enabled.Where(key => key is not null && AllowedIcons.Contains(key))
@@ -255,6 +264,27 @@ public class WidgetSettings
             // Best-effort persistence; losing a save isn't fatal.
         }
     }
+}
+
+// One program allowed to ask through the pipe: its full path, and either the
+// signer certificate it was signed with or, unsigned, its file's SHA-256.
+public sealed class AskCallerSettings
+{
+    public string Path { get; set; } = "";
+    public string? SignerThumbprint { get; set; }
+    public string? Publisher { get; set; }
+    public string? Sha256 { get; set; }
+
+    public bool IsValid() =>
+        Path.Length is > 3 and <= 1024 && !Path.Any(char.IsControl) && System.IO.Path.IsPathFullyQualified(Path) &&
+        Path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
+        (SignerThumbprint != null
+            ? IsHex(SignerThumbprint, 40) && Sha256 == null &&
+              Publisher is { Length: > 0 and <= 200 } && !Publisher.Any(char.IsControl)
+            : IsHex(Sha256, 64) && Publisher == null);
+
+    private static bool IsHex(string? value, int length) =>
+        value != null && value.Length == length && value.All(Uri.IsHexDigit);
 }
 
 public sealed class CustomReminderSettings

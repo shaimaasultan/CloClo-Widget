@@ -639,10 +639,32 @@ instead of guessing.
   command, and the model is told to ignore instructions inside the text.
 
 **Other apps can ask too** (Privacy → **Let other apps ask about a text**,
-off by default). Programs you run can then send a text and a question to
+off by default). Programs you allow can then send a text and a question to
 `\\.\pipe\CloClo.Ask` and get the answer back. Each time one does, CloClo
-shows which program asked. The protocol is one UTF-8 JSON message each way,
-in message mode:
+shows which program asked.
+
+**Only programs you allowed.** The first time a program asks, CloClo shows
+"Allow *program* to ask CloClo about a text?" with its full path and
+publisher, or a note that it isn't signed. **Don't allow** has the focus, and
+Escape, closing the window or a minute without an answer all mean no. A
+program you allow is remembered under Privacy → **Apps allowed to ask**,
+where clicking it removes it again. A program you turn down gets an error and
+isn't asked about again until CloClo restarts. CloClo recognises a program
+again as follows:
+
+- **Signed by a publisher Windows trusts** (for example `pwsh.exe`, signed
+  by Microsoft): by its full path and the signing certificate. Updates from
+  the same publisher keep working; another program at that path doesn't.
+- **Unsigned, or signed with a certificate Windows doesn't trust** (your own
+  builds, for example): by its full path and the SHA-256 of the file. Any
+  change to the file needs allowing again, and the dialog says it changed.
+- **A signature that doesn't match its file** is refused outright.
+
+Script hosts such as `pwsh.exe`, `python.exe` or `node.exe` run whatever
+script they're given, so allowing one allows every script it runs. The dialog
+warns about that.
+
+The protocol is one UTF-8 JSON message each way, in message mode:
 
 ```
 request:  {"text": "The meeting is on Tuesday.", "question": "What day is the meeting?"}
@@ -1524,8 +1546,14 @@ loads anything)
   doesn't serve at all rather than share it), with `CurrentUserOnly` access
   and remote clients rejected. Requests are limited to 256 KB and 10
   seconds; replies must be read within 10 seconds; an oversized or stalled
-  client is disconnected so it can't hold the pipe. The request is data for
-  the prompt and the answer goes back only to the caller; CloClo names the
+  client is disconnected so it can't hold the pipe. Only programs you
+  allowed get an answer: each caller is identified by its program file,
+  through the client process ID the pipe reports. That process is opened
+  first, then the pipe is checked to still be connected to it, so a client
+  that exits and has its ID reused can't pass as another program. The file
+  is recognised by its trusted signer or, if unsigned, its SHA-256 (see
+  [Ask about a text](#ask-about-a-text)). The request is data for the
+  prompt and the answer goes back only to the caller; CloClo names the
   program that asked each time.
 
 **How builds and installs are protected**
@@ -1600,6 +1628,10 @@ loads anything)
   no check inside the app can catch. Installing to Program Files
   (`-ProgramFiles`) closes both: the exe and its native DLLs are then
   writable only by administrators, and nothing is unpacked to `%TEMP%`.
+- **Add itself to the apps allowed to ask.** That list lives in your
+  settings file, which any program running as you can edit, so it keeps
+  unknown programs from using the ask pipe without your OK, not malware that
+  already runs as you.
 - **With either install,** attach a .NET profiler through environment
   variables. The runtime loads it before CloClo's own code runs; CloClo then
   notices and refuses to continue, but the profiler's code has already run.

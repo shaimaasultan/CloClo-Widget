@@ -68,6 +68,10 @@ public partial class MainWindow : Window
     private AccentPatternsWindow? _accentPatternsWindow;
     private AskTextWindow? _askTextWindow;
     private AskPipeServer? _askPipe;
+    // Programs turned down in the ask-pipe dialog this run (by identity), so
+    // a refused program can't keep raising the dialog.
+    private readonly HashSet<string> _askPipeDeclined = new(StringComparer.OrdinalIgnoreCase);
+    private bool _askPipeDialogOpen;
     private ContextMenu? _activeContextMenu;
 
     private const int GWL_EXSTYLE = -20;
@@ -2936,6 +2940,7 @@ public partial class MainWindow : Window
             Item("Allow arXiv newest papers (online)", ToggleArxivPapers, isChecked: _settings.ArxivPapersEnabled),
             new Separator(),
             Item("Let other apps ask about a text", ToggleAskPipe, isChecked: _settings.AskPipeEnabled),
+            BuildAskPipeCallersMenu(),
         });
 
     private void ToggleAskPipe()
@@ -2957,6 +2962,7 @@ public partial class MainWindow : Window
     {
         if (_askPipe != null) return;
         _askPipe = AskPipeServer.Start(
+            AuthorizeAskCaller,
             (caller, answered) => Dispatcher.BeginInvoke(() =>
                 ShowOneShotLabel(answered ? "Answered another app" : "Another app asked",
                     answered ? $"{caller} asked about a text." : $"{caller} asked, but got no answer.")),
@@ -2965,6 +2971,72 @@ public partial class MainWindow : Window
                 StopAskPipe();
                 ShowOneShotLabel("Other apps can't ask", message);
             }));
+    }
+
+    // Allowed if it matches a program you allowed; a new one only after you
+    // allow it in AskCallerConsentWindow, which then remembers it. Runs the
+    // check on the UI thread, where the settings live.
+    private Task<bool> AuthorizeAskCaller(PipeCaller caller, CancellationToken cancellationToken)
+    {
+        var decided = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Dispatcher.BeginInvoke(() =>
+        {
+            try
+            {
+                if (_settings.AskPipeCallers.Any(caller.Matches)) { decided.TrySetResult(true); return; }
+                var key = caller.Path + "|" + (caller.SignerThumbprint ?? caller.Sha256);
+                if (_askPipeDeclined.Contains(key) || _askPipeDialogOpen || cancellationToken.IsCancellationRequested)
+                {
+                    decided.TrySetResult(false);
+                    return;
+                }
+                var replacesEarlier = _settings.AskPipeCallers.Any(a => string.Equals(a.Path, caller.Path, StringComparison.OrdinalIgnoreCase));
+                var dialog = new AskCallerConsentWindow(caller, replacesEarlier);
+                using var closeOnStop = cancellationToken.Register(() => Dispatcher.BeginInvoke(() => { if (dialog.IsVisible) dialog.Close(); }));
+                _askPipeDialogOpen = true;
+                bool allowed;
+                try { allowed = dialog.ShowDialog() == true; }
+                finally { _askPipeDialogOpen = false; }
+                if (allowed && !cancellationToken.IsCancellationRequested)
+                {
+                    _settings.AskPipeCallers.RemoveAll(a => string.Equals(a.Path, caller.Path, StringComparison.OrdinalIgnoreCase));
+                    if (_settings.AskPipeCallers.Count >= WidgetSettings.MaxAskPipeCallers) _settings.AskPipeCallers.RemoveAt(0);
+                    _settings.AskPipeCallers.Add(caller.ToSettings());
+                    _settings.Save();
+                }
+                else
+                {
+                    _askPipeDeclined.Add(key);
+                }
+                decided.TrySetResult(allowed && !cancellationToken.IsCancellationRequested);
+            }
+            catch
+            {
+                decided.TrySetResult(false);
+            }
+        });
+        return decided.Task;
+    }
+
+    // Privacy -> Apps allowed to ask: each allowed program; clicking one
+    // removes it, so it is asked about again next time it asks.
+    private MenuItem BuildAskPipeCallersMenu()
+    {
+        var items = new List<object>();
+        foreach (var caller in _settings.AskPipeCallers.ToList())
+        {
+            var label = System.IO.Path.GetFileName(caller.Path) + " - " + (caller.Publisher ?? "unsigned, this exact file");
+            var item = Item("Remove " + label, () =>
+            {
+                _settings.AskPipeCallers.Remove(caller);
+                _settings.Save();
+                ShowOneShotLabel("Removed", System.IO.Path.GetFileName(caller.Path) + " can no longer ask without your OK.");
+            });
+            item.ToolTip = caller.Path;
+            items.Add(item);
+        }
+        if (items.Count == 0) items.Add(Item("None yet - CloClo asks you the first time a program asks", null, enabled: false));
+        return SubMenu("Apps allowed to ask", items.ToArray());
     }
 
     private void StopAskPipe()
