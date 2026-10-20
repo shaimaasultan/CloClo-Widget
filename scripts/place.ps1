@@ -29,12 +29,15 @@
 #   signer;
 # - then the folders are swapped by renaming, which fails as a whole while
 #   the old copy is in use; on any failure the previous copy is put back.
-# It writes no registry keys and no log files. The result is the exit code:
+# Before the swap it sets CloClo's Windows Firewall rules for the installed
+# exe (replacing any it set before). It writes no registry keys and no log
+# files. The result is the exit code:
 #   0 done, 2 the exe's signature is broken, 3 signed by another certificate
 #   than the installed copy, 4 a DLL has an invalid or unexpected signer,
 #   5 a source file is a link or has an unexpected name, 6 in use / other,
 #   7 a copied file differs from the build or the file set doesn't match,
-#   8 (from the bootstrap) this file changed after the installer checked it.
+#   8 (from the bootstrap) this file changed after the installer checked it,
+#   9 Windows Firewall refused one of CloClo's rules.
 
 # (Plain string concatenation, not Join-Path: Join-Path is itself a command
 # that would be looked up - in the user's module folder - before this line
@@ -51,7 +54,7 @@ try {
 Clear-Dir $stage
 Clear-Dir $old
 New-Item -ItemType Directory -Path $stage | Out-Null
-$models = @('ggml-base.bin', 'ggml-large-v3-turbo-q5_0.bin')
+$models = @('ggml-base.bin', 'ggml-large-v3-turbo-q5_0.bin', 'qwen2.5-1.5b-instruct-q4_k_m.gguf')
 $gpuDlls = @('ggml-base-whisper.dll', 'ggml-cpu-whisper.dll', 'ggml-vulkan-whisper.dll', 'ggml-whisper.dll', 'whisper.dll')
 $want = @{}
 foreach ($pair in $Expected.Split(';')) {
@@ -102,9 +105,10 @@ $oldSigner = (Get-AuthenticodeSignature -LiteralPath $installed).SignerCertifica
 if ($oldSigner -and $oldSigner.Thumbprint -ne $newThumb -and $newThumb -ne $AcceptThumbprint) { Fail 3 }
 }
 # WPF DLLs are Microsoft-signed. The local transcription DLLs (four beside
-# the exe, five in gpu\) are pinned during the build and signed by CloClo's
-# own protected key.
-$whisperDlls = @('ggml-base-whisper.dll', 'ggml-cpu-whisper.dll', 'ggml-whisper.dll', 'whisper.dll')
+# the exe, five in gpu\) and the language model's llama.cpp DLLs (four beside
+# the exe) are pinned during the build and signed by CloClo's own protected key.
+$whisperDlls = @('ggml-base-whisper.dll', 'ggml-cpu-whisper.dll', 'ggml-whisper.dll', 'whisper.dll',
+    'ggml-base.dll', 'ggml-cpu.dll', 'ggml.dll', 'llama.dll')
 foreach ($f in @($staged | Where-Object { $_.Extension -eq '.dll' })) {
 $s = Get-AuthenticodeSignature -LiteralPath $f.FullName
 $inGpu = $f.DirectoryName -eq (Join-Path $stage 'gpu')
@@ -115,6 +119,24 @@ if (($inGpu -and $f.Name -in $gpuDlls) -or (-not $inGpu -and -not $isPack -and $
     } elseif (-not $s.SignerCertificate -or $s.SignerCertificate.Thumbprint -ne $newThumb -or
             $s.Status -in 'HashMismatch', 'NotSupportedFileFormat', 'Incompatible', 'NotSigned') { Fail 4 }
 } elseif ($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation,') { Fail 4 }
+}
+# Windows Firewall rules for the installed exe (the same set as
+# Set-CloCloFirewall.ps1 and Package.wxs): outbound TCP only to 443, no UDP,
+# no ICMP, nothing to the local network, no inbound. Block rules win over any
+# allow rule, and they match only this exe. netsh by its System32 path.
+$netsh = [IO.Path]::Combine([Environment]::GetFolderPath('System'), 'netsh.exe')
+$program = 'program=' + $installed
+& $netsh advfirewall firewall delete rule name=all $program | Out-Null
+$localNetworks = 'LocalSubnet,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16,100.64.0.0/10,fc00::/7,fe80::/10'
+foreach ($rule in @(
+    @('name=CloClo: block outbound except HTTPS', 'dir=out', 'protocol=TCP', 'remoteport=1-442,444-65535'),
+    @('name=CloClo: block outbound UDP', 'dir=out', 'protocol=UDP'),
+    @('name=CloClo: block outbound ICMPv4', 'dir=out', 'protocol=icmpv4'),
+    @('name=CloClo: block outbound ICMPv6', 'dir=out', 'protocol=icmpv6'),
+    @('name=CloClo: block local network', 'dir=out', ('remoteip=' + $localNetworks)),
+    @('name=CloClo: block inbound', 'dir=in'))) {
+& $netsh advfirewall firewall add rule @rule action=block $program enable=yes profile=any | Out-Null
+if ($LASTEXITCODE -ne 0) { Fail 9 }
 }
 # Swap the folders; renaming fails as a whole while the old copy is in use.
 if (Test-Path -LiteralPath $dest) { Rename-Item -LiteralPath $dest -NewName (Split-Path $old -Leaf) }

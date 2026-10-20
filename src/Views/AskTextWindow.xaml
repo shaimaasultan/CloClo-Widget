@@ -1,0 +1,73 @@
+<Window x:Class="CloCloWidget.AskTextWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="CloClo — Ask about a text"
+        Width="760" Height="720" MinWidth="520" MinHeight="520"
+        WindowStartupLocation="Manual" ShowInTaskbar="False"
+        Background="#1C2935" Foreground="White">
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="#34495B" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#526779" />
+            <Setter Property="Padding" Value="12,6" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,14,0" />
+        </Style>
+        <Style x:Key="Caption" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#D6E2EC" />
+            <Setter Property="Margin" Value="0,10,0,4" />
+        </Style>
+        <Style x:Key="Field" TargetType="TextBox">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="Background" Value="#14202A" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#526779" />
+            <Setter Property="CaretBrush" Value="White" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+        </Style>
+    </Window.Resources>
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="2*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0">
+            <TextBlock x:Name="TextCount" DockPanel.Dock="Right" Foreground="#9FB3C4" FontSize="12" VerticalAlignment="Bottom" Margin="0,0,0,4" />
+            <TextBlock Text="Text:" Style="{StaticResource Caption}" Margin="0,0,0,4" />
+        </DockPanel>
+        <TextBox x:Name="SourceBox" Grid.Row="1" Style="{StaticResource Field}" AcceptsReturn="True"
+                 TextChanged="Text_Changed" />
+
+        <TextBlock Grid.Row="2" Text="Question:" Style="{StaticResource Caption}" />
+        <TextBox x:Name="QuestionBox" Grid.Row="3" Style="{StaticResource Field}" Height="56" AcceptsReturn="False"
+                 KeyDown="Question_KeyDown" />
+
+        <WrapPanel Grid.Row="4" Margin="0,10,0,0">
+            <Button x:Name="AskButton" Content="Ask" Click="Ask_Click" IsDefault="False" />
+            <Button x:Name="StopButton" Content="Stop" Click="Stop_Click" IsEnabled="False" />
+            <CheckBox x:Name="SpeakCheck" Content="Read the answer aloud" IsChecked="True" Margin="6,0,14,0" />
+        </WrapPanel>
+
+        <TextBlock Grid.Row="5" Text="Answer:" Style="{StaticResource Caption}" />
+        <TextBox x:Name="AnswerBox" Grid.Row="6" Style="{StaticResource Field}" IsReadOnly="True" />
+
+        <TextBlock x:Name="StatusText" Grid.Row="7" Foreground="#9FB3C4" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap"
+                   Text="Runs on this PC. Nothing is sent anywhere. Answers come only from the text above." />
+    </Grid>
+</Window>

@@ -66,6 +66,8 @@ public partial class MainWindow : Window
     private VoiceConverterWindow? _voiceConverterWindow;
     private LetterSignalsWindow? _letterSignalsWindow;
     private AccentPatternsWindow? _accentPatternsWindow;
+    private AskTextWindow? _askTextWindow;
+    private AskPipeServer? _askPipe;
     private ContextMenu? _activeContextMenu;
 
     private const int GWL_EXSTYLE = -20;
@@ -246,6 +248,7 @@ public partial class MainWindow : Window
         {
             _voiceActivationClosing = true;
             CancelShutdownCountdown();
+            StopAskPipe();
             UpdatePushToTalkHook(); // closing: removes the mouse watcher
             Keeper.SetVoiceStatus("off");
             // SystemEvents holds its handlers in a static list, so leaving this
@@ -317,6 +320,7 @@ public partial class MainWindow : Window
         CreateAvatarHitWindow();
         UpdatePushToTalkHook();
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+        if (_settings.AskPipeEnabled) StartAskPipe();
 
         Topmost = _settings.AlwaysOnTop;
         SetupTopmostTimer();
@@ -766,6 +770,29 @@ public partial class MainWindow : Window
         ShowSensitive(window);
     }
 
+    private void ShowAskText()
+    {
+        if (_askTextWindow != null)
+        {
+            if (_askTextWindow.WindowState == WindowState.Minimized) _askTextWindow.WindowState = WindowState.Normal;
+            _askTextWindow.Activate();
+            return;
+        }
+
+        var window = new AskTextWindow
+        {
+            Owner = this,
+            Topmost = _settings.AlwaysOnTop,
+        };
+        _askTextWindow = window;
+        window.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_askTextWindow, window)) _askTextWindow = null;
+        };
+        PositionBesideWidget(window);
+        ShowSensitive(window);
+    }
+
     // Search runs only these fixed menu actions. Typed text filters labels and
     // aliases; it is never passed to a process, file path or command parser.
     private IReadOnlyList<WidgetSearchAction> BuildQuickActions()
@@ -786,6 +813,7 @@ public partial class MainWindow : Window
             new("Voice converters: Find it in David's words", "david match word microphone record recognise accessibility", WidgetSearchActionKind.OpenWindow, ShowDavidMatch),
             new("Voice converters: Voice converter", "david convert my voice microphone record compare accessibility", WidgetSearchActionKind.OpenWindow, ShowVoiceConverter),
             new("Voice converters: Letter signals", "letters formant table build word david compare signal", WidgetSearchActionKind.OpenWindow, ShowLetterSignals),
+            new("Ask about a text", "question answer llm language model ai summary read text explain local", WidgetSearchActionKind.OpenWindow, ShowAskText),
             new("Voice converters: My accent patterns", "accent pronunciation whisper dictation learn passage words correct spelling", WidgetSearchActionKind.OpenWindow, ShowAccentPatterns),
             new("Custom reminders", "reminder remainder schedule message", WidgetSearchActionKind.OpenWindow, OpenCustomReminders),
             new("Prayer times and azan", "salah fajr dhuhr asr maghrib isha adhan", WidgetSearchActionKind.OpenWindow, OpenPrayerTimes),
@@ -2497,6 +2525,7 @@ public partial class MainWindow : Window
         menu.Items.Add(Item("Windows status…", ShowWindowsStatus, icon: Glyph("\uE7F4")));
         menu.Items.Add(Item("File summary and search…", ShowFileInsights, icon: Glyph("\uE721")));
         menu.Items.Add(Item("Scientific calculator…", ShowScientificCalculator, icon: Glyph("\uE8EF")));
+        menu.Items.Add(Item("Ask about a text…", ShowAskText, icon: Glyph("\uE897")));
         menu.Items.Add(WithGlyph(SubMenu("Online trending sources", new object[]
         {
             TrendsItem("Google Trends…", TrendSource.Google, _settings.GoogleTrendsEnabled, "\uE721"),
@@ -2905,7 +2934,44 @@ public partial class MainWindow : Window
             Item("Allow Google Trends (online)", ToggleGoogleTrends, isChecked: _settings.GoogleTrendsEnabled),
             Item("Allow Wikipedia most-read (online)", ToggleWikipediaTrends, isChecked: _settings.WikipediaTrendsEnabled),
             Item("Allow arXiv newest papers (online)", ToggleArxivPapers, isChecked: _settings.ArxivPapersEnabled),
+            new Separator(),
+            Item("Let other apps ask about a text", ToggleAskPipe, isChecked: _settings.AskPipeEnabled),
         });
+
+    private void ToggleAskPipe()
+    {
+        _settings.AskPipeEnabled = !_settings.AskPipeEnabled;
+        _settings.Save();
+        if (_settings.AskPipeEnabled) StartAskPipe();
+        else StopAskPipe();
+        ShowOneShotLabel(_settings.AskPipeEnabled ? "Other apps can ask" : "Other apps can't ask",
+            _settings.AskPipeEnabled
+                ? $"Your own programs can ask about a text through \\\\.\\pipe\\{AskPipeServer.PipeName}."
+                : "CloClo's pipe is closed.");
+    }
+
+    // Only the copy holding the single-instance lock serves the pipe
+    // (AskPipeServer.Start checks it). Each answer is announced with the
+    // asking program's name, so nothing asks unnoticed.
+    private void StartAskPipe()
+    {
+        if (_askPipe != null) return;
+        _askPipe = AskPipeServer.Start(
+            (caller, answered) => Dispatcher.BeginInvoke(() =>
+                ShowOneShotLabel(answered ? "Answered another app" : "Another app asked",
+                    answered ? $"{caller} asked about a text." : $"{caller} asked, but got no answer.")),
+            message => Dispatcher.BeginInvoke(() =>
+            {
+                StopAskPipe();
+                ShowOneShotLabel("Other apps can't ask", message);
+            }));
+    }
+
+    private void StopAskPipe()
+    {
+        _askPipe?.Dispose();
+        _askPipe = null;
+    }
 
     private void ToggleHideFromScreenCapture()
     {

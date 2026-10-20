@@ -45,6 +45,13 @@
          of the CPU set only when a dedicated GPU is found (see
          LocalAudioTranscriber.EnsureNativeRuntimeLoaded). -->
     <PackageReference Include="Whisper.net.Runtime.Vulkan" Version="1.9.1" GeneratePathProperty="true" ExcludeAssets="build" />
+    <!-- In-process language model for "Ask about a text" (LlmService.cs).
+         Like Whisper, no localhost server: llama.cpp runs inside CloClo.
+         Only the AVX2 CPU set of the backend is shipped, copied as four
+         explicit, pinned and signed files by PrepareLlamaRuntime below; its
+         own build target would copy every CPU variant into runtimes\. -->
+    <PackageReference Include="LLamaSharp" Version="0.30.0" />
+    <PackageReference Include="LLamaSharp.Backend.Cpu" Version="0.30.0" GeneratePathProperty="true" ExcludeAssets="build" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(RuntimeIdentifier)' == 'win-x64'">
@@ -56,7 +63,47 @@
     <Content Include="$(ArabicWhisperModel)" Link="ggml-large-v3-turbo-q5_0.bin"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
              ExcludeFromSingleFile="true" />
+    <Content Include="$(IntermediateOutputPath)llama-runtime\ggml-base.dll;$(IntermediateOutputPath)llama-runtime\ggml-cpu.dll;$(IntermediateOutputPath)llama-runtime\ggml.dll;$(IntermediateOutputPath)llama-runtime\llama.dll"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="%(Filename)%(Extension)" />
+    <Content Include="$(LanguageModel)" Link="qwen2.5-1.5b-instruct-q4_k_m.gguf"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
+             ExcludeFromSingleFile="true" />
   </ItemGroup>
+
+  <!-- The language model for "Ask about a text": Qwen2.5-1.5B-Instruct,
+       Q4_K_M (Apache 2.0). Fetched and checked exactly like the Arabic
+       Whisper model: once, from a fixed Hugging Face revision into
+       obj\llm-models\, accepting only these exact bytes. LlmService checks
+       the same size and SHA-256 again through the handle it holds while
+       llama.cpp loads the file. -->
+  <PropertyGroup>
+    <LanguageModelDir>$(MSBuildProjectDirectory)\obj\llm-models\</LanguageModelDir>
+    <LanguageModel>$(LanguageModelDir)qwen2.5-1.5b-instruct-q4_k_m.gguf</LanguageModel>
+    <LanguageModelSha256>6A1A2EB6D15622BF3C96857206351BA97E1AF16C30D7A74EE38970E434E9407E</LanguageModelSha256>
+    <LanguageModelUrl>https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/91cad51170dc346986eccefdc2dd33a9da36ead9/qwen2.5-1.5b-instruct-q4_k_m.gguf</LanguageModelUrl>
+  </PropertyGroup>
+
+  <Target Name="FetchLanguageModel" BeforeTargets="CoreCompile" Condition="'$(RuntimeIdentifier)' == 'win-x64'">
+    <PropertyGroup><_LanguageModelPartial>$(LanguageModel).download</_LanguageModelPartial></PropertyGroup>
+    <Delete Files="$(_LanguageModelPartial)" Condition="!Exists('$(LanguageModel)')" />
+    <Message Importance="high" Condition="!Exists('$(LanguageModel)')"
+             Text="Downloading the pinned language model (1.1 GB, once)..." />
+    <DownloadFile Condition="!Exists('$(LanguageModel)')" SourceUrl="$(LanguageModelUrl)"
+                  DestinationFolder="$(LanguageModelDir)" DestinationFileName="qwen2.5-1.5b-instruct-q4_k_m.gguf.download"
+                  Retries="2" RetryDelayMilliseconds="5000" />
+    <GetFileHash Files="$(_LanguageModelPartial)" Algorithm="SHA256" Condition="Exists('$(_LanguageModelPartial)')">
+      <Output TaskParameter="Items" ItemName="_LanguageModelDownloadHash" />
+    </GetFileHash>
+    <Delete Files="$(_LanguageModelPartial)" Condition="Exists('$(_LanguageModelPartial)') and '@(_LanguageModelDownloadHash->'%(FileHash)')' != '$(LanguageModelSha256)'" />
+    <Error Condition="!Exists('$(LanguageModel)') and !Exists('$(_LanguageModelPartial)')"
+           Text="The downloaded language model did not match its pinned SHA-256 and was deleted." />
+    <Move SourceFiles="$(_LanguageModelPartial)" DestinationFiles="$(LanguageModel)" Condition="Exists('$(_LanguageModelPartial)')" />
+    <GetFileHash Files="$(LanguageModel)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_LanguageModelHash" />
+    </GetFileHash>
+    <Error Condition="'@(_LanguageModelHash->'%(FileHash)')' != '$(LanguageModelSha256)'"
+           Text="$(LanguageModel) is altered or incomplete. Delete it and build again to download the pinned model." />
+  </Target>
 
   <!-- Arabic dictation on a dedicated GPU uses large-v3-turbo (q5_0). At
        574 MB it is not kept in git: the build downloads it once from a fixed
@@ -91,6 +138,15 @@
     </GetFileHash>
     <Error Condition="'@(_ArabicModelHash->'%(FileHash)')' != '$(ArabicWhisperModelSha256)'"
            Text="$(ArabicWhisperModel) is altered or incomplete. Delete it and build again to download the pinned model." />
+  </Target>
+
+  <!-- Every internet request goes through NetworkClient.cs and its allow-list.
+       Fails the build if any other source file creates its own HTTP client,
+       socket or web request, so a new feature can't go online around it. -->
+  <Target Name="CheckSingleNetworkPath" BeforeTargets="CoreCompile">
+    <PropertyGroup><_NetworkScanList>$(MSBuildProjectDirectory)\$(IntermediateOutputPath)network-scan.txt</_NetworkScanList></PropertyGroup>
+    <WriteLinesToFile File="$(_NetworkScanList)" Lines="@(Compile->'%(FullPath)')" Overwrite="true" />
+    <Exec Command="&quot;$(_SignPowerShell)&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\scripts\check-network-path.ps1&quot; -ListFile &quot;$(_NetworkScanList)&quot;" />
   </Target>
 
   <!-- The Quran text, surah names and Saheeh International's English
@@ -166,6 +222,34 @@
           Command="$(_SignCommand) -Path &quot;%(_WhisperGpuCopy.FullPath)&quot;" />
   </Target>
 
+  <!-- The llama.cpp AVX2 CPU set from LLamaSharp.Backend.Cpu, checked
+       against the pinned 0.30.0 package bytes, copied and signed like the
+       Whisper runtime, then pinned below. Its names (ggml.dll, llama.dll...)
+       differ from Whisper's renamed ggml-*-whisper.dll set, so both load in
+       one process without one binding to the other's modules. -->
+  <Target Name="PrepareLlamaRuntime" Condition="'$(RuntimeIdentifier)' == 'win-x64'">
+    <ItemGroup>
+      <_LlamaSource Include="$(PkgLLamaSharp_Backend_Cpu)\LLamaSharpRuntimes\win-x64\native\avx2\ggml-base.dll" ExpectedHash="0E3DD8C95FCBD5564EEF3DBADF29360FFE425AF5FB4EAA97D7EFFC9EE1ADC1BB" />
+      <_LlamaSource Include="$(PkgLLamaSharp_Backend_Cpu)\LLamaSharpRuntimes\win-x64\native\avx2\ggml-cpu.dll" ExpectedHash="ACDE020B10BD70A124561ADFFA06299C688CDDB9251B189C97B645EA947BDBE2" />
+      <_LlamaSource Include="$(PkgLLamaSharp_Backend_Cpu)\LLamaSharpRuntimes\win-x64\native\avx2\ggml.dll" ExpectedHash="8BA9F0CCA489CB4D8A8EA22EEC2097A2011DE311B71E8D817CC63815B7913B7E" />
+      <_LlamaSource Include="$(PkgLLamaSharp_Backend_Cpu)\LLamaSharpRuntimes\win-x64\native\avx2\llama.dll" ExpectedHash="F7DB9CA6DE2B85679AC665F5A01DAD605F23263E6ACA70202A5B101A3BBA85D4" />
+    </ItemGroup>
+    <GetFileHash Files="@(_LlamaSource)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_LlamaSourceHash" />
+    </GetFileHash>
+    <Error Condition="'%(_LlamaSourceHash.FileHash)' != '%(_LlamaSourceHash.ExpectedHash)'"
+           Text="llama.cpp CPU runtime differs from the pinned LLamaSharp 0.30.0 package: %(_LlamaSourceHash.Identity)" />
+    <PropertyGroup><_LlamaOut>$(IntermediateOutputPath)llama-runtime\</_LlamaOut></PropertyGroup>
+    <RemoveDir Directories="$(_LlamaOut)" />
+    <MakeDir Directories="$(_LlamaOut)" />
+    <Copy SourceFiles="@(_LlamaSource)" DestinationFolder="$(_LlamaOut)" />
+    <ItemGroup>
+      <_LlamaCopy Include="$(_LlamaOut)ggml-base.dll;$(_LlamaOut)ggml-cpu.dll;$(_LlamaOut)ggml.dll;$(_LlamaOut)llama.dll" />
+    </ItemGroup>
+    <Exec Condition="'$(_SignEnabled)' == 'true' and !$(MSBuildProjectFile.EndsWith('_wpftmp.csproj'))"
+          Command="$(_SignCommand) -Path &quot;%(_LlamaCopy.FullPath)&quot;" />
+  </Target>
+
   <!--
     Pins the exact native runtime files this build ships: every native DLL
     from the runtime packs, by name and SHA-256, compiled into the exe as
@@ -174,7 +258,7 @@
     identifier (plain dotnet build) get an empty list, and don't extract
     anything anyway.
   -->
-  <Target Name="GenerateNativeLibraryPins" BeforeTargets="CoreCompile" DependsOnTargets="ProcessFrameworkReferences;ResolveRuntimePackAssets;PrepareWhisperRuntime">
+  <Target Name="GenerateNativeLibraryPins" BeforeTargets="CoreCompile" DependsOnTargets="ProcessFrameworkReferences;ResolveRuntimePackAssets;PrepareWhisperRuntime;PrepareLlamaRuntime">
     <ItemGroup>
       <_NativePinCandidate Include="@(RuntimePackAsset)" Condition="'%(RuntimePackAsset.AssetType)' == 'native' and '%(RuntimePackAsset.Extension)' == '.dll'" />
     </ItemGroup>
@@ -198,6 +282,9 @@
     <GetFileHash Files="@(_WhisperGpuCopy)" Algorithm="SHA256" Condition="'@(_WhisperGpuCopy)' != ''">
       <Output TaskParameter="Items" ItemName="_WhisperGpuPin" />
     </GetFileHash>
+    <GetFileHash Files="@(_LlamaCopy)" Algorithm="SHA256" Condition="'@(_LlamaCopy)' != ''">
+      <Output TaskParameter="Items" ItemName="_LlamaPin" />
+    </GetFileHash>
     <PropertyGroup>
       <_NativePinsFile>$(IntermediateOutputPath)NativeLibraryPins.g.cs</_NativePinsFile>
     </PropertyGroup>
@@ -217,6 +304,10 @@
       <_NativePinLine Include="    private static readonly System.Collections.Generic.HashSet&lt;string&gt; PinnedWhisperGpuLibraries = new(System.StringComparer.OrdinalIgnoreCase)" />
       <_NativePinLine Include="    {" />
       <_NativePinLine Include="@(_WhisperGpuPin->'        &quot;%(Filename)%(Extension)|%(FileHash)&quot;,')" />
+      <_NativePinLine Include="    }%3B" />
+      <_NativePinLine Include="    private static readonly System.Collections.Generic.HashSet&lt;string&gt; PinnedLlamaLibraries = new(System.StringComparer.OrdinalIgnoreCase)" />
+      <_NativePinLine Include="    {" />
+      <_NativePinLine Include="@(_LlamaPin->'        &quot;%(Filename)%(Extension)|%(FileHash)&quot;,')" />
       <_NativePinLine Include="    }%3B" />
       <_NativePinLine Include="}" />
     </ItemGroup>
@@ -270,6 +361,9 @@
            untrusted self-signed certificate in sign.ps1. -->
       <_WhisperExternal Include="@(FilesToBundle)" Condition="'%(Filename)%(Extension)' == 'ggml-base-whisper.dll' or '%(Filename)%(Extension)' == 'ggml-cpu-whisper.dll' or '%(Filename)%(Extension)' == 'ggml-vulkan-whisper.dll' or '%(Filename)%(Extension)' == 'ggml-whisper.dll' or '%(Filename)%(Extension)' == 'whisper.dll'" />
       <FilesToBundle Remove="@(_WhisperExternal)" />
+      <!-- The llama.cpp set likewise (PrepareLlamaRuntime). -->
+      <_LlamaExternal Include="@(FilesToBundle)" Condition="'%(Filename)%(Extension)' == 'ggml-base.dll' or '%(Filename)%(Extension)' == 'ggml-cpu.dll' or '%(Filename)%(Extension)' == 'ggml.dll' or '%(Filename)%(Extension)' == 'llama.dll'" />
+      <FilesToBundle Remove="@(_LlamaExternal)" />
       <!-- DLLs only: the one .exe in here is the host stub the bundle gets
            appended to, and a signature on it would be broken by that —
            it's signed once, as the finished exe, by SignPublishedExe. -->
@@ -305,6 +399,7 @@
           Condition="'$(RuntimeIdentifier)' == 'win-x64' and '@(_WhisperCopy)' != ''">
     <Copy SourceFiles="@(_WhisperCopy)" DestinationFolder="$(PublishDir)" />
     <Copy SourceFiles="@(_WhisperGpuCopy)" DestinationFolder="$(PublishDir)gpu\" />
+    <Copy SourceFiles="@(_LlamaCopy)" DestinationFolder="$(PublishDir)" />
   </Target>
 
   <Target Name="SignPublishedExe" AfterTargets="Publish" DependsOnTargets="CopyWhisperRuntimeToPublish" Condition="'$(_SignEnabled)' == 'true'">

@@ -431,8 +431,9 @@ and avatar, weather and privacy settings.
 reminder**, **Custom reminders…**, **Prayer times and azan…**, **Quran
 memorization…**, **Windows
 status…** (a dashboard of the PC's current state), **File summary and
-search…**, **Scientific calculator…**, **Online trending sources**, **Voice
-converters**, **Dictation**, **Privacy** and **Exit**. The submenus hold:
+search…**, **Scientific calculator…**, **Ask about a text…**, **Online
+trending sources**, **Voice converters**, **Dictation**, **Privacy** and
+**Exit**. The submenus hold:
 
 - **Weather:** the sky to show (live or one you pick) and **Refresh weather**.
 - **Online trending sources:** **Google Trends…**, **Wikipedia
@@ -575,6 +576,53 @@ powers, factorials and `Ans`. The result updates as you type. Calculations use
 a bounded local arithmetic parser, not a scripting engine or network service.
 
 <br clear="right">
+
+### Ask about a text
+
+Open **Ask about a text…** from the right-click menu or the search box. Paste
+or type a text (up to 20,000 characters), type a question and press **Ask**
+(or Enter). A small language model running inside CloClo answers from that
+text only, and Windows' own voice reads the answer aloud unless you untick
+**Read the answer aloud**. Arabic text and questions work too. If the text
+doesn't hold the answer, it says "The text doesn't say." instead of guessing.
+
+- **Local, like Whisper.** The model is Qwen2.5-1.5B-Instruct (Q4_K_M,
+  1.1 GB, Apache 2.0), run by llama.cpp through LLamaSharp inside the CloClo
+  process: no server, no port, nothing sent anywhere. The first question
+  loads it in a couple of seconds; after that an answer takes about one to
+  five seconds on the CPU. It is unloaded after 15 minutes unused, giving
+  back about 1.5 GB of memory.
+- **Needs AVX2.** The shipped llama.cpp build is the AVX2 one, which almost
+  every PC from 2015 on has; on older processors the window says so and the
+  feature stays off.
+- **The answer is only text.** CloClo shows it and can read it aloud. It
+  never runs it, opens it, types it into another app or treats it as a
+  command, and the model is told to ignore instructions inside the text.
+
+**Other apps can ask too** (Privacy → **Let other apps ask about a text**,
+off by default). Programs you run can then send a text and a question to
+`\\.\pipe\CloClo.Ask` and get the answer back. Each time one does, CloClo
+shows which program asked. The protocol is one UTF-8 JSON message each way,
+in message mode:
+
+```
+request:  {"text": "The meeting is on Tuesday.", "question": "What day is the meeting?"}
+reply:    {"answer": "Tuesday"}     or     {"error": "The text is too long (over 20,000 characters)."}
+```
+
+From PowerShell, for example:
+
+```powershell
+$c = [IO.Pipes.NamedPipeClientStream]::new('.', 'CloClo.Ask', 'InOut'); $c.Connect(5000); $c.ReadMode = 'Message'
+$b = [Text.Encoding]::UTF8.GetBytes('{"text":"Grass is green.","question":"What colour is grass?"}'); $c.Write($b, 0, $b.Length)
+$r = New-Object byte[] 65536; $n = $c.Read($r, 0, $r.Length); [Text.Encoding]::UTF8.GetString($r, 0, $n); $c.Dispose()
+```
+
+One question is answered at a time; the next program waits for the pipe.
+If another program grabs the name before CloClo opens it, CloClo refuses to
+share it and says so. A client still can't tell that program from CloClo by
+the name alone, so a program that must be sure should check the server
+process (`GetNamedPipeServerProcessId`) is CloClo's installed exe.
 
 ### Online trending sources
 
@@ -782,6 +830,7 @@ from the project folder does the same.
 | Administrator prompt | none | one, for the copy only |
 | Who can change the installed files | any program running as you | administrators only |
 | WPF's native DLLs | inside the exe, unpacked to `%TEMP%` at runtime and checked at startup | next to the exe, in Program Files |
+| Windows Firewall rules for CloClo | not added (no administrator step); add them with `scripts\Set-CloCloFirewall.ps1` | added by the installer |
 
 With `-ProgramFiles`, building, signing and the registry entries all happen
 as you (your certificate is in your own store); only the copy into Program
@@ -810,9 +859,18 @@ administrator, `place.ps1` trusts nothing it's handed:
   other file: by name, by SHA-256, and as signed by the exe's own
   certificate. `Recitations\` is the only folder allowed besides `gpu\`, and
   CloClo's startup check accepts nothing in it but pack files;
+- it sets CloClo's six Windows Firewall block rules for
+  `C:\Program Files\CloClo\CloCloWidget.exe` (see
+  [Security](#security): outbound TCP only to port 443, no UDP or ICMP,
+  nothing to the local network, no inbound), first removing any rules set for
+  that exe before, with `netsh` run from System32. If Windows Firewall
+  refuses them, nothing is installed;
 - only then does it swap the folders. A swap fails as a whole while the old
   copy is in use, and on any failure the previous copy is put back — CloClo
   is never left half-installed.
+
+Uninstalling a Program Files copy (Settings > Apps, or
+`Uninstall-CloClo.cmd`) removes those firewall rules with it.
 
 If it refuses, the installer says why ("Not installed: …"). Afterwards it
 checks, as you, that Program Files holds exactly the files that were built,
@@ -952,6 +1010,11 @@ or source folder needed there:
   running CloClo first, and a newer setup replaces an older install in place.
   The sign-in launch waits for the Windows security services as described
   above. The widget's menu can turn startup off again.
+- It adds the same six Windows Firewall block rules for
+  `C:\Program Files\CloClo\CloCloWidget.exe` as `install.ps1
+  -ProgramFiles` ("CloClo: …" in Windows Defender Firewall, see
+  [Security](#security)), and Windows Installer removes them on uninstall.
+  To see them: `Get-NetFirewallRule -DisplayName 'CloClo:*'`.
 - The last page has a **Launch** button, which starts CloClo as you, not as
   administrator.
 - To uninstall: Settings > Apps > CloClo > Uninstall, or run the setup again
@@ -1039,6 +1102,10 @@ folder you can write to, so the check is weaker; the script says so.)
 | "Not installed: …" after the administrator prompt | The reason is in the message (a broken signature, another certificate, a non-Microsoft DLL, a changed or unexpected file, or the copy in use). Nothing was changed; fix that and run the install again |
 | "Couldn't close the running CloClo" | A copy was started as administrator — right-click it → Exit, then run the installer again |
 | "CloClo is already running on this PC - for another Windows user, or as administrator" | Another account (or a Remote Desktop session) has CloClo open — exit it there, or sign that user out, then start CloClo again |
+| "This PC's processor doesn't support AVX2" in Ask about a text | The language model's runtime needs AVX2; the rest of CloClo works without it |
+| "Other apps can't ask" — another program uses CloClo's pipe name | Something else opened `\\.\pipe\CloClo.Ask` first. Close it (or find it with a malware scan), then turn the option off and on |
+| Weather and search stopped working behind a company proxy | CloClo connects directly, never through a proxy, so the allow-list sees the real host. On a network that only allows the internet through a proxy, CloClo stays offline |
+| "Not installed: Windows Firewall refused CloClo's rules" | Windows Defender Firewall is off or managed elsewhere (another firewall product or a group policy). Turn it on, or add the rules in that product, then install again |
 | "The .NET SDK wasn't found" | Install the .NET 10 SDK from dotnet.microsoft.com (it installs under Program Files) |
 | CloClo says it "won't start while these files are next to it" or "found native files it can't verify" | Something placed files beside or into CloClo — delete the files it names, consider a malware scan, and reinstall |
 | CloClo "won't run with a .NET profiler attached" | Remove the listed environment variables (System Properties → Environment Variables), sign out and back in |
@@ -1104,6 +1171,36 @@ records the SHA-256 of every native runtime DLL it ships
   arXiv (`export.arxiv.org`, sent the subject). All
   use fixed hosts, no cookies or redirects, a 15-second timeout and a 1 MB
   response limit.
+- **One allow-list for the internet.** Every request goes through one
+  client (`src/Platform/NetworkClient.cs`) holding CloClo's whole list of
+  destinations: `api.open-meteo.com`, `geocoding-api.open-meteo.com`,
+  `nominatim.openstreetmap.org`, `trends.google.com`, `export.arxiv.org` and
+  `<language>.wikipedia.org` for the six offered languages. Anything else is
+  refused before a byte leaves the PC, and so is anything that isn't an HTTPS
+  GET on port 443 or carries a user name or password in its address. The
+  check runs twice: on the request, and again on the connection itself,
+  which also refuses a listed name that resolves to a local address (your
+  router, a NAS, `127.0.0.1`). No proxy is used, so the connection goes
+  straight to the listed host. The build fails if any other source file
+  creates its own HTTP client, socket or web request
+  (`scripts/check-network-path.ps1`), so a new feature can only go online by
+  adding its host to that list. The speech and language models never use the
+  network: none of their 13 native DLLs imports a network library.
+- **Windows Firewall holds the whole process to HTTPS.** CloClo-Setup.exe and
+  `install.ps1 -ProgramFiles` add six block rules for `CloCloWidget.exe` only
+  (named "CloClo: …" in Windows Defender Firewall): outbound TCP to any port
+  but 443, outbound UDP, ICMPv4, ICMPv6, anything to the local network
+  (LocalSubnet, `10/8`, `172.16/12`, `192.168/16`, `169.254/16`,
+  `100.64/10`, `fc00::/7`, `fe80::/10`) and all inbound. Block rules win over
+  any allow rule, so they hold even for code in the process that never goes
+  through the allow-list. Windows Firewall can't match host names, so which
+  HTTPS hosts are allowed stays the allow-list's job. Uninstalling removes
+  the rules. A per-user install can't add them (it has no administrator
+  step); run `scripts\Set-CloCloFirewall.ps1 -ExePath <path to
+  CloCloWidget.exe>` from an administrator PowerShell to add them, and again
+  with `-Remove` to take them off. They only apply while Windows Defender
+  Firewall is on; another firewall product, or a group policy that ignores
+  local rules, needs the same rules set there.
 - **Trending lists are text, links are checked.** The Google and arXiv
   feeds are parsed as XML with DTDs refused; titles and headlines are shown as plain text with
   control characters removed and lengths capped. A link opens only if it's an
@@ -1358,6 +1455,28 @@ loads anything)
   Whisper model also checks that this copy still holds the lock. A program
   running as any user could create that mutex first and stop CloClo from
   starting; that blocks it but gives it nothing.
+- **The language model gets the same guards as Whisper.** Only the copy
+  holding that lock loads it. `qwen2.5-1.5b-instruct-q4_k_m.gguf` is pinned
+  by size and SHA-256 at build (downloaded once from a fixed Hugging Face
+  revision into `obj\llm-models\`), at install and at every load; the check
+  reads the file through a handle that stays open, shared for reading only,
+  while llama.cpp maps it, so nothing can swap it after the check. Its
+  runtime is four llama.cpp DLLs (`ggml-base.dll`, `ggml-cpu.dll`,
+  `ggml.dll`, `llama.dll`, the AVX2 build from LLamaSharp.Backend.Cpu
+  0.30.0), checked against the package's bytes, signed by CloClo's signer and
+  pinned in the exe like the Whisper set; LLamaSharp is pointed at that one
+  `llama.dll` by full path with its fallback search turned off. Their names
+  differ from Whisper's `ggml-*-whisper.dll`, so neither runtime binds to the
+  other's modules.
+- **The ask pipe is closed unless you open it,** and then only to you. It is
+  created only by the lock holder, as the one and only instance of
+  `\\.\pipe\CloClo.Ask` (if something else already holds that name, CloClo
+  doesn't serve at all rather than share it), with `CurrentUserOnly` access
+  and remote clients rejected. Requests are limited to 128 KB and 10
+  seconds; replies must be read within 10 seconds; an oversized or stalled
+  client is disconnected so it can't hold the pipe. The request is data for
+  the prompt and the answer goes back only to the caller; CloClo names the
+  program that asked each time.
 
 **How builds and installs are protected**
 

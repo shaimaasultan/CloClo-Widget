@@ -115,6 +115,9 @@ public class WidgetSettings
     public string? GoogleTrendsCountry { get; set; }
     public string WikipediaTrendsLanguage { get; set; } = "en";
     public string ArxivSubject { get; set; } = "math.*";
+    // Other programs of this Windows user may ask the local language model
+    // about a text through CloClo's pipe (AskPipeServer). Off by default.
+    public bool AskPipeEnabled { get; set; } = false;
 
     // Two decimals is ~1 km: plenty for weather and a city name, without
     // keeping or sending a precise position.

@@ -40,6 +40,8 @@ if ($Elevated) {
     Stop-ThisCopy   # also a copy that was started as administrator
     # Only from earlier versions, which wrote the entry for all users.
     Remove-Item -LiteralPath "HKLM:\$uninstallKey" -Recurse -Force -ErrorAction SilentlyContinue
+    # The firewall rules place.ps1 added for this exe.
+    & (Join-Path $system32 'netsh.exe') advfirewall firewall delete rule name=all "program=$exe" | Out-Null
     Set-Location -LiteralPath $system32   # never sit inside the folder being removed
     Remove-Item -LiteralPath $dir -Recurse -Force
     exit 0

@@ -467,6 +467,11 @@ if (-not (Test-Path -LiteralPath $builtArabicModel) -or
     (Get-FileHash -LiteralPath $builtArabicModel -Algorithm SHA256).Hash -ne '394221709CD5AD1F40C46E6031CA61BCE88931E6E088C188294C6D5A55FFA7E2') {
     throw 'The Arabic speech model is missing or altered in publish\. Delete obj\whisper-models and rebuild.'
 }
+$builtLanguageModel = Join-Path $publishDir 'qwen2.5-1.5b-instruct-q4_k_m.gguf'
+if (-not (Test-Path -LiteralPath $builtLanguageModel) -or
+    (Get-FileHash -LiteralPath $builtLanguageModel -Algorithm SHA256).Hash -ne '6A1A2EB6D15622BF3C96857206351BA97E1AF16C30D7A74EE38970E434E9407E') {
+    throw 'The language model is missing or altered in publish\. Delete obj\llm-models and rebuild.'
+}
 & $checkSource -Root $root -Manifest $sourceRecord -Quiet
 if ($LASTEXITCODE -ne 0) {
     throw "Source files in $root changed while building, so the build can't be tied to a known state. Nothing was installed - run it again."
@@ -517,7 +522,7 @@ Stop-RunningWidget   # again, in case one was started while building
 # folder), and the source record with its checker (for Check-Source.cmd).
 Copy-Item -LiteralPath (Join-Path $root 'scripts\uninstall.ps1'), $checkSource, $sourceRecord -Destination $publishDir -Force
 $files = @(Get-ChildItem -LiteralPath $publishDir -File | Where-Object {
-    $_.Extension -in '.exe', '.dll', '.ps1', '.json' -or $_.Name -in 'ggml-base.bin', 'ggml-large-v3-turbo-q5_0.bin'
+    $_.Extension -in '.exe', '.dll', '.ps1', '.json' -or $_.Name -in 'ggml-base.bin', 'ggml-large-v3-turbo-q5_0.bin', 'qwen2.5-1.5b-instruct-q4_k_m.gguf'
 })
 # The GPU speech runtime has the same file names as the CPU set, so it
 # lives in gpu\. Every file carries its path relative to the install folder.
@@ -578,6 +583,7 @@ if ($ProgramFiles) {
             5 { "a file in publish\ is a link or has an unexpected name" }
             7 { "a copied file differs from the build (was something changing publish\?)" }
             8 { "place.ps1 changed after the installer checked it" }
+            9 { "Windows Firewall refused CloClo's rules (is it managed by another firewall or a group policy?)" }
             default { "the files couldn't be copied (is CloClo still running, maybe as administrator or in another account?)" }
         }
         throw "Not installed: $why. The installed copy was left as it was."

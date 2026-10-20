@@ -23,6 +23,7 @@
   <ItemGroup>
     <Compile Include="Package.wxs" />
     <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+    <PackageReference Include="WixToolset.Firewall.wixext" Version="5.0.2" />
   </ItemGroup>
 
   <Import Project="Signing.targets" />

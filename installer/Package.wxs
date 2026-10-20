@@ -7,7 +7,8 @@
   Installer rolls everything back if anything fails.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
+     xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall">
   <Package Name="CloClo" Manufacturer="CloClo" Version="$(Version)"
            UpgradeCode="1E9ECC83-FCA5-44EC-BEC2-39493DE5F789"
            Scope="perMachine" Compressed="yes">
@@ -52,6 +53,39 @@
         <Files Include="$(AppDir)\*.dll" />
         <Files Include="$(AppDir)\ggml-base.bin" />
         <Files Include="$(AppDir)\ggml-large-v3-turbo-q5_0.bin" />
+        <!-- The pinned language model for "Ask about a text" (1.1 GB). -->
+        <Files Include="$(AppDir)\qwen2.5-1.5b-instruct-q4_k_m.gguf" />
+        <!-- Windows Firewall rules for CloCloWidget.exe only, the same set as
+             scripts\Set-CloCloFirewall.ps1 and place.ps1: outbound TCP only
+             to 443, no UDP, no ICMP, nothing to the local network, no
+             inbound. Block rules win over any allow rule. CloClo's request
+             layer (NetworkClient.cs) decides which HTTPS hosts; these hold
+             everything in the process to HTTPS on the public internet.
+             Windows Installer removes them on uninstall. -->
+        <Component Id="FirewallRules" Guid="6B0E3F52-2C55-4C1C-9E8A-3C1D7A2F4B91">
+          <RegistryValue Root="HKLM" Key="Software\CloClo" Name="FirewallRules" Type="integer" Value="1" KeyPath="yes" />
+          <fw:FirewallException Id="FwBlockNonHttps" Name="CloClo: block outbound except HTTPS" Program="[INSTALLFOLDER]CloCloWidget.exe"
+                                Outbound="yes" Action="block" Protocol="tcp" RemotePort="1-442,444-65535" Profile="all" Scope="any" />
+          <fw:FirewallException Id="FwBlockUdp" Name="CloClo: block outbound UDP" Program="[INSTALLFOLDER]CloCloWidget.exe"
+                                Outbound="yes" Action="block" Protocol="udp" Profile="all" Scope="any" />
+          <fw:FirewallException Id="FwBlockIcmp4" Name="CloClo: block outbound ICMPv4" Program="[INSTALLFOLDER]CloCloWidget.exe"
+                                Outbound="yes" Action="block" Protocol="1" Profile="all" Scope="any" />
+          <fw:FirewallException Id="FwBlockIcmp6" Name="CloClo: block outbound ICMPv6" Program="[INSTALLFOLDER]CloCloWidget.exe"
+                                Outbound="yes" Action="block" Protocol="58" Profile="all" Scope="any" />
+          <fw:FirewallException Id="FwBlockLocal" Name="CloClo: block local network" Program="[INSTALLFOLDER]CloCloWidget.exe"
+                                Outbound="yes" Action="block" Profile="all">
+            <fw:RemoteAddress Value="LocalSubnet" />
+            <fw:RemoteAddress Value="10.0.0.0/8" />
+            <fw:RemoteAddress Value="172.16.0.0/12" />
+            <fw:RemoteAddress Value="192.168.0.0/16" />
+            <fw:RemoteAddress Value="169.254.0.0/16" />
+            <fw:RemoteAddress Value="100.64.0.0/10" />
+            <fw:RemoteAddress Value="fc00::/7" />
+            <fw:RemoteAddress Value="fe80::/10" />
+          </fw:FirewallException>
+          <fw:FirewallException Id="FwBlockInbound" Name="CloClo: block inbound" Program="[INSTALLFOLDER]CloCloWidget.exe"
+                                Action="block" Profile="all" Scope="any" />
+        </Component>
         <!-- The pinned Vulkan speech runtime, used only with a dedicated GPU.
              Same file names as the CPU set, so it needs its own folder. -->
         <Directory Id="GpuRuntimeFolder" Name="gpu">
