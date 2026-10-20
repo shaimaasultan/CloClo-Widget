@@ -477,6 +477,10 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
 
     private async Task<WhisperFactory> CreateFactoryAsync(SpeechModel model, bool useGpu)
     {
+        // Only the one running CloClo on the PC loads a model (see
+        // SingleInstance.cs); a copy without the lock never gets its own.
+        if (Program.Instance?.IsHeld != true)
+            throw new InvalidOperationException("CloClo doesn't hold the single-instance lock, so it can't load a speech model.");
         var modelBytes = await PlaybackModelStore.ReadVerifiedBytesAsync(model, _stop.Token);
         return WhisperFactory.FromBuffer(modelBytes,
             new WhisperFactoryOptions { UseGpu = useGpu, UseFlashAttention = useGpu });

@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace CloCloWidget;
 
@@ -27,7 +28,12 @@ public static class Program
         Instance = SingleInstance.TryAcquire();
         if (Instance == null)
         {
-            SingleInstance.SignalRunningCopy();
+            // In another session the running copy can't be brought up here,
+            // so say why nothing opens.
+            if (!SingleInstance.SignalRunningCopy())
+                MessageBoxW(IntPtr.Zero,
+                    "CloClo is already running on this PC - for another Windows user, or as administrator. Only one copy can run at a time.",
+                    "CloClo", MB_OK | MB_ICONINFORMATION);
             return 0;
         }
         try
@@ -39,6 +45,12 @@ public static class Program
             Instance.Dispose();
         }
     }
+
+    // user32's own message box: no WPF type is touched before Run.
+    private const uint MB_OK = 0x0, MB_ICONINFORMATION = 0x40;
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int MessageBoxW(IntPtr hWnd, string text, string caption, uint type);
 
     // Kept out of Main — and never inlined into it — so that compiling Main
     // can't touch any WPF type before the check above has run.

@@ -91,10 +91,13 @@ see [Privacy](#privacy-and-data).
 ### The widget
 
 - **Drag** anywhere on the widget to move it. It remembers where you leave it.
-- **One at a time.** Only one CloClo runs per Windows sign-in. Starting it
-  again (shortcut, Start Menu, the exe) doesn't open a second copy - it shows
-  the running one, even if it was hidden from the tray, with "CloClo is
-  already running".
+- **One at a time.** Only one CloClo runs on the whole PC, whatever the exe
+  is named or wherever it's copied. Starting it again (shortcut, Start Menu,
+  the exe) doesn't open a second copy - it shows the running one, even if it
+  was hidden from the tray, with "CloClo is already running". If the running
+  copy belongs to another Windows user (or a Remote Desktop session), it can't
+  be shown there, so a message says CloClo is already running on this PC;
+  close that copy (or sign that user out) to start it here.
 - **Top line:** the time and date, in Windows' own formats (12- or 24-hour,
   day/month order), e.g. "9:41 PM · Tue, Oct 6". The sky in words sits with
   the temperature: "12° Clear". The battery shows its charge and, when Windows
@@ -1035,6 +1038,7 @@ folder you can write to, so the check is weaker; the script says so.)
 | "This build isn't signed by the same certificate" | Expected once after you change certificates — type `YES`; otherwise stop and find out why |
 | "Not installed: …" after the administrator prompt | The reason is in the message (a broken signature, another certificate, a non-Microsoft DLL, a changed or unexpected file, or the copy in use). Nothing was changed; fix that and run the install again |
 | "Couldn't close the running CloClo" | A copy was started as administrator — right-click it → Exit, then run the installer again |
+| "CloClo is already running on this PC - for another Windows user, or as administrator" | Another account (or a Remote Desktop session) has CloClo open — exit it there, or sign that user out, then start CloClo again |
 | "The .NET SDK wasn't found" | Install the .NET 10 SDK from dotnet.microsoft.com (it installs under Program Files) |
 | CloClo says it "won't start while these files are next to it" or "found native files it can't verify" | Something placed files beside or into CloClo — delete the files it names, consider a malware scan, and reinstall |
 | CloClo "won't run with a .NET profiler attached" | Remove the listed environment variables (System Properties → Environment Variables), sign out and back in |
@@ -1190,6 +1194,8 @@ records the SHA-256 of every native runtime DLL it ships
   seconds. The editor shows which model and processor are in use. The large
   model stays loaded between sessions, so a voice command only waits for it on
   the first press; after 15 minutes unused it is unloaded to free the GPU memory.
+  Only the copy holding the PC-wide single-instance lock loads a speech model
+  (base or large), so two copies never hold the GPU or the model at once.
   PCs without such a GPU keep the base model on the CPU,
   and a GPU that fails to load the model falls back to it as well. The GPU
   runtime is a second pinned and signed set of five DLLs in `gpu\`, loaded
@@ -1342,6 +1348,16 @@ loads anything)
   the Program Files copy, anywhere else), it repoints the entry to itself, so
   it can't be left aimed at a deleted per-user folder that another program
   could fill. Development builds and copies run from elsewhere never touch it.
+- **One copy on the PC.** Right after these checks, CloClo takes the
+  `Global\CloClo.Widget.SingleInstance` mutex, shared by every Windows
+  session; a copy that can't take it - or can't even open it, because another
+  user's copy created it - exits before WPF starts or any speech model loads.
+  The name is fixed in the code, not read from the registry, an environment
+  variable or a setting, since anything configurable could be changed to
+  start a second copy; renaming or moving the exe doesn't change it. Loading a
+  Whisper model also checks that this copy still holds the lock. A program
+  running as any user could create that mutex first and stop CloClo from
+  starting; that blocks it but gives it nothing.
 
 **How builds and installs are protected**
 

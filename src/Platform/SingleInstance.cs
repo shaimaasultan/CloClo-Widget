@@ -3,23 +3,37 @@ using System.Threading;
 
 namespace CloCloWidget;
 
-// One CloClo per Windows session. The first copy owns a named mutex; a second
+// One CloClo on the whole PC. The first copy owns a named mutex; a second
 // copy - from a shortcut, the Start Menu, "Start with Windows" or a double-
-// click on the exe - finds it taken, signals the running copy to show itself
-// (it may have been hidden from the tray) and exits without opening anything.
+// click on the exe, under any file name or folder - finds it taken, signals
+// the running copy to show itself (it may have been hidden from the tray) and
+// exits without opening anything, so it never loads a speech model.
 //
-// The names live in the session's Local\ namespace, so other signed-in users
-// each get their own CloClo. If a running copy crashes, Windows releases its
-// mutex (the next copy gets it as "abandoned" and simply takes over), so a
-// crash never blocks the next start.
+// The mutex lives in the Global\ namespace, so it is shared by every Windows
+// session: while one user's CloClo runs, another signed-in user (or the same
+// user in a Remote Desktop session) can't start a second one. The name is a
+// constant here, never read from the registry, an environment variable or a
+// setting - anything that can be configured can be changed to slip past it.
+// Keep it the same in every version.
+//
+// The show event stays in the session's Local\ namespace: only a copy in the
+// same session can bring the widget up. A copy in another session (or a non-
+// elevated copy while an elevated one runs) can't open the mutex at all -
+// Windows denies it access to an object another user created - which counts
+// as "already running" too.
+//
+// If a running copy crashes, Windows releases its mutex (the next copy gets
+// it as "abandoned" and simply takes over), so a crash never blocks the next
+// start.
 public sealed class SingleInstance : IDisposable
 {
-    private const string MutexName = @"Local\CloClo.Widget.SingleInstance";
+    private const string MutexName = @"Global\CloClo.Widget.SingleInstance";
     private const string ShowEventName = @"Local\CloClo.Widget.Show";
 
     private readonly Mutex _mutex;
     private readonly EventWaitHandle _showRequested;
     private RegisteredWaitHandle? _listener;
+    private volatile bool _held = true;
 
     private SingleInstance(Mutex mutex, EventWaitHandle showRequested)
     {
@@ -27,10 +41,23 @@ public sealed class SingleInstance : IDisposable
         _showRequested = showRequested;
     }
 
-    // Null when another copy is already running.
+    // True from TryAcquire until Dispose. Anything that loads a speech model
+    // checks it first (see LocalAudioTranscriber.CreateFactoryAsync).
+    public bool IsHeld => _held;
+
+    // Null when another copy is already running, in this session or another.
     public static SingleInstance? TryAcquire()
     {
-        var mutex = new Mutex(initiallyOwned: false, MutexName);
+        Mutex mutex;
+        try
+        {
+            mutex = new Mutex(initiallyOwned: false, MutexName);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // It exists, created by another user's (or an elevated) copy.
+            return null;
+        }
         try
         {
             if (!mutex.WaitOne(0))
@@ -48,20 +75,23 @@ public sealed class SingleInstance : IDisposable
         return new SingleInstance(mutex, showRequested);
     }
 
-    // Asks the copy that's already running to show itself.
-    public static void SignalRunningCopy()
+    // Asks the copy that's already running to show itself. False when it
+    // runs in another session (or can't be reached), so it can't be shown.
+    public static bool SignalRunningCopy()
     {
         try
         {
             if (EventWaitHandle.TryOpenExisting(ShowEventName, out var showRequested))
             {
                 using (showRequested) showRequested.Set();
+                return true;
             }
         }
         catch
         {
             // Nothing more to do - the running copy stays as it is.
         }
+        return false;
     }
 
     // Called by the running copy: onShow runs (on a thread-pool thread) each
@@ -73,6 +103,7 @@ public sealed class SingleInstance : IDisposable
 
     public void Dispose()
     {
+        _held = false;
         _listener?.Unregister(null);
         _showRequested.Dispose();
         try { _mutex.ReleaseMutex(); } catch { /* not owned any more */ }
