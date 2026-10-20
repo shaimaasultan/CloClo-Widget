@@ -957,6 +957,14 @@ or source folder needed there:
   installed; Windows may retain its separate Startup apps approval record.
 - To install without any screens: `CloClo-Setup-<version>.exe /quiet`
   (and `/uninstall /quiet` to remove it).
+- Quran recitations: like Install-CloClo.cmd, it packs each
+  `Assets\Recitations\<reciter>\` folder into a signed
+  `Recitations\CloClo.Recitations.<reciter>.dll` and installs it to
+  Program Files\CloClo\Recitations, so the setup carries the recitations
+  you downloaded (and grows by their size, about 56 MB for Al-Fatiha and
+  Al-Baqara). With no recitations in the project, nothing is added. Keep in
+  mind that giving the setup to others also gives them the recordings,
+  which everyayah.com offers without a licence for redistribution.
 
 Send the SHA-256 with the file, so the person installing it can check
 (`Get-FileHash`) that they got exactly what you built.

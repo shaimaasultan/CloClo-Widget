@@ -57,6 +57,14 @@
         <Directory Id="GpuRuntimeFolder" Name="gpu">
           <Files Include="$(AppDir)\gpu\*.dll" />
         </Directory>
+        <!-- Quran recitation packs: code-free DLLs holding per-ayah MP3s,
+             signed like the exe, which CloClo checks before reading (see
+             RecitationPack.cs). Only when the build made any. -->
+        <?if $(HasRecitations) = 1 ?>
+        <Directory Id="RecitationsFolder" Name="Recitations">
+          <Files Include="$(AppDir)\Recitations\CloClo.Recitations.*.dll" />
+        </Directory>
+        <?endif?>
       </Directory>
     </StandardDirectory>
 

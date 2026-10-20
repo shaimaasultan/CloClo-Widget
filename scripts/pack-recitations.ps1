@@ -90,7 +90,8 @@ $resources
     Copy-Item -LiteralPath $built -Destination $target
     $packed = $target + '\' + $name + '.dll'
     if ($Thumbprint) {
-        & ($Root + '\scripts\sign.ps1') -Path $packed -Thumbprint $Thumbprint
+        # Shown, not returned: this script's output is only the pack list.
+        & ($Root + '\scripts\sign.ps1') -Path $packed -Thumbprint $Thumbprint | Out-Host
     }
     $packs += [pscustomobject]@{ Reciter = $reciter.Name; Files = $mp3s.Count; Path = $packed }
     Write-Host ("Packed {0} recitations of {1} into Recitations\{2}.dll ({3:N0} MB){4}." -f $mp3s.Count, $reciter.Name, $name,

@@ -6,7 +6,8 @@
 
 .DESCRIPTION
   1. Publishes CloClo exactly as a Program Files install does (self-contained,
-     single-file exe, native DLLs and the local speech model beside it), signed.
+     single-file exe, native DLLs and the local speech model beside it, and
+     any Quran recitation packs in Recitations\), signed.
   2. Builds CloClo.msi (installer\Package.wxs) around it and signs it.
   3. Builds CloClo-Setup.exe (installer\Bundle.wxs) around that and signs it.
   4. Copies the result to dist\CloClo-Setup-<version>.exe, with a matching
@@ -204,12 +205,24 @@ try {
     $exe = Join-Path $appDir 'CloCloWidget.exe'
     if (-not (Test-Path -LiteralPath $exe)) { throw "The build left no CloCloWidget.exe in $appDir." }
 
+    # Quran recitations: each Assets\Recitations\<reciter>\ folder becomes a
+    # code-free pack in Recitations\, signed like the exe (pack-recitations.ps1,
+    # the same step Install-CloClo.cmd runs). Package.wxs installs whatever
+    # packs are there.
+    $packArgs = @{ Root = $root; OutDir = $appDir; DotnetExe = $dotnetExe }
+    if ($CertThumbprint) { $packArgs.Thumbprint = $CertThumbprint }
+    $packs = @(& (Join-Path $root 'scripts\pack-recitations.ps1') @packArgs | Where-Object { $_.Path })
+    foreach ($pack in $packs) {
+        Write-BuildMessage ("Recitation pack: Recitations\{0} ({1} recitations)" -f (Split-Path $pack.Path -Leaf), $pack.Files)
+    }
+    $hasRecitations = if ($packs.Count) { '1' } else { '0' }
+
     # ------------------------------------------------------------ 2. package
     Write-BuildMessage "`n2/3 Building CloClo.msi..." Cyan
     # WiX may reuse preprocessed source from an earlier build even when
     # SetupVersion changes. Clear only this project's validated obj folder.
     Reset-SafeBuildDirectory $packageIntermediateDir ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($packageIntermediateDir))) $root
-    $packageArgs = @('build', (Join-Path $root 'installer\CloClo.Package.wixproj')) + $common + @("-p:AppDir=$appDir", "-p:SetupVersion=$version", "-p:Version=$version", $signArg)
+    $packageArgs = @('build', (Join-Path $root 'installer\CloClo.Package.wixproj')) + $common + @("-p:AppDir=$appDir", "-p:SetupVersion=$version", "-p:Version=$version", "-p:HasRecitations=$hasRecitations", $signArg)
     $exitCode = Invoke-DotNetLogged $packageArgs
     if ($exitCode -ne 0) { throw "Building the package failed (exit $exitCode)." }
     $msi = Join-Path $root 'bin\installer\CloClo.Package\Release\CloClo.msi'
@@ -232,7 +245,7 @@ try {
 
     # Verify the app, MSI, and setup before publishing.
     Write-BuildMessage ''
-    foreach ($f in $exe, $msi, $setup) {
+    foreach ($f in @($exe) + @($packs | ForEach-Object { Get-Item -LiteralPath $_.Path }) + @($msi, $setup)) {
         $sig = Get-AuthenticodeSignature -LiteralPath $f
         $who = if ($sig.SignerCertificate) { "$($sig.SignerCertificate.Subject) ($($sig.SignerCertificate.Thumbprint))" } else { 'not signed' }
         Write-BuildMessage ("{0,-28} {1,-12} {2}" -f (Split-Path $f -Leaf), $sig.Status, $who)

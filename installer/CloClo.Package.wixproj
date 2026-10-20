@@ -2,13 +2,15 @@
   <!--
     CloClo.msi - see Package.wxs. Built by build-setup.ps1, which passes:
       AppDir             the signed Program Files build of CloClo
+      HasRecitations     1 when AppDir\Recitations holds recitation packs
       SetupVersion       the package version
       SignCertThumbprint the signing certificate (optional: unsigned without it)
   -->
   <PropertyGroup>
     <OutputName>CloClo</OutputName>
     <InstallerPlatform>x64</InstallerPlatform>
-    <DefineConstants>AppDir=$(AppDir);Version=$(SetupVersion)</DefineConstants>
+    <HasRecitations Condition="'$(HasRecitations)' == ''">0</HasRecitations>
+    <DefineConstants>AppDir=$(AppDir);Version=$(SetupVersion);HasRecitations=$(HasRecitations)</DefineConstants>
     <!-- Both projects share this folder: each takes only its own files (no automatic pickup of every .wxs or .wxl here). -->
     <EnableDefaultItems>false</EnableDefaultItems>
     <!-- These three validation checks are written in VBScript, which recent
