@@ -1164,15 +1164,17 @@ records the SHA-256 of every native runtime DLL it ships
   native runtime DLLs stay loaded until CloClo exits.
   The four native runtime DLLs are pinned by SHA-256 in the executable and
   signed alongside CloClo in signed builds. Audio is not sent to a service.
-  **Arabic on a dedicated GPU:** when the PC has a dedicated GPU with Vulkan
-  support and at least 3 GB of video memory, Arabic dictation and playback
-  transcription use the larger `ggml-large-v3-turbo-q5_0.bin` model (574 MB,
+  **Large model on a dedicated GPU:** when the PC has a dedicated GPU with Vulkan
+  support and at least 3 GB of video memory, dictation, playback
+  transcription and voice commands, in English and Arabic, use the larger `ggml-large-v3-turbo-q5_0.bin` model (574 MB,
   also installed and SHA-256 checked) on that GPU. On Hoda test speech it made
   about a fifth of the base model's word errors at a similar speed. The first
-  Arabic start after installing or updating the GPU driver can take up to a
+  start after installing or updating the GPU driver can take up to a
   minute while the driver prepares its shaders; later starts take about ten
-  seconds. The editor shows which model and processor are in use. English,
-  voice commands, and PCs without such a GPU keep the base model on the CPU,
+  seconds. The editor shows which model and processor are in use. The large
+  model stays loaded between sessions, so a voice command only waits for it on
+  the first press; after 15 minutes unused it is unloaded to free the GPU memory.
+  PCs without such a GPU keep the base model on the CPU,
   and a GPU that fails to load the model falls back to it as well. The GPU
   runtime is a second pinned and signed set of five DLLs in `gpu\`, loaded
   instead of the CPU set only when the GPU is found; CloClo restricts it to

@@ -17,8 +17,9 @@ namespace CloCloWidget;
 
 internal enum AudioCaptureSource { Microphone, Playback }
 
-// Captured PCM stays in a bounded memory queue. The local model is loaded only
-// for a session and disposed when its toggle is turned off or the window closes.
+// Captured PCM stays in a bounded memory queue. The base model is loaded only
+// for a session and disposed when its toggle is turned off or the window closes;
+// the large GPU model is shared by sessions and unloaded after 15 idle minutes.
 // Recognition text is emitted as data; this service cannot execute actions.
 internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool reduceMicrophoneNoise = false,
     bool useHighResolutionMicrophone = false, string? recognitionPrompt = null,
@@ -134,23 +135,31 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
         {
             EnsureNativeRuntimeLoaded();
             var arabic = languageTag.StartsWith("ar", StringComparison.OrdinalIgnoreCase);
-            // Arabic dictation and playback use the large model on a dedicated
-            // GPU, where it is about as fast as base on the CPU and makes far
-            // fewer mistakes. Everything else, and every PC without such a
-            // GPU, keeps the base model on the CPU.
-            var useGpu = gpuName != null && arabic && recognitionPrompt == null;
+            // Everything - dictation, playback and voice commands, English and
+            // Arabic - uses the large model on a dedicated GPU, where it is
+            // about as fast as base on the CPU and makes far fewer mistakes.
+            // It stays loaded between sessions (SharedLargeModel), so a voice
+            // command doesn't wait for it on every press. PCs without such a
+            // GPU keep the base model on the CPU, loaded per session.
+            var useGpu = gpuName != null;
             WhisperFactory factory;
-            try
+            var warmUp = false;
+            using var modelLease = new ModelLease();
+            if (useGpu)
             {
-                factory = await CreateFactoryAsync(useGpu ? SpeechModel.LargeV3Turbo : SpeechModel.Base, useGpu);
+                try
+                {
+                    (factory, warmUp) = await SharedLargeModel.AcquireAsync(this, recognitionPrompt != null);
+                    modelLease.Shared = true;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Out of video memory or a driver failure: stay on the CPU.
+                    useGpu = false;
+                    factory = modelLease.Owned = await CreateFactoryAsync(SpeechModel.Base, useGpu: false);
+                }
             }
-            catch (Exception ex) when (useGpu && ex is not OperationCanceledException)
-            {
-                // Out of video memory or a driver failure: stay on the CPU.
-                useGpu = false;
-                factory = await CreateFactoryAsync(SpeechModel.Base, useGpu: false);
-            }
-            using var ownedFactory = factory;
+            else factory = modelLease.Owned = await CreateFactoryAsync(SpeechModel.Base, useGpu: false);
             Volatile.Write(ref _engine, useGpu ? $"large-v3-turbo model on {gpuName}" : "base model on the CPU");
             var builder = factory.CreateBuilder().WithLanguage(arabic ? "ar" : "en")
                 .WithThreads(WhisperThreads.Value);
@@ -194,11 +203,13 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
                         ? EgyptianArabicPrompt : ArabicPrompt);
                 return interim.Build();
             }
-            if (useGpu)
+            if (warmUp)
             {
                 // The first GPU run prepares its shaders, which can take many
                 // seconds (longest after a driver update). Do it while the
-                // editor still says Preparing, not on the first spoken phrase.
+                // editor still says Preparing, not on the first spoken phrase -
+                // once per loaded model for commands and once for dictation,
+                // whose smaller and full audio windows prepare separately.
                 await foreach (var _ in processor.ProcessAsync(new float[MinimumWhisperSamples], CancellationToken.None)) { }
                 if (interimProcessor != null)
                     await foreach (var _ in interimProcessor.ProcessAsync(new float[MinimumWhisperSamples], CancellationToken.None)) { }
@@ -469,6 +480,79 @@ internal sealed class LocalAudioTranscriber(AudioCaptureSource source, bool redu
         var modelBytes = await PlaybackModelStore.ReadVerifiedBytesAsync(model, _stop.Token);
         return WhisperFactory.FromBuffer(modelBytes,
             new WhisperFactoryOptions { UseGpu = useGpu, UseFlashAttention = useGpu });
+    }
+
+    // The session's model: its own base model, disposed with the session, or
+    // a hold on the shared large model, released with it.
+    private sealed class ModelLease : IDisposable
+    {
+        public WhisperFactory? Owned;
+        public bool Shared;
+
+        public void Dispose()
+        {
+            Owned?.Dispose();
+            if (Shared) SharedLargeModel.Release();
+        }
+    }
+
+    // The large model on the GPU, loaded by the first session that needs it
+    // and kept for later ones. Each session builds its own processors from
+    // it. Once no session has used it for IdleTime, it is unloaded to free
+    // the GPU memory, and the next session loads it again.
+    private static class SharedLargeModel
+    {
+        private static readonly TimeSpan IdleTime = TimeSpan.FromMinutes(15);
+        private static readonly SemaphoreSlim Gate = new(1, 1);
+        private static WhisperFactory? factory;
+        private static int users;
+        private static long generation;
+        private static bool commandsWarm, dictationWarm;
+
+        // Also says whether this kind of session is the first on this loaded
+        // model, and so should prepare the GPU before listening.
+        public static async Task<(WhisperFactory Factory, bool WarmUp)> AcquireAsync(LocalAudioTranscriber session, bool commands)
+        {
+            await Gate.WaitAsync(session._stop.Token);
+            try
+            {
+                factory ??= await session.CreateFactoryAsync(SpeechModel.LargeV3Turbo, useGpu: true);
+                users++;
+                generation++;
+                var warmUp = commands ? !commandsWarm : !dictationWarm;
+                if (commands) commandsWarm = true;
+                else dictationWarm = true;
+                return (factory, warmUp);
+            }
+            finally { Gate.Release(); }
+        }
+
+        public static void Release()
+        {
+            long released;
+            Gate.Wait();
+            try
+            {
+                users--;
+                released = ++generation;
+            }
+            finally { Gate.Release(); }
+            _ = UnloadWhenIdleAsync(released);
+        }
+
+        private static async Task UnloadWhenIdleAsync(long released)
+        {
+            await Task.Delay(IdleTime);
+            await Gate.WaitAsync();
+            try
+            {
+                if (users != 0 || generation != released || factory == null) return;
+                factory.Dispose();
+                factory = null;
+                commandsWarm = dictationWarm = false;
+            }
+            finally { Gate.Release(); }
+        }
     }
 
     // One thread per physical core. Whisper defaults to every logical
