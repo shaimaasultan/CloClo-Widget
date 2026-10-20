@@ -39,7 +39,7 @@
         <TextBlock x:Name="SensorText" TextWrapping="Wrap" Margin="0,6,0,0"
                    Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
         <!-- Without a compass sensor: the user says once which way the screen
-             faces, and/or lines up with the sun. Both are saved. -->
+             faces, and/or lines up with the sun, moon or North Star. Both are saved. -->
         <CheckBox x:Name="MatchScreenBox" Content="Turn the compasses to match the way my screen faces"
                   Margin="0,14,0,0" Checked="Options_Changed" Unchecked="Options_Changed" />
         <StackPanel x:Name="ScreenHeadingPanel" Margin="22,6,0,0">
@@ -55,7 +55,7 @@
                        Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
                        Text="Sit facing the screen, hold your phone flat pointing the same way, and set the degrees its compass shows. Arrow keys change it by 1°, Page Up and Page Down by 15°." />
         </StackPanel>
-        <CheckBox x:Name="SunGuideBox" Content="Show the sun as a guide" Margin="0,10,0,0"
+        <CheckBox x:Name="SunGuideBox" Content="Show the sun, moon or North Star as a guide" Margin="0,10,0,0"
                   Checked="Options_Changed" Unchecked="Options_Changed" />
         <TextBlock x:Name="SunText" TextWrapping="Wrap" Margin="22,4,0,0" />
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">

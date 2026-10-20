@@ -231,16 +231,19 @@ city. Compare calculated times with your local mosque.
     Page Down by 15°). The top of each compass is then the way you face, and
     CloClo says how far to turn left or right. Set it again if you move the
     PC.
-  - **Show the sun as a guide:** a small sun on both compasses shows where
-    the sun is now, worked out from your location and the time, with "face
-    the sun, then turn N degrees to your left or right". It updates every
-    minute, is hidden after sunset, and says so when the sun is too close to
-    overhead to be useful.
+  - **Show the sun, moon or North Star as a guide:** markers on both
+    compasses show where to look now, worked out from your location and the
+    time, each with "face it, then turn N degrees to your left or right". By
+    day it's the sun (with a warning when it's too close to overhead to be
+    useful). At night it's the moon while it's up, with its phase, and the
+    North Star, which stays due north all night once the sky is dark; CloClo
+    says how to find it from the Big Dipper. Where the North Star is too low
+    to see, it points to the Southern Cross instead. It updates every minute.
 
   **Read aloud** speaks the directions, in Arabic when Arabic voice commands
   are on, and screen readers read each compass as its direction.
 
-  <img src="docs/screenshots/features/qibla.png" alt="Qibla direction window for New York: Qibla 58° NE on the globe compass and 101° E on the flat-map compass, both turned so the top is east, the way the screen faces; a small sun shown to the south-west with 'Face the sun, then turn 159 degrees to your left'; the screen-direction slider at 90° E and the sun guide ticked" width="460">
+  <img src="docs/screenshots/features/qibla.png" alt="Qibla direction window for New York at night: Qibla 58° NE on the globe compass and 101° E on the flat-map compass, both turned so the top is east, the way the screen faces; the North Star marked due north with 'Face the North Star, then turn 58 degrees to your right'; the screen-direction slider at 90° E and the sun, moon or North Star guide ticked" width="460">
 - **Azan:** automatic azan is off until you choose a local MP3 or WAV
   recording and enable it. CloClo plays the recording at the five prayer
   times while it is running; it does not replay prayers missed while the PC

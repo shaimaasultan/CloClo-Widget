@@ -21,8 +21,10 @@ public partial class QiblaWindow : Window
     private readonly double? _flatBearing;
     private readonly bool _arabic;
     private readonly List<RotateTransform> _roseRotations = new();
-    private readonly List<RotateTransform> _sunRotations = new();
-    private readonly List<UIElement> _sunMarkers = new();
+    // Sky guides drawn on both compasses: (turn to its azimuth, the marker).
+    private readonly List<(RotateTransform Rotation, UIElement Marker)> _sunMarkers = new();
+    private readonly List<(RotateTransform Rotation, UIElement Marker)> _moonMarkers = new();
+    private readonly List<(RotateTransform Rotation, UIElement Marker)> _starMarkers = new();
     private readonly DispatcherTimer _sunTimer = new() { Interval = TimeSpan.FromMinutes(1) };
     private bool _loading = true;
     private Compass? _compass;
@@ -69,7 +71,7 @@ public partial class QiblaWindow : Window
         SunGuideBox.IsChecked = settings.QiblaSunGuide;
         ShowScreenHeading();
         _loading = false;
-        _sunTimer.Tick += (_, _) => UpdateSun();
+        _sunTimer.Tick += (_, _) => UpdateSky();
         StartCompass();
         ApplyOptions();
         Closed += (_, _) =>
@@ -130,7 +132,7 @@ public partial class QiblaWindow : Window
                 : "North is at the top. Find north with a phone compass or a known landmark, " +
                   $"then turn {Math.Round(bearing) % 360:0} degrees clockwise from it and face that way to pray. {DifferenceNote}";
         }
-        UpdateSun();
+        UpdateSky();
     }
 
     // A turn in degrees, clockwise positive, as an instruction.
@@ -144,35 +146,79 @@ public partial class QiblaWindow : Window
             : $"Turn {-rounded:0} degrees to your left to face the Qibla.";
     }
 
-    private void UpdateSun()
+    // Day: the sun. Night: the moon when it is up, and the North Star, which
+    // stays within a degree of true north all night (northern hemisphere).
+    private void UpdateSky()
     {
         if (!SunGuide || _bearing is not { } bearing)
         {
             _sunTimer.Stop();
-            foreach (var marker in _sunMarkers) marker.Visibility = Visibility.Collapsed;
+            ShowMarkers(_sunMarkers, null);
+            ShowMarkers(_moonMarkers, null);
+            ShowMarkers(_starMarkers, null);
             SunText.Text = "";
             SunText.Visibility = Visibility.Collapsed;
             return;
         }
         _sunTimer.Start();
         SunText.Visibility = Visibility.Visible;
-        var (azimuth, altitude) = PrayerTimesCalculator.SunPosition(DateTime.UtcNow, _settings.Latitude, _settings.Longitude);
-        foreach (var rotation in _sunRotations) rotation.Angle = azimuth;
-        var up = altitude > 0;
-        foreach (var marker in _sunMarkers) marker.Visibility = up ? Visibility.Visible : Visibility.Collapsed;
-        if (!up)
+        var now = DateTime.UtcNow;
+        var latitude = _settings.Latitude;
+        var (sunAzimuth, sunAltitude) = PrayerTimesCalculator.SunPosition(now, latitude, _settings.Longitude);
+        var moon = MoonPosition.At(now, latitude, _settings.Longitude);
+        var lines = new List<string>();
+
+        if (sunAltitude > 0)
         {
-            SunText.Text = "The sun is below the horizon now. The sun guide works in daylight.";
+            ShowMarkers(_sunMarkers, sunAzimuth);
+            ShowMarkers(_moonMarkers, null);
+            ShowMarkers(_starMarkers, null);
+            var where = $"The sun is at {Place(sunAzimuth, sunAltitude)} (the small sun on the compasses).";
+            lines.Add(sunAltitude > 75
+                ? where + " It is almost overhead, so it is not a good guide right now."
+                : where + " " + FaceThen("the sun", bearing - sunAzimuth));
         }
         else
         {
-            var where = $"The sun is at {Math.Round(azimuth) % 360:0}° {QiblaDirection.CardinalOf(azimuth)}, " +
-                $"{Math.Round(altitude):0}° above the horizon (the small sun on the compasses).";
-            SunText.Text = altitude > 75
-                ? where + " It is almost overhead, so it is not a good guide right now."
-                : where + " Face the sun, then t" + TurnText(bearing - azimuth)[1..];
+            ShowMarkers(_sunMarkers, null);
+            var moonUp = moon.Altitude > 2;
+            ShowMarkers(_moonMarkers, moonUp ? moon.Azimuth : null);
+            if (moonUp)
+                lines.Add($"The moon ({moon.PhaseName}) is at {Place(moon.Azimuth, moon.Altitude)}, the grey circle. " +
+                    FaceThen("the moon", bearing - moon.Azimuth));
+            // Stars show once the sky is properly dark (sun 6° or more below).
+            var dark = sunAltitude < -6;
+            var starUp = dark && latitude >= 5;
+            ShowMarkers(_starMarkers, starUp ? 0 : null);
+            if (starUp)
+                lines.Add($"The North Star is due north, {Math.Round(latitude):0}° above the horizon, the star on the compasses. " +
+                    "Find the Big Dipper and follow its two end stars past the cup. " + FaceThen("the North Star", bearing));
+            else if (dark)
+                lines.Add("From here the North Star is too low to see. In the southern sky, the long bar of the " +
+                    "Southern Cross points toward due south. " + FaceThen("due south", bearing - 180));
+            else if (!moonUp)
+                lines.Add("The sun has just set. The North Star shows once the sky is darker; this updates every minute.");
+            if (!moonUp && (dark || latitude < 5))
+                lines.Add(moon.Altitude > -2 ? "The moon is on the horizon." : "The moon is below the horizon now.");
         }
-        AutomationProperties.SetName(SunText, SunText.Text.Replace("°", " degrees"));
+        SunText.Text = string.Join(Environment.NewLine, lines);
+        AutomationProperties.SetName(SunText, string.Join(" ", lines).Replace("°", " degrees"));
+    }
+
+    private static string Place(double azimuth, double altitude) =>
+        $"{Math.Round(azimuth) % 360:0}° {QiblaDirection.CardinalOf(azimuth)}, {Math.Round(altitude):0}° above the horizon";
+
+    // "Face the moon, then turn 66 degrees to your left to face the Qibla."
+    private static string FaceThen(string guide, double turn) =>
+        $"Face {guide}, then t" + TurnText(turn)[1..];
+
+    private static void ShowMarkers(List<(RotateTransform Rotation, UIElement Marker)> markers, double? azimuth)
+    {
+        foreach (var (rotation, marker) in markers)
+        {
+            marker.Visibility = azimuth is null ? Visibility.Collapsed : Visibility.Visible;
+            if (azimuth is { } angle) rotation.Angle = angle;
+        }
     }
 
     // Most PCs have no magnetometer: Compass.GetDefault() is then null. A
@@ -259,22 +305,20 @@ public partial class QiblaWindow : Window
             ticks.Children.Add(label);
         }
 
-        // The sun, inside the rim at its azimuth; shown by the sun guide.
-        var sunRotation = new RotateTransform();
-        _sunRotations.Add(sunRotation);
-        var sun = new Grid
+        // Sky guides, inside the rim at their azimuths. The North Star sits
+        // further in so it stays clear of the N.
+        var sunDisc = new Ellipse { Width = 16, Height = 16, Fill = Brushes.Gold, Stroke = text, StrokeThickness = 1.5 };
+        _sunMarkers.Add(AddSkyMarker(rose, sunDisc, center, 34));
+        var moonDisc = new Ellipse { Width = 15, Height = 15, Fill = Brushes.Gainsboro, Stroke = text, StrokeThickness = 1.5 };
+        _moonMarkers.Add(AddSkyMarker(rose, moonDisc, center, 34));
+        var star = new Polygon { Fill = Brushes.Gold, Stroke = text, StrokeThickness = 1, Width = 18, Height = 18 };
+        for (var i = 0; i < 10; i++)
         {
-            RenderTransformOrigin = new Point(0.5, 0.5), RenderTransform = sunRotation,
-            Visibility = Visibility.Collapsed, IsHitTestVisible = false,
-        };
-        sun.Children.Add(new Ellipse
-        {
-            Width = 16, Height = 16, Fill = Brushes.Gold, Stroke = text, StrokeThickness = 1.5,
-            HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(center - 8, 34, 0, 0),
-        });
-        _sunMarkers.Add(sun);
-        rose.Children.Add(sun);
+            var radius = i % 2 == 0 ? 9.0 : 3.8;
+            var pointAngle = i * Math.PI / 5;
+            star.Points.Add(new Point(9 + radius * Math.Sin(pointAngle), 9 - radius * Math.Cos(pointAngle)));
+        }
+        _starMarkers.Add(AddSkyMarker(rose, star, center, 46));
 
         if (bearing is { } angle)
         {
@@ -301,6 +345,22 @@ public partial class QiblaWindow : Window
         }
         rose.Children.Add(new Ellipse { Width = 11, Height = 11, Fill = text });
         return area;
+    }
+
+    private static (RotateTransform, UIElement) AddSkyMarker(Grid rose, FrameworkElement shape, double center, double top)
+    {
+        shape.HorizontalAlignment = HorizontalAlignment.Left;
+        shape.VerticalAlignment = VerticalAlignment.Top;
+        shape.Margin = new Thickness(center - shape.Width / 2, top, 0, 0);
+        var rotation = new RotateTransform();
+        var holder = new Grid
+        {
+            RenderTransformOrigin = new Point(0.5, 0.5), RenderTransform = rotation,
+            Visibility = Visibility.Collapsed, IsHitTestVisible = false,
+        };
+        holder.Children.Add(shape);
+        rose.Children.Add(holder);
+        return (rotation, holder);
     }
 
     private void ReadAloud_Click(object sender, RoutedEventArgs e)
