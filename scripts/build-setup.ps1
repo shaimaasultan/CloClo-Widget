@@ -19,6 +19,11 @@
   certificate is -CertThumbprint, or else the newest protected CN=CloClo
   certificate in your store (the one Install-CloClo.cmd uses).
 
+  -MsiOnly stops after step 2 and publishes the signed MSI itself as
+  dist\CloClo-<version>.msi (with its .txt log) instead of a setup EXE. Run
+  it through Build-Msi.cmd. It installs the same thing, without the setup's
+  welcome page or Launch button.
+
   -Unsigned builds without signing - for a quick local test only: an unsigned
   setup is "Unknown publisher" and isn't something to give to anyone.
 
@@ -29,7 +34,8 @@
 #>
 param(
     [string]$CertThumbprint,
-    [switch]$Unsigned
+    [switch]$Unsigned,
+    [switch]$MsiOnly
 )
 # Only Windows PowerShell's own modules, from its system folder - set before
 # any command is used. (Plain concatenation, not Join-Path: Join-Path is
@@ -174,13 +180,17 @@ try {
     do {
         if ($buildNumber -gt 65535) { throw 'No setup version remains for this year.' }
         $version = '1.{0}.{1}' -f $minor, $buildNumber
-        $out = Join-Path $distDir "CloClo-Setup-$version.exe"
-        $outLog = Join-Path $distDir "CloClo-Setup-$version.txt"
+        # Setup EXEs and plain MSIs share one version sequence.
+        $taken = @("CloClo-Setup-$version.exe", "CloClo-Setup-$version.txt", "CloClo-$version.msi", "CloClo-$version.txt") |
+            Where-Object { Test-Path -LiteralPath (Join-Path $distDir $_) }
         $buildNumber++
-    } while ((Test-Path -LiteralPath $out) -or (Test-Path -LiteralPath $outLog))
+    } while ($taken)
+    $outName = if ($MsiOnly) { "CloClo-$version" } else { "CloClo-Setup-$version" }
+    $out = Join-Path $distDir ($outName + $(if ($MsiOnly) { '.msi' } else { '.exe' }))
+    $outLog = Join-Path $distDir "$outName.txt"
 
     Reset-SafeBuildDirectory $logDir ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($logDir))) $root
-    $buildLog = Join-Path $logDir "CloClo-Setup-$version.txt"
+    $buildLog = Join-Path $logDir "$outName.txt"
     $script:logWriter = [IO.StreamWriter]::new($buildLog, $false, [Text.UTF8Encoding]::new($false))
     $script:logWriter.AutoFlush = $true
     if ($Unsigned) {
@@ -189,12 +199,13 @@ try {
         Write-BuildMessage "Signing certificate: $CertThumbprint (Windows asks you to confirm each signing)"
     }
     Write-BuildMessage "Setup version: $version"
+    $steps = if ($MsiOnly) { 2 } else { 3 }
 
     $signArg = if ($CertThumbprint) { "-p:SignCertThumbprint=$CertThumbprint" } else { '-p:SignCertThumbprint=' }
     $common = @('-c', 'Release', '-nologo', '--disable-build-servers', '-nodeReuse:false', '-v:minimal')
 
     # ------------------------------------------------------------ 1. CloClo
-    Write-BuildMessage "`n1/3 Building CloClo..." Cyan
+    Write-BuildMessage "`n1/$steps Building CloClo..." Cyan
     Reset-SafeBuildDirectory $appDir ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($appDir))) $root
     $publishArgs = @('publish', (Join-Path $root 'CloCloWidget.csproj')) + $common + @(
         '-r', 'win-x64', '--self-contained', 'true',
@@ -218,7 +229,7 @@ try {
     $hasRecitations = if ($packs.Count) { '1' } else { '0' }
 
     # ------------------------------------------------------------ 2. package
-    Write-BuildMessage "`n2/3 Building CloClo.msi..." Cyan
+    Write-BuildMessage "`n2/$steps Building CloClo.msi..." Cyan
     # WiX may reuse preprocessed source from an earlier build even when
     # SetupVersion changes. Clear only this project's validated obj folder.
     Reset-SafeBuildDirectory $packageIntermediateDir ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($packageIntermediateDir))) $root
@@ -232,20 +243,24 @@ try {
     Write-BuildMessage "MSI ProductVersion: $msiVersion"
 
     # ------------------------------------------------------------ 3. setup
-    Write-BuildMessage "`n3/3 Building CloClo-Setup.exe..." Cyan
-    Reset-SafeBuildDirectory $bundleIntermediateDir ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($bundleIntermediateDir))) $root
-    $bundleArgs = @('build', (Join-Path $root 'installer\CloClo.Bundle.wixproj')) + $common + @("-p:MsiPath=$msi", "-p:SetupVersion=$version", "-p:Version=$version", $signArg)
-    $exitCode = Invoke-DotNetLogged $bundleArgs
-    if ($exitCode -ne 0) { throw "Building the setup failed (exit $exitCode)." }
-    $setup = Join-Path $root 'bin\installer\CloClo.Bundle\Release\CloClo-Setup.exe'
-    if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) { throw "The setup build left no CloClo-Setup.exe at $setup." }
-    $setupVersion = (Get-Item -LiteralPath $setup).VersionInfo.ProductVersion
-    if ($setupVersion -ne $version) { throw "The setup version is $setupVersion, but this build requested $version." }
-    Write-BuildMessage "Setup ProductVersion: $setupVersion"
+    $setup = $null
+    if (-not $MsiOnly) {
+        Write-BuildMessage "`n3/3 Building CloClo-Setup.exe..." Cyan
+        Reset-SafeBuildDirectory $bundleIntermediateDir ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($bundleIntermediateDir))) $root
+        $bundleArgs = @('build', (Join-Path $root 'installer\CloClo.Bundle.wixproj')) + $common + @("-p:MsiPath=$msi", "-p:SetupVersion=$version", "-p:Version=$version", $signArg)
+        $exitCode = Invoke-DotNetLogged $bundleArgs
+        if ($exitCode -ne 0) { throw "Building the setup failed (exit $exitCode)." }
+        $setup = Join-Path $root 'bin\installer\CloClo.Bundle\Release\CloClo-Setup.exe'
+        if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) { throw "The setup build left no CloClo-Setup.exe at $setup." }
+        $setupVersion = (Get-Item -LiteralPath $setup).VersionInfo.ProductVersion
+        if ($setupVersion -ne $version) { throw "The setup version is $setupVersion, but this build requested $version." }
+        Write-BuildMessage "Setup ProductVersion: $setupVersion"
+    }
+    $result = if ($MsiOnly) { $msi } else { $setup }
 
     # Verify the app, MSI, and setup before publishing.
     Write-BuildMessage ''
-    foreach ($f in @($exe) + @($packs | ForEach-Object { Get-Item -LiteralPath $_.Path }) + @($msi, $setup)) {
+    foreach ($f in @($exe) + @($packs | ForEach-Object { Get-Item -LiteralPath $_.Path }) + @($msi) + @($setup | Where-Object { $_ })) {
         $sig = Get-AuthenticodeSignature -LiteralPath $f
         $who = if ($sig.SignerCertificate) { "$($sig.SignerCertificate.Subject) ($($sig.SignerCertificate.Thumbprint))" } else { 'not signed' }
         Write-BuildMessage ("{0,-28} {1,-12} {2}" -f (Split-Path $f -Leaf), $sig.Status, $who)
@@ -271,19 +286,19 @@ try {
         New-Item -ItemType Directory -Path $distDir | Out-Null
     }
     if ((Test-Path -LiteralPath $out) -or (Test-Path -LiteralPath $outLog)) {
-        throw "The selected setup version already exists in dist; nothing was overwritten: $version"
+        throw "The selected version already exists in dist; nothing was overwritten: $version"
     }
-    $setupHash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash
+    $resultHash = (Get-FileHash -LiteralPath $result -Algorithm SHA256).Hash
     Write-BuildMessage ''
-    Write-BuildMessage "Setup: $out" Green
-    Write-BuildMessage ("Size:  {0:0.0} MB" -f ((Get-Item -LiteralPath $setup).Length / 1MB))
-    Write-BuildMessage "SHA-256: $setupHash"
+    Write-BuildMessage "Installer: $out" Green
+    Write-BuildMessage ("Size:  {0:0.0} MB" -f ((Get-Item -LiteralPath $result).Length / 1MB))
+    Write-BuildMessage "SHA-256: $resultHash"
     Write-BuildMessage "Build log: $outLog"
     Write-BuildMessage 'Send the SHA-256 along with the file, so the person installing it can check they got the same file.'
     $script:logWriter.Dispose()
     $script:logWriter = $null
-    # Publish the log first. The EXE is copied to a temporary name, checked,
-    # then renamed last; an interrupted build never leaves a final EXE without
+    # Publish the log first. The installer is copied to a temporary name, checked,
+    # then renamed last; an interrupted build never leaves a final installer without
     # its matching hash log.
     $outLogStream = [IO.File]::Open($outLog, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
     $createdLog = $true
@@ -295,24 +310,24 @@ try {
         (Get-FileHash -LiteralPath $outLog -Algorithm SHA256).Hash) {
         throw 'The copied build log differs from the original; no installer was published.'
     }
-    $tempOut = Join-Path $distDir ('.CloClo-Setup-' + $version + '-' + [Guid]::NewGuid().ToString('N') + '.partial.exe')
+    $tempOut = Join-Path $distDir ('.' + $outName + '-' + [Guid]::NewGuid().ToString('N') + '.partial' + [IO.Path]::GetExtension($out))
     $outStream = [IO.File]::Open($tempOut, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
     try {
-        $setupStream = [IO.File]::Open($setup, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
-        try { $setupStream.CopyTo($outStream) } finally { $setupStream.Dispose() }
+        $resultStream = [IO.File]::Open($result, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+        try { $resultStream.CopyTo($outStream) } finally { $resultStream.Dispose() }
     } finally { $outStream.Dispose() }
-    if ((Get-FileHash -LiteralPath $tempOut -Algorithm SHA256).Hash -ne $setupHash) {
-        throw 'The copied setup differs from the verified build; no installer was published.'
+    if ((Get-FileHash -LiteralPath $tempOut -Algorithm SHA256).Hash -ne $resultHash) {
+        throw 'The copied installer differs from the verified build; no installer was published.'
     }
     $outSignature = Get-AuthenticodeSignature -LiteralPath $tempOut
     if ($CertThumbprint) {
         if ($outSignature.Status -notin 'Valid', 'UnknownError', 'NotTrusted' -or
             -not $outSignature.SignerCertificate -or
             $outSignature.SignerCertificate.Thumbprint -ine $CertThumbprint) {
-            throw "The copied setup's signature does not match the requested certificate."
+            throw "The copied installer's signature does not match the requested certificate."
         }
     } elseif ($outSignature.Status -ne 'NotSigned') {
-        throw "The copied setup was expected to be unsigned, but its signature status is $($outSignature.Status)."
+        throw "The copied installer was expected to be unsigned, but its signature status is $($outSignature.Status)."
     }
     [IO.File]::Move($tempOut, $out)
     $tempOut = $null

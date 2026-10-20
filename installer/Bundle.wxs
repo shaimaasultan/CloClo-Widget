@@ -29,8 +29,11 @@
                          Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\CloClo"
                          Bitness="always64" Result="exists" />
 
+    <!-- Cache="remove": no second copy of the ~770 MB package left in
+         Package Cache after installing. Repair and modify are off, and
+         uninstall uses Windows Installer's own copy, so nothing needs it. -->
     <Chain>
-      <MsiPackage SourceFile="$(MsiPath)" />
+      <MsiPackage SourceFile="$(MsiPath)" Cache="remove" />
     </Chain>
   </Bundle>
 </Wix>

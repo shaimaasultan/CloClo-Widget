@@ -975,6 +975,22 @@ install elsewhere, sign with a publicly trusted code-signing certificate
 and pass it:
 `.\scripts\Build-Setup.cmd -CertThumbprint <thumbprint>`.
 
+#### Just the MSI (CloClo-<version>.msi)
+
+Double-click **`scripts/Build-Msi.cmd`** for the same build without the setup
+program around it: `dist\CloClo-<version>.msi` and a matching
+`CloClo-<version>.txt` build log with that MSI's SHA-256. It installs exactly
+what CloClo-Setup.exe does, through Windows' own `msiexec`, so no setup engine
+runs as administrator. There's no welcome page or Launch button: start
+CloClo from the Start menu afterwards.
+
+Either way, Settings > Apps shows about 1.65 GB, not the ~960 MB in
+Program Files: Windows Installer keeps a copy of the whole MSI (files
+included, about 735 MB) in C:\Windows\Installer for uninstalling, and that
+copy is really on disk. Install-CloClo.cmd doesn't use Windows Installer, so
+its entry shows only the installed files. To install without any screens:
+`msiexec /i CloClo-<version>.msi /quiet` (and `msiexec /x` to remove it).
+
 If a script-based CloClo installation is registered for your account or PC, uninstall
 it from Settings > Apps > Installed apps before running the setup. The setup
 shows this instruction and disables Install until you close and reopen it after
