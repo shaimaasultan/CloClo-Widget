@@ -42,9 +42,11 @@ namespace CloCloWidget;
 // the exe only CloClo's own files may be there (the exe, its pinned DLLs, the
 // uninstaller, the source checker and its record), and in the unpack folder
 // only the pinned DLLs - any other file or any subfolder counts as tampering.
-// The one allowed subfolder is gpu\ beside the exe, holding only the pinned
-// Vulkan speech runtime (same file names as the CPU set, other hashes),
-// signed like the CPU set by the exe's own signer.
+// The allowed DLL subfolders are gpu\ beside the exe, holding only the pinned
+// Vulkan speech runtime, and llm-gpu\, holding only the pinned Vulkan
+// llama.cpp runtime for the language model (each with the same file names
+// as its CPU set, other hashes), signed like the CPU sets by the exe's own
+// signer.
 //
 // Every DLL that passes is kept open for as long as CloClo runs, shared for
 // reading only: Windows can still load it, but nothing can change, rename or
@@ -69,6 +71,7 @@ public static partial class NativeLibraryCheck
         LlmService.ModelFileName,
     };
     private const string GpuRuntimeFolder = "gpu";
+    private const string LlmGpuRuntimeFolder = "llm-gpu";
     // Signed Quran recitation packs (data only, see RecitationPack). Windows
     // never loads DLLs from this subfolder by itself, and CloClo checks each
     // pack's signature before reading it, so here it's enough that the
@@ -146,7 +149,9 @@ public static partial class NativeLibraryCheck
                 if (new DirectoryInfo(entry).Attributes.HasFlag(FileAttributes.ReparsePoint))
                     strangers.Add(name + "\\");
                 else if (name.Equals(GpuRuntimeFolder, StringComparison.OrdinalIgnoreCase))
-                    strangers.AddRange(UnverifiedGpuRuntimeEntries(entry).Select(n => name + "\\" + n));
+                    strangers.AddRange(UnverifiedGpuRuntimeEntries(entry, PinnedWhisperGpuLibraries).Select(n => name + "\\" + n));
+                else if (name.Equals(LlmGpuRuntimeFolder, StringComparison.OrdinalIgnoreCase))
+                    strangers.AddRange(UnverifiedGpuRuntimeEntries(entry, PinnedLlamaGpuLibraries).Select(n => name + "\\" + n));
                 else if (name.Equals(RecitationsFolder, StringComparison.OrdinalIgnoreCase))
                     strangers.AddRange(UnexpectedRecitationEntries(entry).Select(n => name + "\\" + n));
                 else
@@ -197,10 +202,10 @@ public static partial class NativeLibraryCheck
         return false;
     }
 
-    // gpu\ may hold only the pinned Vulkan runtime DLLs: no subfolders, links
-    // or other files. Windows also searches this folder first for the GPU
-    // runtime's own imports, so nothing else may be placed there.
-    private static IEnumerable<string> UnverifiedGpuRuntimeEntries(string folder)
+    // gpu\ and llm-gpu\ may hold only their pinned Vulkan runtime DLLs: no
+    // subfolders, links or other files. Nothing else may be placed beside a
+    // GPU runtime that is loaded from there.
+    private static IEnumerable<string> UnverifiedGpuRuntimeEntries(string folder, HashSet<string> pins)
     {
         var bad = new List<string>();
         foreach (var entry in Directory.EnumerateFileSystemEntries(folder))
@@ -209,7 +214,7 @@ public static partial class NativeLibraryCheck
             if (Directory.Exists(entry)) bad.Add(name + "\\");
             else if (!name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ||
                      File.GetAttributes(entry).HasFlag(FileAttributes.ReparsePoint) ||
-                     !HoldIfVerified(entry, PinnedWhisperGpuLibraries)) bad.Add(name);
+                     !HoldIfVerified(entry, pins)) bad.Add(name);
         }
         return bad;
     }

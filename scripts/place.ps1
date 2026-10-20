@@ -8,7 +8,8 @@
 # it sets first:
 #   $Source            the folder with the built files (the project's publish\)
 #   $Expected          'name=SHA-256;name=SHA-256;...' of every file as built
-#                      (the GPU speech runtime is named 'gpu\<file>.dll', and
+#                      (the GPU speech runtime is named 'gpu\<file>.dll', the
+#                      language model's GPU runtime 'llm-gpu\<file>.dll', and
 #                      Quran recitation packs 'Recitations\CloClo.Recitations.
 #                      <reciter>.dll')
 #   $AcceptThumbprint  a changed signing certificate (or 'unsigned') that the
@@ -56,12 +57,14 @@ Clear-Dir $old
 New-Item -ItemType Directory -Path $stage | Out-Null
 $models = @('ggml-base.bin', 'ggml-large-v3-turbo-q5_0.bin', 'qwen2.5-1.5b-instruct-q4_k_m.gguf')
 $gpuDlls = @('ggml-base-whisper.dll', 'ggml-cpu-whisper.dll', 'ggml-vulkan-whisper.dll', 'ggml-whisper.dll', 'whisper.dll')
+$llmGpuDlls = @('ggml-base.dll', 'ggml-cpu.dll', 'ggml-vulkan.dll', 'ggml.dll', 'llama.dll')
 $want = @{}
 foreach ($pair in $Expected.Split(';')) {
 $kv = $pair.Split('=', 2)
 if ($kv.Count -ne 2 -or
     ($kv[0] -notmatch '^[A-Za-z0-9_.-]+\.(exe|dll|ps1|json)$' -and $kv[0] -cnotin $models -and
      -not ($kv[0] -cmatch '^gpu\\(.+)$' -and $Matches[1] -cin $gpuDlls) -and
+     -not ($kv[0] -cmatch '^llm-gpu\\(.+)$' -and $Matches[1] -cin $llmGpuDlls) -and
      $kv[0] -cnotmatch '^Recitations\\CloClo\.Recitations\.[A-Za-z0-9_.-]{1,64}\.dll$') -or
     $kv[1] -notmatch '^[0-9A-F]{64}$') { Fail 5 }
 $want[$kv[0]] = $kv[1]
@@ -72,6 +75,11 @@ if (@($want.Keys | Where-Object { $_ -like 'gpu\*' }).Count) {
 $gpuSource = Get-Item -LiteralPath (Join-Path $Source 'gpu') -Force
 if ($gpuSource.Attributes -band [IO.FileAttributes]::ReparsePoint) { Fail 5 }
 New-Item -ItemType Directory -Path (Join-Path $stage 'gpu') | Out-Null
+}
+if (@($want.Keys | Where-Object { $_ -like 'llm-gpu\*' }).Count) {
+$llmGpuSource = Get-Item -LiteralPath (Join-Path $Source 'llm-gpu') -Force
+if ($llmGpuSource.Attributes -band [IO.FileAttributes]::ReparsePoint) { Fail 5 }
+New-Item -ItemType Directory -Path (Join-Path $stage 'llm-gpu') | Out-Null
 }
 if (@($want.Keys | Where-Object { $_ -like 'Recitations\*' }).Count) {
 $recitationsSource = Get-Item -LiteralPath (Join-Path $Source 'Recitations') -Force
@@ -84,9 +92,9 @@ if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { Fail 5 }
 Copy-Item -LiteralPath $item.FullName -Destination (Join-Path $stage $n)
 }
 # Checked inside Program Files: exactly the expected files, each exactly as built.
-# The only folders allowed are gpu\ and Recitations\, each only when the
-# build has one.
-$allowedFolders = @((Join-Path $stage 'gpu'), (Join-Path $stage 'Recitations'))
+# The only folders allowed are gpu\, llm-gpu\ and Recitations\, each only
+# when the build has one.
+$allowedFolders = @((Join-Path $stage 'gpu'), (Join-Path $stage 'llm-gpu'), (Join-Path $stage 'Recitations'))
 $folders = @(Get-ChildItem -LiteralPath $stage -Force -Recurse -Directory)
 if (@($folders | Where-Object { $_.FullName -notin $allowedFolders }).Count) { Fail 7 }
 $staged = @(Get-ChildItem -LiteralPath $stage -Force -Recurse -File)
@@ -106,14 +114,17 @@ if ($oldSigner -and $oldSigner.Thumbprint -ne $newThumb -and $newThumb -ne $Acce
 }
 # WPF DLLs are Microsoft-signed. The local transcription DLLs (four beside
 # the exe, five in gpu\) and the language model's llama.cpp DLLs (four beside
-# the exe) are pinned during the build and signed by CloClo's own protected key.
+# the exe, five in llm-gpu\) are pinned during the build and signed by
+# CloClo's own protected key.
 $whisperDlls = @('ggml-base-whisper.dll', 'ggml-cpu-whisper.dll', 'ggml-whisper.dll', 'whisper.dll',
     'ggml-base.dll', 'ggml-cpu.dll', 'ggml.dll', 'llama.dll')
 foreach ($f in @($staged | Where-Object { $_.Extension -eq '.dll' })) {
 $s = Get-AuthenticodeSignature -LiteralPath $f.FullName
 $inGpu = $f.DirectoryName -eq (Join-Path $stage 'gpu')
+$inLlmGpu = $f.DirectoryName -eq (Join-Path $stage 'llm-gpu')
 $isPack = $f.DirectoryName -eq (Join-Path $stage 'Recitations')
-if (($inGpu -and $f.Name -in $gpuDlls) -or (-not $inGpu -and -not $isPack -and $f.Name -in $whisperDlls) -or $isPack) {
+if (($inGpu -and $f.Name -in $gpuDlls) -or ($inLlmGpu -and $f.Name -in $llmGpuDlls) -or
+    (-not $inGpu -and -not $inLlmGpu -and -not $isPack -and $f.Name -in $whisperDlls) -or $isPack) {
     if ($newThumb -eq 'unsigned') {
         if ($s.Status -ne 'NotSigned') { Fail 4 }
     } elseif (-not $s.SignerCertificate -or $s.SignerCertificate.Thumbprint -ne $newThumb -or

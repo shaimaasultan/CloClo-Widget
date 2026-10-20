@@ -56,7 +56,7 @@
 
         <TextBlock Grid.Row="2" Text="Question:" Style="{StaticResource Caption}" />
         <TextBox x:Name="QuestionBox" Grid.Row="3" Style="{StaticResource Field}" Height="56" AcceptsReturn="False"
-                 KeyDown="Question_KeyDown" />
+                 KeyDown="Question_KeyDown" TextChanged="Question_TextChanged" />
 
         <WrapPanel Grid.Row="4" Margin="0,10,0,0">
             <Button x:Name="AskButton" Content="Ask" Click="Ask_Click" IsDefault="False" />

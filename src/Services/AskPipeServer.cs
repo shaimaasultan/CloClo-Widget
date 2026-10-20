@@ -36,7 +36,8 @@ namespace CloCloWidget;
 internal sealed class AskPipeServer : IDisposable
 {
     public const string PipeName = "CloClo.Ask";
-    private const int MaxRequestBytes = 128 * 1024;
+    // 30,000 characters even when every one is JSON-escaped (\u0627: 6 bytes).
+    private const int MaxRequestBytes = 256 * 1024;
     private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan WriteTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan AnswerTimeout = TimeSpan.FromMinutes(3);

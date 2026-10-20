@@ -534,6 +534,15 @@ if (Test-Path -LiteralPath $gpuPublish) {
         $files += $f
     }
 }
+# The language model's Vulkan runtime likewise shares its CPU set's names,
+# so it lives in llm-gpu\.
+$llmGpuPublish = Join-Path $publishDir 'llm-gpu'
+if (Test-Path -LiteralPath $llmGpuPublish) {
+    foreach ($f in @(Get-ChildItem -LiteralPath $llmGpuPublish -File -Filter '*.dll')) {
+        $f | Add-Member -NotePropertyName Rel -NotePropertyValue ('llm-gpu\' + $f.Name)
+        $files += $f
+    }
+}
 # The recitation packs live in Recitations\.
 $recitationsPublish = Join-Path $publishDir 'Recitations'
 if (Test-Path -LiteralPath $recitationsPublish) {
@@ -542,11 +551,11 @@ if (Test-Path -LiteralPath $recitationsPublish) {
         $files += $f
     }
 }
-# Every file and the gpu\ folder, as paths relative to an install folder.
+# Every file and the gpu\ and llm-gpu\ folders, as paths relative to an install folder.
 function Get-InstalledEntries([string]$dir) {
     @(Get-ChildItem -LiteralPath $dir -Force -Recurse | ForEach-Object {
         $rel = $_.FullName.Substring($dir.TrimEnd('\').Length + 1)
-        if ($_.PSIsContainer) { if ($rel -notin 'gpu', 'Recitations') { "$rel\" } } else { $rel }
+        if ($_.PSIsContainer) { if ($rel -notin 'gpu', 'llm-gpu', 'Recitations') { "$rel\" } } else { $rel }
     })
 }
 $version = (Get-Item -LiteralPath $builtExe).VersionInfo.ProductVersion -replace '\+.*$', ''
@@ -613,6 +622,7 @@ if ($ProgramFiles) {
     Reset-SafeOutputDirectory $stageDir $installParent
     try {
         if (@($files | Where-Object { $_.Rel -like 'gpu\*' }).Count) { New-Item -ItemType Directory -Path (Join-Path $stageDir 'gpu') | Out-Null }
+        if (@($files | Where-Object { $_.Rel -like 'llm-gpu\*' }).Count) { New-Item -ItemType Directory -Path (Join-Path $stageDir 'llm-gpu') | Out-Null }
         if (@($files | Where-Object { $_.Rel -like 'Recitations\*' }).Count) { New-Item -ItemType Directory -Path (Join-Path $stageDir 'Recitations') | Out-Null }
         foreach ($f in $files) { Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $stageDir $f.Rel) }
         $stagedEntries = Get-InstalledEntries $stageDir

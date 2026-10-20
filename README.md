@@ -580,21 +580,57 @@ a bounded local arithmetic parser, not a scripting engine or network service.
 ### Ask about a text
 
 Open **Ask about a text…** from the right-click menu or the search box. Paste
-or type a text (up to 20,000 characters), type a question and press **Ask**
-(or Enter). A small language model running inside CloClo answers from that
+or type a text, type a question and press **Ask** (or Enter). A small language model running inside CloClo answers from that
 text only, and Windows' own voice reads the answer aloud unless you untick
-**Read the answer aloud**. Arabic text and questions work too. If the text
-doesn't hold the answer, it says "The text doesn't say." instead of guessing.
+**Read the answer aloud**. Arabic text and questions work too, laid out right
+to left. If the text doesn't hold the answer, it says "The text doesn't say."
+instead of guessing.
 
+<p>
+<img src="docs/screenshots/features/ask-text.png" alt="Ask about a text window: a team update about a quarterly review moved to Wednesday 22 October at 10:30 in room B2, the question 'When and where is the review now, and why did it move?', and the answer giving the new day, time, room and the finance team's reason. The counter shows 210 / 7,792 tokens and the status line says it was answered by the NVIDIA GeForce RTX 3050 Ti Laptop GPU" width="430">
+<img src="docs/screenshots/features/ask-text-arabic.png" alt="The same window in Arabic, right to left: a school notice that the end-of-year ceremony moved to Saturday 15 June at 5 pm in the main hall because of theatre maintenance, the question when and where the ceremony is and why it moved, and the Arabic answer. 216 / 7,792 tokens, answered by the GPU" width="430">
+</p>
+
+- **How long a text: counted in tokens, as you type.** The model reads up to
+  7,792 tokens of prompt (its 8,192-token context minus room for the
+  answer). The window counts the text and question with the model's own
+  tokenizer and shows, for example, "4,928 / 7,792 tokens"; over the limit it
+  turns red and **Ask** stays off. How many characters that is depends on
+  the language: about 19,500 characters of English README text came to
+  4,928 tokens, while Quran text with its diacritics uses about 0.9 tokens a
+  character, so 6,000 characters came to 5,492 and 12,000 (10,817 tokens)
+  don't fit. Other apps asking through the pipe get the same count in the
+  error. Text boxes stop at 30,000 characters regardless.
 - **Local, like Whisper.** The model is Qwen2.5-1.5B-Instruct (Q4_K_M,
   1.1 GB, Apache 2.0), run by llama.cpp through LLamaSharp inside the CloClo
-  process: no server, no port, nothing sent anywhere. The first question
-  loads it in a couple of seconds; after that an answer takes about one to
-  five seconds on the CPU. It is unloaded after 15 minutes unused, giving
-  back about 1.5 GB of memory.
-- **Needs AVX2.** The shipped llama.cpp build is the AVX2 one, which almost
-  every PC from 2015 on has; on older processors the window says so and the
-  feature stays off.
+  process: no server, no port, nothing sent anywhere. It loads with the
+  first question and is unloaded after 15 minutes unused, giving back about
+  1.5 GB of memory (video memory on a GPU); the next question loads it
+  again. Counting tokens needs only the model's vocabulary, a few MB, so
+  typing never loads the whole model.
+- **On a dedicated GPU when there is one.** With a dedicated GPU that has at
+  least 3 GB of video memory (the same check Whisper's large model uses),
+  the model runs there through a Vulkan build of llama.cpp; otherwise on the
+  CPU. The status line says which ("Answered on this PC by the GPU (NVIDIA
+  GeForce RTX 3050 Ti Laptop GPU)"). If the GPU hasn't enough free memory
+  at the time, it loads on the CPU instead. Measured on an i7-11800H with an
+  RTX 3050 Ti (4 GB):
+
+  | Text | CPU | Dedicated GPU |
+  |---|---|---|
+  | 200 characters | 1.5 s | 1.1 s |
+  | 5,000 characters (1,355 tokens) | 13 s | 3 s |
+  | 19,500 characters (4,928 tokens) | 54–60 s | 8 s |
+  | 6,000 Arabic characters (5,492 tokens) | about 70 s | 8 s |
+
+  Almost all of that is reading the text; writing the short answer takes
+  about a second either way. The first start after installing or updating
+  the graphics driver takes longer (about 18 s for the first question) while
+  the driver prepares its shaders. Integrated graphics are never used: on the
+  same laptop the Intel GPU was slower than the CPU.
+- **Needs AVX2.** Both shipped llama.cpp builds use the AVX2 CPU backend,
+  which almost every PC from 2015 on has; on older processors the window
+  says so and the feature stays off.
 - **The answer is only text.** CloClo shows it and can read it aloud. It
   never runs it, opens it, types it into another app or treats it as a
   command, and the model is told to ignore instructions inside the text.
@@ -607,7 +643,7 @@ in message mode:
 
 ```
 request:  {"text": "The meeting is on Tuesday.", "question": "What day is the meeting?"}
-reply:    {"answer": "Tuesday"}     or     {"error": "The text is too long (over 20,000 characters)."}
+reply:    {"answer": "Tuesday"}     or     {"error": "The text is too long for the language model: 10,817 of 7,792 tokens. Ask about a shorter part."}
 ```
 
 From PowerShell, for example:
@@ -857,8 +893,9 @@ administrator, `place.ps1` trusts nothing it's handed:
   built by `scripts\pack-recitations.ps1` from the project's
   `Assets\Recitations\<reciter>\SSSAAA.mp3` files) are checked like every
   other file: by name, by SHA-256, and as signed by the exe's own
-  certificate. `Recitations\` is the only folder allowed besides `gpu\`, and
-  CloClo's startup check accepts nothing in it but pack files;
+  certificate. `Recitations\` is the only folder allowed besides `gpu\` and
+  `llm-gpu\` (the two pinned Vulkan runtimes), and CloClo's startup check
+  accepts nothing in it but pack files;
 - it sets CloClo's six Windows Firewall block rules for
   `C:\Program Files\CloClo\CloCloWidget.exe` (see
   [Security](#security): outbound TCP only to port 443, no UDP or ICMP,
@@ -1458,21 +1495,31 @@ loads anything)
 - **The language model gets the same guards as Whisper.** Only the copy
   holding that lock loads it. `qwen2.5-1.5b-instruct-q4_k_m.gguf` is pinned
   by size and SHA-256 at build (downloaded once from a fixed Hugging Face
-  revision into `obj\llm-models\`), at install and at every load; the check
-  reads the file through a handle that stays open, shared for reading only,
-  while llama.cpp maps it, so nothing can swap it after the check. Its
-  runtime is four llama.cpp DLLs (`ggml-base.dll`, `ggml-cpu.dll`,
-  `ggml.dll`, `llama.dll`, the AVX2 build from LLamaSharp.Backend.Cpu
-  0.30.0), checked against the package's bytes, signed by CloClo's signer and
-  pinned in the exe like the Whisper set; LLamaSharp is pointed at that one
-  `llama.dll` by full path with its fallback search turned off. Their names
-  differ from Whisper's `ggml-*-whisper.dll`, so neither runtime binds to the
-  other's modules.
+  revision into `obj\llm-models\`), at install, and on first use in each run;
+  that check reads the file through a handle CloClo then keeps open, shared
+  for reading only, until it exits, so nothing can change, rename or delete
+  it afterwards and every later load (after an idle unload too) maps the
+  checked bytes. It has two runtimes, both pinned against the LLamaSharp
+  0.30.0 packages' bytes, signed by CloClo's signer and pinned in the exe
+  like Whisper's sets: the AVX2 CPU set beside the exe (`ggml-base.dll`,
+  `ggml-cpu.dll`, `ggml.dll`, `llama.dll`) and the Vulkan set in `llm-gpu\`
+  (`ggml-base.dll`, `ggml-cpu.dll` — the same AVX2 file, which the Vulkan
+  `ggml.dll` imports — `ggml-vulkan.dll`, `ggml.dll`, `llama.dll`). The two
+  share file names, so one is chosen per run: the Vulkan set only when
+  `llm-gpu\` is installed and the dedicated-GPU check finds a card, with
+  Windows' Vulkan loader from System32, implicit Vulkan layers off and
+  llama.cpp limited to that one GPU, as for Whisper. The chosen set is
+  loaded file by file by full path in dependency order, so every import
+  binds to the same pinned set, and LLamaSharp is pointed at that
+  `llama.dll` with its own search and fallback turned off. `llm-gpu\` may
+  hold only those five pinned files: anything else there, or a changed byte,
+  and CloClo refuses to start. Their names differ from Whisper's
+  `ggml-*-whisper.dll`, so neither runtime binds to the other's modules.
 - **The ask pipe is closed unless you open it,** and then only to you. It is
   created only by the lock holder, as the one and only instance of
   `\\.\pipe\CloClo.Ask` (if something else already holds that name, CloClo
   doesn't serve at all rather than share it), with `CurrentUserOnly` access
-  and remote clients rejected. Requests are limited to 128 KB and 10
+  and remote clients rejected. Requests are limited to 256 KB and 10
   seconds; replies must be read within 10 seconds; an oversized or stalled
   client is disconnected so it can't hold the pipe. The request is data for
   the prompt and the answer goes back only to the caller; CloClo names the

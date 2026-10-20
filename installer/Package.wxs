@@ -91,6 +91,11 @@
         <Directory Id="GpuRuntimeFolder" Name="gpu">
           <Files Include="$(AppDir)\gpu\*.dll" />
         </Directory>
+        <!-- The language model's pinned Vulkan runtime, likewise used only
+             with a dedicated GPU and sharing its CPU set's file names. -->
+        <Directory Id="LlmGpuRuntimeFolder" Name="llm-gpu">
+          <Files Include="$(AppDir)\llm-gpu\*.dll" />
+        </Directory>
         <!-- Quran recitation packs: code-free DLLs holding per-ayah MP3s,
              signed like the exe, which CloClo checks before reading (see
              RecitationPack.cs). Only when the build made any. -->

@@ -52,6 +52,10 @@
          own build target would copy every CPU variant into runtimes\. -->
     <PackageReference Include="LLamaSharp" Version="0.30.0" />
     <PackageReference Include="LLamaSharp.Backend.Cpu" Version="0.30.0" GeneratePathProperty="true" ExcludeAssets="build" />
+    <!-- The Vulkan llama.cpp set, copied as explicit pinned files into
+         llm-gpu\ by PrepareLlamaRuntime and loaded instead of the CPU set
+         only on a dedicated GPU (LlmService.EnsureRuntime). -->
+    <PackageReference Include="LLamaSharp.Backend.Vulkan.Windows" Version="0.30.0" GeneratePathProperty="true" ExcludeAssets="build" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(RuntimeIdentifier)' == 'win-x64'">
@@ -65,6 +69,9 @@
              ExcludeFromSingleFile="true" />
     <Content Include="$(IntermediateOutputPath)llama-runtime\ggml-base.dll;$(IntermediateOutputPath)llama-runtime\ggml-cpu.dll;$(IntermediateOutputPath)llama-runtime\ggml.dll;$(IntermediateOutputPath)llama-runtime\llama.dll"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="%(Filename)%(Extension)" />
+    <!-- Published by CopyWhisperRuntimeToPublish into llm-gpu\, never bundled. -->
+    <Content Include="$(IntermediateOutputPath)llama-runtime\gpu\ggml-base.dll;$(IntermediateOutputPath)llama-runtime\gpu\ggml-cpu.dll;$(IntermediateOutputPath)llama-runtime\gpu\ggml-vulkan.dll;$(IntermediateOutputPath)llama-runtime\gpu\ggml.dll;$(IntermediateOutputPath)llama-runtime\gpu\llama.dll"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" Link="llm-gpu\%(Filename)%(Extension)" />
     <Content Include="$(LanguageModel)" Link="qwen2.5-1.5b-instruct-q4_k_m.gguf"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
              ExcludeFromSingleFile="true" />
@@ -246,8 +253,32 @@
     <ItemGroup>
       <_LlamaCopy Include="$(_LlamaOut)ggml-base.dll;$(_LlamaOut)ggml-cpu.dll;$(_LlamaOut)ggml.dll;$(_LlamaOut)llama.dll" />
     </ItemGroup>
+    <!-- The Vulkan set: four files from LLamaSharp.Backend.Vulkan.Windows plus
+         the same AVX2 ggml-cpu.dll (the Vulkan ggml.dll imports a CPU backend
+         its package doesn't carry; both packages are one llama.cpp build).
+         Same file names as the CPU set, so it gets its own folder, like
+         Whisper's gpu\. -->
+    <ItemGroup>
+      <_LlamaGpuSource Include="$(PkgLLamaSharp_Backend_Vulkan_Windows)\LLamaSharpRuntimes\win-x64\native\vulkan\ggml-base.dll" ExpectedHash="FF8B0BE78FCB46CAF453AC23BC820CF2C6AEFE4E08D417E45BE0E07326DE46FD" />
+      <_LlamaGpuSource Include="$(PkgLLamaSharp_Backend_Cpu)\LLamaSharpRuntimes\win-x64\native\avx2\ggml-cpu.dll" ExpectedHash="ACDE020B10BD70A124561ADFFA06299C688CDDB9251B189C97B645EA947BDBE2" />
+      <_LlamaGpuSource Include="$(PkgLLamaSharp_Backend_Vulkan_Windows)\LLamaSharpRuntimes\win-x64\native\vulkan\ggml-vulkan.dll" ExpectedHash="BFAF6CD52C228C1CB5ADBCA5297CB879A8A0806572BF5B3E3509F33323348A54" />
+      <_LlamaGpuSource Include="$(PkgLLamaSharp_Backend_Vulkan_Windows)\LLamaSharpRuntimes\win-x64\native\vulkan\ggml.dll" ExpectedHash="C1193FABB393DC5B674511C7171B3B5362DFB744FD1DDC6D778FB9910EA11B81" />
+      <_LlamaGpuSource Include="$(PkgLLamaSharp_Backend_Vulkan_Windows)\LLamaSharpRuntimes\win-x64\native\vulkan\llama.dll" ExpectedHash="34D73E76122F94ADE1A783CF0727DC56E1EDD472E5B899931EC5C8B1659658DA" />
+    </ItemGroup>
+    <GetFileHash Files="@(_LlamaGpuSource)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_LlamaGpuSourceHash" />
+    </GetFileHash>
+    <Error Condition="'%(_LlamaGpuSourceHash.FileHash)' != '%(_LlamaGpuSourceHash.ExpectedHash)'"
+           Text="llama.cpp Vulkan runtime differs from the pinned LLamaSharp 0.30.0 packages: %(_LlamaGpuSourceHash.Identity)" />
+    <MakeDir Directories="$(_LlamaOut)gpu\" />
+    <Copy SourceFiles="@(_LlamaGpuSource)" DestinationFolder="$(_LlamaOut)gpu\" />
+    <ItemGroup>
+      <_LlamaGpuCopy Include="$(_LlamaOut)gpu\ggml-base.dll;$(_LlamaOut)gpu\ggml-cpu.dll;$(_LlamaOut)gpu\ggml-vulkan.dll;$(_LlamaOut)gpu\ggml.dll;$(_LlamaOut)gpu\llama.dll" />
+    </ItemGroup>
     <Exec Condition="'$(_SignEnabled)' == 'true' and !$(MSBuildProjectFile.EndsWith('_wpftmp.csproj'))"
           Command="$(_SignCommand) -Path &quot;%(_LlamaCopy.FullPath)&quot;" />
+    <Exec Condition="'$(_SignEnabled)' == 'true' and !$(MSBuildProjectFile.EndsWith('_wpftmp.csproj'))"
+          Command="$(_SignCommand) -Path &quot;%(_LlamaGpuCopy.FullPath)&quot;" />
   </Target>
 
   <!--
@@ -285,6 +316,9 @@
     <GetFileHash Files="@(_LlamaCopy)" Algorithm="SHA256" Condition="'@(_LlamaCopy)' != ''">
       <Output TaskParameter="Items" ItemName="_LlamaPin" />
     </GetFileHash>
+    <GetFileHash Files="@(_LlamaGpuCopy)" Algorithm="SHA256" Condition="'@(_LlamaGpuCopy)' != ''">
+      <Output TaskParameter="Items" ItemName="_LlamaGpuPin" />
+    </GetFileHash>
     <PropertyGroup>
       <_NativePinsFile>$(IntermediateOutputPath)NativeLibraryPins.g.cs</_NativePinsFile>
     </PropertyGroup>
@@ -308,6 +342,10 @@
       <_NativePinLine Include="    private static readonly System.Collections.Generic.HashSet&lt;string&gt; PinnedLlamaLibraries = new(System.StringComparer.OrdinalIgnoreCase)" />
       <_NativePinLine Include="    {" />
       <_NativePinLine Include="@(_LlamaPin->'        &quot;%(Filename)%(Extension)|%(FileHash)&quot;,')" />
+      <_NativePinLine Include="    }%3B" />
+      <_NativePinLine Include="    private static readonly System.Collections.Generic.HashSet&lt;string&gt; PinnedLlamaGpuLibraries = new(System.StringComparer.OrdinalIgnoreCase)" />
+      <_NativePinLine Include="    {" />
+      <_NativePinLine Include="@(_LlamaGpuPin->'        &quot;%(Filename)%(Extension)|%(FileHash)&quot;,')" />
       <_NativePinLine Include="    }%3B" />
       <_NativePinLine Include="}" />
     </ItemGroup>
@@ -362,7 +400,7 @@
       <_WhisperExternal Include="@(FilesToBundle)" Condition="'%(Filename)%(Extension)' == 'ggml-base-whisper.dll' or '%(Filename)%(Extension)' == 'ggml-cpu-whisper.dll' or '%(Filename)%(Extension)' == 'ggml-vulkan-whisper.dll' or '%(Filename)%(Extension)' == 'ggml-whisper.dll' or '%(Filename)%(Extension)' == 'whisper.dll'" />
       <FilesToBundle Remove="@(_WhisperExternal)" />
       <!-- The llama.cpp set likewise (PrepareLlamaRuntime). -->
-      <_LlamaExternal Include="@(FilesToBundle)" Condition="'%(Filename)%(Extension)' == 'ggml-base.dll' or '%(Filename)%(Extension)' == 'ggml-cpu.dll' or '%(Filename)%(Extension)' == 'ggml.dll' or '%(Filename)%(Extension)' == 'llama.dll'" />
+      <_LlamaExternal Include="@(FilesToBundle)" Condition="'%(Filename)%(Extension)' == 'ggml-base.dll' or '%(Filename)%(Extension)' == 'ggml-cpu.dll' or '%(Filename)%(Extension)' == 'ggml-vulkan.dll' or '%(Filename)%(Extension)' == 'ggml.dll' or '%(Filename)%(Extension)' == 'llama.dll'" />
       <FilesToBundle Remove="@(_LlamaExternal)" />
       <!-- DLLs only: the one .exe in here is the host stub the bundle gets
            appended to, and a signature on it would be broken by that —
@@ -400,6 +438,7 @@
     <Copy SourceFiles="@(_WhisperCopy)" DestinationFolder="$(PublishDir)" />
     <Copy SourceFiles="@(_WhisperGpuCopy)" DestinationFolder="$(PublishDir)gpu\" />
     <Copy SourceFiles="@(_LlamaCopy)" DestinationFolder="$(PublishDir)" />
+    <Copy SourceFiles="@(_LlamaGpuCopy)" DestinationFolder="$(PublishDir)llm-gpu\" />
   </Target>
 
   <Target Name="SignPublishedExe" AfterTargets="Publish" DependsOnTargets="CopyWhisperRuntimeToPublish" Condition="'$(_SignEnabled)' == 'true'">
