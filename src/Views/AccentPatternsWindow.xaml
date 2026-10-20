@@ -1,0 +1,123 @@
+<Window x:Class="CloCloWidget.AccentPatternsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="CloClo — My accent patterns"
+        Width="900" Height="940" MinWidth="680" MinHeight="760"
+        WindowStartupLocation="Manual" ShowInTaskbar="False"
+        Background="#1C2935" Foreground="White">
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="#34495B" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#526779" />
+            <Setter Property="Padding" Value="12,5" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="Background" Value="#14202A" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#526779" />
+            <Setter Property="CaretBrush" Value="White" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="AcceptsReturn" Value="True" />
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+        </Style>
+        <Style x:Key="Step" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#D6E2EC" />
+            <Setter Property="Margin" Value="0,12,0,4" />
+        </Style>
+        <Style x:Key="Caption" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#9FB3C4" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+    </Window.Resources>
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="1.2*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="0.7*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="0.9*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 1. Passage -->
+        <StackPanel Grid.Row="0">
+            <TextBlock Style="{StaticResource Step}" Margin="0,0,0,4" Text="1. Read this passage aloud once (edit it if you like)" />
+            <TextBlock Style="{StaticResource Caption}"
+                       Text="It covers every English sound in real words. Whisper writes down what it hears; wherever that differs from the passage, CloClo learns how it spells your pronunciation. Only those letter counts are saved - no audio." />
+        </StackPanel>
+        <TextBox x:Name="PassageBox" Grid.Row="1" Margin="0,6,0,0" />
+
+        <DockPanel Grid.Row="2" Margin="0,8,0,0">
+            <Button x:Name="RecordPassageButton" Content="● Record passage" Click="RecordPassage_Click" />
+            <Button x:Name="LearnButton" Content="Learn again (edited text)" Click="Learn_Click" IsEnabled="False" />
+            <Button x:Name="ResetButton" Content="Forget patterns" Click="Reset_Click" />
+            <TextBlock x:Name="PassageStatus" Style="{StaticResource Caption}" />
+        </DockPanel>
+        <DockPanel Grid.Row="3" Margin="0,6,0,0">
+            <TextBlock DockPanel.Dock="Top" Style="{StaticResource Caption}" Margin="0,0,0,4"
+                       Text="What Whisper heard - learned automatically when you press Stop (edit or paste here, then Learn again):" />
+            <TextBox x:Name="HeardBox" TextChanged="Heard_Changed" />
+        </DockPanel>
+
+        <!-- Patterns -->
+        <TextBlock Grid.Row="4" Style="{StaticResource Step}" Text="Your patterns" />
+        <TextBox x:Name="PatternsBox" Grid.Row="5" IsReadOnly="True" FontFamily="Consolas" FontSize="13"
+                 TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" />
+
+        <!-- 2. Words -->
+        <DockPanel Grid.Row="6">
+            <Button DockPanel.Dock="Right" Content="Predict spellings" Click="Predict_Click" Margin="8,12,0,4" Padding="10,3" />
+            <TextBlock Style="{StaticResource Step}" Text="2. Words to fix in dictation (commas or one per line)" />
+        </DockPanel>
+        <Grid Grid.Row="7">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="1.6*" />
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="WordsBox" Grid.Column="0" LostFocus="Words_LostFocus" />
+            <TextBox x:Name="SpellingsBox" Grid.Column="2" IsReadOnly="True" FontFamily="Consolas" FontSize="13"
+                     TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" />
+        </Grid>
+
+        <!-- 3. Test -->
+        <DockPanel Grid.Row="8" Margin="0,12,0,4">
+            <TextBlock Style="{StaticResource Step}" Margin="0,0,10,0" VerticalAlignment="Center" Text="3. Test" />
+            <Button x:Name="TestButton" Content="● Dictate test" Click="Test_Click" />
+            <Button Content="Correct typed text" Click="CorrectTyped_Click" />
+            <TextBlock Style="{StaticResource Caption}" Text="Left: what Whisper wrote (or type there). Right: after your patterns." />
+        </DockPanel>
+        <Grid Grid.Row="9">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <TextBox x:Name="RawBox" Grid.Column="0" />
+            <TextBox x:Name="CorrectedBox" Grid.Column="2" IsReadOnly="True" />
+            <TextBox x:Name="ChangesBox" Grid.Row="1" Grid.ColumnSpan="3" Margin="0,6,0,0" Height="64" IsReadOnly="True"
+                     FontFamily="Consolas" FontSize="12" />
+        </Grid>
+
+        <TextBlock x:Name="LiveText" Grid.Row="10" Margin="0,8,0,0" Style="{StaticResource Caption}" FontStyle="Italic" />
+    </Grid>
+</Window>

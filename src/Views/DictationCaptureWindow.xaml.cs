@@ -254,7 +254,7 @@ public partial class DictationCaptureWindow : Window
         ? $"Verifying and loading the Arabic speech model. With a dedicated GPU the first start can take up to a minute. {privacy}"
         : $"Verifying the bundled speech model. {privacy}";
 
-    private static bool CanRunLocalTranscription() =>
+    internal static bool CanRunLocalTranscription() =>
         OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000) &&
         System.Runtime.Intrinsics.X86.Avx2.IsSupported &&
         System.Runtime.Intrinsics.X86.Fma.IsSupported &&

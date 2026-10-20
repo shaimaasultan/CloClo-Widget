@@ -65,6 +65,7 @@ public partial class MainWindow : Window
     private DavidMatchWindow? _davidMatchWindow;
     private VoiceConverterWindow? _voiceConverterWindow;
     private LetterSignalsWindow? _letterSignalsWindow;
+    private AccentPatternsWindow? _accentPatternsWindow;
     private ContextMenu? _activeContextMenu;
 
     private const int GWL_EXSTYLE = -20;
@@ -658,7 +659,7 @@ public partial class MainWindow : Window
     // itself when its capture stops, so it isn't counted here.)
     private bool VoiceTestWindowOpen =>
         _soundPatternWindow != null || _voiceSignalsWindow != null ||
-        _davidMatchWindow != null || _voiceConverterWindow != null;
+        _davidMatchWindow != null || _voiceConverterWindow != null || _accentPatternsWindow != null;
 
     // Builds words from letters - no microphone, so hold to talk stays on.
     private void ShowLetterSignals()
@@ -737,6 +738,34 @@ public partial class MainWindow : Window
         ShowSensitive(window);
     }
 
+    // Listens with Whisper on the microphone, so hold to talk pauses while
+    // it's open.
+    private void ShowAccentPatterns()
+    {
+        if (_accentPatternsWindow != null)
+        {
+            if (_accentPatternsWindow.WindowState == WindowState.Minimized) _accentPatternsWindow.WindowState = WindowState.Normal;
+            _accentPatternsWindow.Activate();
+            return;
+        }
+
+        _voicePausedForEditor = true;
+        AbortPushToTalk();
+        var window = new AccentPatternsWindow
+        {
+            Owner = this,
+            Topmost = _settings.AlwaysOnTop,
+        };
+        _accentPatternsWindow = window;
+        window.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_accentPatternsWindow, window)) _accentPatternsWindow = null;
+            if (_dictationWindow == null && !VoiceTestWindowOpen) ResumeVoiceAfterEditor();
+        };
+        PositionBesideWidget(window);
+        ShowSensitive(window);
+    }
+
     // Search runs only these fixed menu actions. Typed text filters labels and
     // aliases; it is never passed to a process, file path or command parser.
     private IReadOnlyList<WidgetSearchAction> BuildQuickActions()
@@ -757,6 +786,7 @@ public partial class MainWindow : Window
             new("Voice converters: Find it in David's words", "david match word microphone record recognise accessibility", WidgetSearchActionKind.OpenWindow, ShowDavidMatch),
             new("Voice converters: Voice converter", "david convert my voice microphone record compare accessibility", WidgetSearchActionKind.OpenWindow, ShowVoiceConverter),
             new("Voice converters: Letter signals", "letters formant table build word david compare signal", WidgetSearchActionKind.OpenWindow, ShowLetterSignals),
+            new("Voice converters: My accent patterns", "accent pronunciation whisper dictation learn passage words correct spelling", WidgetSearchActionKind.OpenWindow, ShowAccentPatterns),
             new("Custom reminders", "reminder remainder schedule message", WidgetSearchActionKind.OpenWindow, OpenCustomReminders),
             new("Prayer times and azan", "salah fajr dhuhr asr maghrib isha adhan", WidgetSearchActionKind.OpenWindow, OpenPrayerTimes),
             new("Dictation: Open dictation folder", "dictation files recordings", WidgetSearchActionKind.OpenFolder, OpenDictationFolder),
@@ -2480,6 +2510,7 @@ public partial class MainWindow : Window
             Item("Find it in David's words…", ShowDavidMatch, icon: Glyph("\uEFA9")),
             Item("Voice converter…", ShowVoiceConverter, icon: Glyph("\uE8AB")),
             Item("Letter signals…", ShowLetterSignals, icon: Glyph("\uE8D2")),
+            Item("My accent patterns…", ShowAccentPatterns, icon: Glyph("\uE8C1")),
         }), "\uE8D6"));
         menu.Items.Add(WithGlyph(SubMenu("Dictation", new object[]
         {
