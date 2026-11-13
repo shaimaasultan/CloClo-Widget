@@ -34,7 +34,7 @@
 
   <ItemGroup>
     <PackageReference Include="NAudio.Wasapi" Version="3.1.0" />
-    <PackageReference Include="QRCoder" Version="1.8.0" />
+    <PackageReference Include="QRCoder" Version="1.8.1" />
     <PackageReference Include="System.Management" Version="10.0.0" />
     <PackageReference Include="Whisper.net" Version="1.9.1" />
     <!-- The CPU runtime is copied as four explicit win-x64 files below. Its
